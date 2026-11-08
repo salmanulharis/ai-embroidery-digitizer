@@ -1,0 +1,390 @@
+"""Core data model shared by every pipeline stage.
+
+Coordinates are always millimetres, origin top-left, y pointing down.
+A ``Design`` is the approved, editable artwork (vector shapes grouped into
+thread-colour layers). A ``StitchPlan`` is the machine-ready result.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import asdict, dataclass, field, replace
+from typing import Iterable, Literal, Optional
+
+from shapely import wkt
+from shapely.geometry.base import BaseGeometry
+
+StitchType = Literal["auto", "fill", "satin", "running"]
+ObjectKind = Literal["area", "line"]
+
+RGB = tuple[int, int, int]
+
+
+def rgb_to_hex(rgb: RGB) -> str:
+    return "#{:02x}{:02x}{:02x}".format(*(int(c) for c in rgb))
+
+
+def hex_to_rgb(value: str) -> RGB:
+    value = value.lstrip("#")
+    return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+@dataclass
+class ColorLayer:
+    index: int
+    rgb: RGB
+    name: str = ""
+    enabled: bool = True
+    stitch_type: StitchType = "auto"
+    angle: Optional[float] = None  # fill angle override, degrees
+
+    @property
+    def hex(self) -> str:
+        return rgb_to_hex(self.rgb)
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["rgb"] = list(self.rgb)
+        d["hex"] = self.hex
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ColorLayer":
+        rgb = hex_to_rgb(d["hex"]) if "hex" in d and d["hex"] else tuple(d["rgb"])
+        return cls(
+            index=int(d["index"]),
+            rgb=rgb,  # type: ignore[arg-type]
+            name=d.get("name", ""),
+            enabled=bool(d.get("enabled", True)),
+            stitch_type=d.get("stitch_type", "auto"),
+            angle=None if d.get("angle") in (None, "") else float(d["angle"]),
+        )
+
+
+STITCH_TYPES = ("auto", "fill", "satin", "running")
+
+
+def new_object_id() -> str:
+    return uuid.uuid4().hex[:10]
+
+
+def normalize_angle(value: float) -> float:
+    """Stitch rows have no front/back: 225° is the same direction as 45°."""
+    return round(float(value) % 180.0, 2)
+
+
+# Allowed ranges for per-shape thickness settings (same limits as the design-wide settings).
+SPACING_RANGE_MM = (0.25, 1.0)  # gap between fill rows / satin stitches
+PULL_RANGE_MM = (0.0, 0.8)  # extra width (shrink compensation)
+
+
+def _in_range(value, bounds: tuple[float, float]) -> Optional[float]:
+    """Stored value -> float within bounds, or None (= use the design setting)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(v, 3) if bounds[0] <= v <= bounds[1] else None
+
+
+@dataclass
+class DesignObject:
+    layer: int
+    geometry: BaseGeometry  # Polygon/MultiPolygon for areas, LineString/MultiLineString for lines
+    kind: ObjectKind = "area"
+    stroke_width_mm: float = 0.0
+    id: str = field(default_factory=new_object_id)
+    # Per-shape overrides; None = use the colour's / design's setting.
+    stitch_type: Optional[StitchType] = None
+    angle: Optional[float] = None
+    enabled: bool = True  # False = "don't stitch this shape"
+    spacing_mm: Optional[float] = None  # thickness: fill row gap / satin stitch gap
+    pull_mm: Optional[float] = None  # extra width (shrink compensation)
+    bold: Optional[bool] = None  # outlines sewn 3x (True) / once (False)
+
+    @property
+    def customised(self) -> bool:
+        return self.settings() != _DEFAULT_SETTINGS
+
+    def settings(self) -> tuple:
+        """All per-shape settings as one value. Merging, re-extract carry-over, reset
+        and undo work on this tuple, so new settings only need adding here."""
+        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold)
+
+    def apply_settings(self, settings: tuple) -> None:
+        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold) = settings
+
+    def clear_settings(self) -> None:
+        self.apply_settings(_DEFAULT_SETTINGS)
+
+    def to_dict(self) -> dict:
+        d = {
+            "id": self.id,
+            "layer": self.layer,
+            "kind": self.kind,
+            "stroke_width_mm": self.stroke_width_mm,
+            "wkt": self.geometry.wkt,
+        }
+        # overrides are only written when set, so un-customised designs serialise as before
+        if self.stitch_type is not None:
+            d["stitch_type"] = self.stitch_type
+        if self.angle is not None:
+            d["angle"] = self.angle
+        if not self.enabled:
+            d["enabled"] = False
+        if self.spacing_mm is not None:
+            d["spacing_mm"] = self.spacing_mm
+        if self.pull_mm is not None:
+            d["pull_mm"] = self.pull_mm
+        if self.bold is not None:
+            d["bold"] = self.bold
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "DesignObject":
+        st = d.get("stitch_type")
+        angle = d.get("angle")
+        bold = d.get("bold")
+        return cls(
+            layer=int(d["layer"]),
+            geometry=wkt.loads(d["wkt"]),
+            kind=d.get("kind", "area"),
+            stroke_width_mm=float(d.get("stroke_width_mm", 0.0)),
+            id=str(d.get("id") or new_object_id()),  # designs saved before ids existed get one
+            stitch_type=st if st in STITCH_TYPES else None,
+            angle=None if angle in (None, "") else normalize_angle(angle),
+            enabled=bool(d.get("enabled", True)),
+            spacing_mm=_in_range(d.get("spacing_mm"), SPACING_RANGE_MM),
+            pull_mm=_in_range(d.get("pull_mm"), PULL_RANGE_MM),
+            bold=bold if isinstance(bold, bool) else None,
+        )
+
+
+_DEFAULT_SETTINGS = (None, None, True, None, None, None)
+
+
+_CONFLICT_WARNING = (
+    "Some shapes that were joined together had different stitch settings - "
+    "the settings of the largest shape were kept. Check them in the shape settings."
+)
+
+
+@dataclass
+class Design:
+    width_mm: float
+    height_mm: float
+    layers: list[ColorLayer]
+    objects: list[DesignObject]
+    source_kind: str = "raster"  # raster | vector
+    warnings: list[str] = field(default_factory=list)
+
+    def layer(self, index: int) -> ColorLayer:
+        for layer in self.layers:
+            if layer.index == index:
+                return layer
+        raise KeyError(index)
+
+    def layer_area(self, index: int) -> float:
+        return sum(o.geometry.area for o in self.objects if o.layer == index and o.kind == "area")
+
+    def normalize(self, layers: Optional[Iterable[int]] = None) -> "Design":
+        """Make each colour's filled areas continuous regions (in place; returns self).
+
+        A colour may hold several pieces that really form one region: shades merged
+        by the user, near-identical vector colours, overlapping same-colour shapes.
+        They are fused (seams bridged, see ``merge_areas``) so stitching treats them
+        exactly like artwork drawn in one solid colour. Line objects are untouched.
+        Idempotent; ``layers`` limits the work to the given layer indexes.
+        """
+        from .geometry import merge_areas_indexed, union_all
+
+        targets = {l.index for l in self.layers} if layers is None else set(layers)
+        pieces: dict[int, list[DesignObject]] = {}
+        for o in self.objects:
+            if o.kind == "area" and o.layer in targets:
+                pieces.setdefault(o.layer, []).append(o)
+
+        merged: dict[int, list[DesignObject]] = {}
+        conflicts = False
+        for layer, objs in pieces.items():
+            if len(objs) < 2:
+                merged[layer] = objs  # nothing to fuse: keep the objects (id + settings) as they are
+                continue
+            # everything of another colour blocks bridging (incl. disabled layers: fabric shows there)
+            others = [
+                o.geometry if o.kind == "area" else o.geometry.buffer(max(o.stroke_width_mm, 0.1) / 2)
+                for o in self.objects
+                if o.layer != layer
+            ]
+            out: list[DesignObject] = []
+            used_ids: set[str] = set()
+            for poly, src, untouched in merge_areas_indexed([o.geometry for o in objs], obstacles=union_all(others)):
+                sources = [objs[i] for i in src] or [max(objs, key=lambda o: o.geometry.area)]
+                main = max(sources, key=lambda o: o.geometry.area)
+                if untouched and main.id not in used_ids:
+                    out.append(main)  # untouched piece: keep the very same object
+                    used_ids.add(main.id)
+                    continue
+                # fused region: settings carry over if all pieces agree, else the largest piece wins
+                if len({o.settings() for o in sources}) > 1:
+                    conflicts = True
+                obj = DesignObject(
+                    layer=layer,
+                    geometry=poly,
+                    id=main.id if main.id not in used_ids else new_object_id(),
+                )
+                obj.apply_settings(main.settings())
+                used_ids.add(obj.id)
+                out.append(obj)
+            merged[layer] = out
+
+        objects: list[DesignObject] = []
+        emitted: set[int] = set()
+        for o in self.objects:  # keep original object order; a layer's regions go where its first piece was
+            if o.kind != "area" or o.layer not in merged:
+                objects.append(o)
+            elif o.layer not in emitted:
+                emitted.add(o.layer)
+                objects.extend(merged[o.layer])
+        self.objects = objects
+        if conflicts and _CONFLICT_WARNING not in self.warnings:
+            self.warnings.append(_CONFLICT_WARNING)
+        return self
+
+    def normalized(self) -> "Design":
+        """Normalized copy; the original (and its objects) are left untouched."""
+        copy = replace(self, layers=list(self.layers), objects=list(self.objects), warnings=list(self.warnings))
+        return copy.normalize()
+
+    def to_dict(self) -> dict:
+        return {
+            "width_mm": self.width_mm,
+            "height_mm": self.height_mm,
+            "source_kind": self.source_kind,
+            "warnings": self.warnings,
+            "layers": [l.to_dict() for l in self.layers],
+            "objects": [o.to_dict() for o in self.objects],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Design":
+        return cls(
+            width_mm=float(d["width_mm"]),
+            height_mm=float(d["height_mm"]),
+            layers=[ColorLayer.from_dict(l) for l in d["layers"]],
+            objects=[DesignObject.from_dict(o) for o in d["objects"]],
+            source_kind=d.get("source_kind", "raster"),
+            warnings=list(d.get("warnings", [])),
+        )
+
+    def summary(self) -> dict:
+        """Lightweight description for the UI (no geometry)."""
+        layers = []
+        for l in self.layers:
+            d = l.to_dict()
+            d["area_mm2"] = round(self.layer_area(l.index), 1)
+            d["objects"] = sum(1 for o in self.objects if o.layer == l.index)
+            d["customised"] = sum(1 for o in self.objects if o.layer == l.index and o.customised)
+            layers.append(d)
+        return {
+            "width_mm": round(self.width_mm, 2),
+            "height_mm": round(self.height_mm, 2),
+            "source_kind": self.source_kind,
+            "warnings": self.warnings,
+            "layers": layers,
+        }
+
+
+@dataclass
+class StitchParams:
+    """Digitizing parameters. Defaults are conservative commercial values
+    suitable for medium-weight fabric on multi-needle machines."""
+
+    fill_spacing_mm: float = 0.40  # tatami row spacing (density)
+    fill_stitch_length_mm: float = 3.5
+    fill_angle: float = 45.0
+    vary_fill_angle: bool = True  # rotate angle per layer for a richer look
+    satin_spacing_mm: float = 0.40
+    satin_max_width_mm: float = 7.0  # wider columns become fill
+    satin_min_width_mm: float = 0.8
+    running_stitch_length_mm: float = 2.5
+    running_repeats: int = 1  # 3 = bean / triple stitch
+    underlay: bool = True
+    underlay_spacing_mm: float = 2.5
+    pull_compensation_mm: float = 0.2
+    min_object_area_mm2: float = 0.8
+    trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
+    tie_stitches: bool = True
+    max_stitch_mm: float = 7.0
+    optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "StitchParams":
+        params = cls()
+        for key, value in (d or {}).items():
+            if hasattr(params, key) and value is not None:
+                current = getattr(params, key)
+                setattr(params, key, type(current)(value) if not isinstance(current, bool) else bool(value))
+        return params
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+# Stitch commands
+STITCH, JUMP, TRIM, COLOR_CHANGE = "stitch", "jump", "trim", "color_change"
+
+
+@dataclass
+class Run:
+    """A continuous sequence of needle penetrations belonging to one object."""
+
+    kind: str  # fill | satin | running | underlay | travel | tie
+    points: list[tuple[float, float]]
+    object_id: int = -1
+
+
+@dataclass
+class ColorBlock:
+    rgb: RGB
+    name: str
+    runs: list[Run] = field(default_factory=list)
+
+
+@dataclass
+class StitchPlan:
+    width_mm: float
+    height_mm: float
+    blocks: list[ColorBlock]
+    # Flattened machine sequence: (command, x_mm, y_mm, kind)
+    ops: list[tuple[str, float, float, str]] = field(default_factory=list)
+    optimization: dict = field(default_factory=dict)  # smart reduction report (empty when off)
+
+    def stats(self) -> dict:
+        stitches = sum(1 for op in self.ops if op[0] == STITCH)
+        jumps = sum(1 for op in self.ops if op[0] == JUMP)
+        trims = sum(1 for op in self.ops if op[0] == TRIM)
+        changes = sum(1 for op in self.ops if op[0] == COLOR_CHANGE)
+        thread_mm = 0.0
+        prev = None
+        for cmd, x, y, _ in self.ops:
+            if cmd == STITCH and prev is not None:
+                thread_mm += ((x - prev[0]) ** 2 + (y - prev[1]) ** 2) ** 0.5
+            if cmd in (STITCH, JUMP):
+                prev = (x, y)
+        xs = [op[1] for op in self.ops if op[0] == STITCH] or [0]
+        ys = [op[2] for op in self.ops if op[0] == STITCH] or [0]
+        # ~750 stitches/min average incl. slowdowns, ~10 s per trim, ~15 s per colour change
+        minutes = stitches / 750 + trims * 10 / 60 + changes * 15 / 60
+        return {
+            "stitches": stitches,
+            "jumps": jumps,
+            "trims": trims,
+            "color_changes": changes,
+            "colors": len(self.blocks),
+            "width_mm": round(max(xs) - min(xs), 1),
+            "height_mm": round(max(ys) - min(ys), 1),
+            # top thread ~ stitched length * 1.0, bobbin ~ 1/3; report top thread metres
+            "thread_m": round(thread_mm / 1000 * 1.1, 1),
+            "est_minutes": round(minutes, 1),
+        }
