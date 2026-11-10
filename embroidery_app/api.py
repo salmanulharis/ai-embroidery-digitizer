@@ -14,7 +14,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import service
-from .ai import AIError, provider_status
+from .ai import AIError
+from .ai import catalog as ai_catalog
+from .ai.tasks import CLEAN_MODES
 from .export import FORMATS
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
@@ -57,7 +59,7 @@ async def _bad_request(_: Request, exc: ValueError):
 
 @app.exception_handler(AIError)
 async def _ai_error(_: Request, exc: AIError):
-    return JSONResponse({"detail": f"AI provider error: {exc}"}, status_code=502)
+    return JSONResponse({"detail": f"AI service: {exc}"}, status_code=502)
 
 
 class ExtractBody(BaseModel):
@@ -92,9 +94,31 @@ class ResetBody(BaseModel):
     ids: Optional[list[str]] = None  # None / empty = every shape
 
 
+class AISettings(BaseModel):
+    """The user's choice of AI service. The key is used for this request only."""
+
+    provider: Optional[str] = None  # None / "builtin" = no AI, built-in algorithms
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    edit_model: Optional[str] = None
+    vision_model: Optional[str] = None
+
+    def as_dict(self) -> Optional[dict]:
+        return None if not self.provider or self.provider == "builtin" else self.model_dump()
+
+
 class AIBody(BaseModel):
-    provider: str
-    colors: Optional[int] = 6
+    ai: Optional[AISettings] = None
+    provider: Optional[str] = None  # older clients: server-configured provider by name
+    mode: str = "redraw"  # clean-up type
+    colors: Optional[int] = None
+    width_mm: Optional[float] = None
+    refresh: bool = False
+
+    def settings(self) -> Optional[dict]:
+        if self.ai is not None:
+            return self.ai.as_dict()
+        return {"provider": self.provider} if self.provider and self.provider != "builtin" else None
 
 
 @app.get("/api/config")
@@ -104,9 +128,19 @@ def get_config():
         "raster_defaults": asdict(RasterOptions()),
         "vector_defaults": asdict(VectorOptions()),
         "stitch_defaults": StitchParams().to_dict(),
-        "ai": provider_status(),
+        "ai": ai_catalog(),
+        "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,
     }
+
+
+@app.post("/api/ai/models")
+def ai_models(body: AIBody):
+    """Live model list of a provider (with the user's key) + recommended picks."""
+    ai = body.settings()
+    if not ai:
+        raise ValueError("Choose an AI service first.")
+    return service.ai_models(ai, body.refresh)
 
 
 @app.post("/api/projects")
@@ -180,7 +214,7 @@ def export(pid: str, fmt: str):
 
 @app.post("/api/projects/{pid}/ai/clean")
 def ai_clean(pid: str, body: AIBody):
-    return service.ai_clean(pid, body.provider, body.colors or 6)
+    return service.ai_clean(pid, body.settings(), body.mode, body.colors)
 
 
 @app.post("/api/projects/{pid}/ai/revert")
@@ -188,9 +222,22 @@ def ai_revert(pid: str):
     return service.ai_revert(pid)
 
 
+@app.post("/api/projects/{pid}/ai/suggest")
+def ai_suggest(pid: str, body: AIBody):
+    """Recommended preparation settings: built-in analysis, refined by AI when configured."""
+    return service.ai_suggest(pid, body.settings(), body.width_mm)
+
+
 @app.post("/api/projects/{pid}/ai/analyze")
 def ai_analyze(pid: str, body: AIBody):
-    return service.ai_analyze(pid, body.provider)
+    """Older name of /ai/suggest, kept for compatibility."""
+    return service.ai_suggest(pid, body.settings(), body.width_mm)
+
+
+@app.post("/api/projects/{pid}/ai/review")
+def ai_review(pid: str, body: AIBody):
+    """Check the generated stitches: built-in rules, plus AI review when configured."""
+    return service.ai_review(pid, body.settings())
 
 
 @app.get("/")

@@ -20,7 +20,9 @@ def test_config():
     assert r.status_code == 200
     body = r.json()
     assert "dst" in body["formats"] and body["stitch_defaults"]["underlay"] is True
-    assert {p["name"] for p in body["ai"]} == {"openai", "gemini", "openrouter", "ollama"}
+    assert {"openai", "gemini", "openrouter", "anthropic", "ollama", "custom"} <= {p["id"] for p in body["ai"]}
+    assert all({"label", "capabilities", "needs_key", "server_configured"} <= set(p) for p in body["ai"])
+    assert set(body["ai_clean_modes"]) == {"redraw", "remove_background", "enhance"}
 
 
 def test_full_raster_workflow(logo_png):
@@ -75,7 +77,7 @@ def test_svg_workflow(svg_text):
 
 
 def test_ai_file_via_pdf_compat():
-    fitz = pytest.importorskip("fitz")
+    fitz = pytest.importorskip("pymupdf")
     doc = fitz.open()
     page = doc.new_page(width=300, height=200)
     page.draw_rect(fitz.Rect(20, 20, 180, 180), color=None, fill=(0.1, 0.3, 0.8))

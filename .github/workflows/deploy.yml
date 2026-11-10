@@ -1,0 +1,143 @@
+# Release pipeline: runs ONLY when a version tag (v1.2.3) is pushed.
+# Normal commits and branch pushes never deploy.
+#   git tag v1.0.0 && git push origin v1.0.0
+name: Release & deploy
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q -W error::DeprecationWarning
+
+  deploy:
+    name: Deploy to EC2
+    needs: test
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: https://${{ vars.APP_DOMAIN }}
+    env:
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ${{ vars.EC2_USER }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Allow only tags on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Tag ${GITHUB_REF_NAME} is not on main - merge to main first, then tag."; exit 1; }
+
+      - name: Check required variables and secrets
+        env:
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
+          EC2_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+          HAS_SSH_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY != '' }}
+          BASIC_AUTH_USER: ${{ vars.BASIC_AUTH_USER }}
+          HAS_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD != '' }}
+        run: |
+          missing=""
+          for v in EC2_HOST EC2_USER APP_DOMAIN LETSENCRYPT_EMAIL EC2_KNOWN_HOSTS; do
+            [ -n "${!v}" ] || missing="$missing $v(variable)"
+          done
+          [ "$HAS_SSH_KEY" = "true" ] || missing="$missing EC2_SSH_PRIVATE_KEY(secret)"
+          if [ -n "$BASIC_AUTH_USER" ] && [ "$HAS_AUTH_PASSWORD" != "true" ]; then missing="$missing BASIC_AUTH_PASSWORD(secret)"; fi
+          if [ -n "$missing" ]; then echo "::error::Missing:$missing"; exit 1; fi
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $EC2_HOST
+            User $EC2_USER
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+          ssh server 'echo "Connected to $(hostname)"'
+
+      - name: Upload release ${{ github.ref_name }}
+        run: |
+          rsync -az --delete --exclude .git --exclude .github --exclude data --exclude .venv \
+            ./ server:release/
+
+      - name: Install and restart on the server
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          DOMAIN: ${{ vars.APP_DOMAIN }}
+          EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
+          BASIC_AUTH_USER: ${{ vars.BASIC_AUTH_USER }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+          MAX_UPLOAD_MB: ${{ vars.MAX_UPLOAD_MB }}
+          RASTER_MAX_SIDE_PX: ${{ vars.RASTER_MAX_SIDE_PX }}
+          RASTER_PX_PER_MM: ${{ vars.RASTER_PX_PER_MM }}
+          AI_TIMEOUT_S: ${{ vars.AI_TIMEOUT_S }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL }}
+          GEMINI_VISION_MODEL: ${{ vars.GEMINI_VISION_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL }}
+          OPENAI_VISION_MODEL: ${{ vars.OPENAI_VISION_MODEL }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_IMAGE_MODEL: ${{ vars.OPENROUTER_IMAGE_MODEL }}
+          OPENROUTER_VISION_MODEL: ${{ vars.OPENROUTER_VISION_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_VISION_MODEL: ${{ vars.ANTHROPIC_VISION_MODEL }}
+        run: |
+          # Settings travel as one short-lived, owner-only file that setup.sh reads and shreds.
+          umask 077
+          : > settings.sh
+          for k in RELEASE_VERSION DOMAIN EMAIL BASIC_AUTH_USER BASIC_AUTH_PASSWORD \
+                   MAX_UPLOAD_MB RASTER_MAX_SIDE_PX RASTER_PX_PER_MM AI_TIMEOUT_S \
+                   GEMINI_API_KEY GEMINI_IMAGE_MODEL GEMINI_VISION_MODEL \
+                   OPENAI_API_KEY OPENAI_IMAGE_MODEL OPENAI_VISION_MODEL \
+                   OPENROUTER_API_KEY OPENROUTER_IMAGE_MODEL OPENROUTER_VISION_MODEL \
+                   ANTHROPIC_API_KEY ANTHROPIC_VISION_MODEL; do
+            if [ -n "${!k}" ]; then printf 'export %s=%q\n' "$k" "${!k}" >> settings.sh; fi
+          done
+          scp -q settings.sh server:.deploy-settings.sh
+          rm -f settings.sh
+          ssh server 'sudo SETTINGS_FILE="$HOME/.deploy-settings.sh" SOURCE_DIR="$HOME/release" bash "$HOME/release/deploy/ec2/setup.sh"'
+
+      - name: Check the live site
+        env:
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          BASIC_AUTH_USER: ${{ vars.BASIC_AUTH_USER }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+        run: |
+          auth=()
+          [ -n "$BASIC_AUTH_USER" ] && auth=(-u "$BASIC_AUTH_USER:$BASIC_AUTH_PASSWORD")
+          curl -fsS --retry 12 --retry-delay 10 --retry-all-errors "${auth[@]}" \
+            "https://$APP_DOMAIN/api/config" -o /dev/null
+          echo "https://$APP_DOMAIN is live with ${GITHUB_REF_NAME}"
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -rf ~/.ssh

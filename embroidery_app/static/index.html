@@ -16,6 +16,7 @@
     <li data-step="3">Create stitches</li>
     <li data-step="4">Download</li>
   </ol>
+  <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; AI settings <span id="aiBadge" class="badge">Built-in</span></button>
 </header>
 
 <main>
@@ -61,17 +62,24 @@
         <button class="primary" id="btnExtract">Update preview</button>
 
         <div id="aiBox" class="ai hidden">
-          <h3>AI helper <span class="muted">(optional)</span> <i data-help="ai"></i></h3>
-          <p class="muted small">Useful for photos and blurry or low-quality logos. Always compare the result with your original.</p>
-          <label><span class="lbl">AI service <i data-help="aiProvider"></i></span><select id="aiProvider"></select></label>
-          <div class="row">
-            <button id="btnAiClean">Redraw cleanly</button><i data-help="aiClean"></i>
-            <button id="btnAiAnalyze">Get advice</button><i data-help="aiAnalyze"></i>
-            <button id="btnAiRevert" class="ghost">Use my original</button>
+          <h3>Smart assistant <i data-help="ai"></i></h3>
+          <p class="small muted" id="aiUsing"></p>
+          <button type="button" id="btnAiSuggest">Suggest best settings</button><i data-help="aiSuggest"></i>
+          <div id="aiSuggestResult" class="ai-result" aria-live="polite"></div>
+          <div class="ai-clean">
+            <label><span class="lbl">Picture clean-up <i data-help="aiClean"></i></span>
+              <select id="aiCleanMode">
+                <option value="redraw">Redraw as clean artwork</option>
+                <option value="remove_background">Remove background only</option>
+                <option value="enhance">Sharpen &amp; enhance</option>
+              </select></label>
+            <div class="row">
+              <button type="button" id="btnAiClean">Clean up with AI</button>
+              <button type="button" id="btnAiRevert" class="ghost hidden">Use my original</button>
+            </div>
+            <p class="small muted" id="aiCleanNote"></p>
           </div>
-          <p id="aiResult" class="small"></p>
         </div>
-        <p class="muted small" id="aiNone"></p>
       </aside>
 
       <div class="card">
@@ -138,6 +146,11 @@
         <div id="shapePanel3" class="shapepanel" aria-live="polite"></div>
         <div id="optimizeInfo" class="optinfo hidden" aria-live="polite"></div>
         <div id="stats" class="stats"></div>
+        <div class="row review-row">
+          <button type="button" id="btnAiReview">&#10003; Check my stitches</button><i data-help="aiReview"></i>
+          <span class="small muted" id="aiReviewUsing"></span>
+        </div>
+        <div id="aiReviewResult" class="ai-result" aria-live="polite"></div>
         <div id="warnings3" class="warnings"></div>
         <h3 id="sequenceTitle" class="hidden">Thread order <i data-help="sequence"></i></h3>
         <div id="sequence" class="sequence"></div>
@@ -151,11 +164,52 @@
   </section>
 </main>
 
+<dialog id="aiDialog" aria-labelledby="aiDialogTitle">
+  <form method="dialog" class="ai-dialog" id="aiForm">
+    <div class="row between">
+      <h2 id="aiDialogTitle">AI settings</h2>
+      <button type="button" class="ghost" id="aiClose" aria-label="Close">&times;</button>
+    </div>
+    <p class="small muted">Optional. Without AI the built-in smart processing is used - everything works without a key.
+      Your key is kept in this browser and sent only with AI requests; the server never stores it. <i data-help="ai_keys"></i></p>
+
+    <label><span class="lbl">Use for advice &amp; stitch checks <i data-help="ai_vision_use"></i></span>
+      <select id="aiUseVision"></select></label>
+    <label><span class="lbl">Use for picture clean-up <i data-help="ai_edit_use"></i></span>
+      <select id="aiUseEdit"></select></label>
+
+    <h3>Set up a service</h3>
+    <label><span class="lbl">AI service</span><select id="aiProviderPick"></select></label>
+    <p class="small muted" id="aiProviderHelp"></p>
+    <div id="aiKeyRow">
+      <label><span class="lbl">API key <a id="aiKeyLink" target="_blank" rel="noopener noreferrer" class="small">Get a key</a></span>
+        <span class="row nowrap-row"><input type="password" id="aiKey" autocomplete="off" spellcheck="false" placeholder="Paste your key">
+        <button type="button" class="ghost small" id="aiKeyShow" aria-pressed="false">Show</button></span></label>
+    </div>
+    <label id="aiUrlRow"><span class="lbl">Address <i data-help="ai_base_url"></i></span>
+      <input type="url" id="aiUrl" spellcheck="false" placeholder="https://"></label>
+    <div class="row">
+      <button type="button" id="aiLoadModels">Connect &amp; load models</button>
+      <span class="small" id="aiStatus" aria-live="polite"></span>
+    </div>
+    <label id="aiVisionModelRow"><span class="lbl">Model for advice &amp; checks <i data-help="ai_model"></i></span>
+      <select id="aiVisionModel"></select></label>
+    <label id="aiEditModelRow"><span class="lbl">Model for clean-up <i data-help="ai_model"></i></span>
+      <select id="aiEditModel"></select></label>
+    <label class="check"><input type="checkbox" id="aiRemember"> Remember on this device <i data-help="ai_remember"></i></label>
+    <div class="row end">
+      <button type="button" class="ghost" id="aiForget">Remove this key</button>
+      <button type="button" class="primary" id="aiSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 <div id="toast" class="toast hidden" role="alert"></div>
 <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">Working…</span></div>
 <script src="/static/help.js"></script>
 <script src="/static/shapes.js"></script>
+<script src="/static/ai.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

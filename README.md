@@ -20,11 +20,45 @@ python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
 python run.py                     # open http://127.0.0.1:8000
-pytest                            # 23 tests: pipeline, export round-trip, API
+pytest                            # 93 tests: pipeline, exports, API, editing, AI (mocked)
 ```
 
-AI is optional. To turn it on, copy `.env.example` to `.env` and add any OpenAI, Gemini or OpenRouter key, and/or
-point it at an Ollama vision model.
+**Deploy to AWS EC2 with GitHub Actions** (deploys on version tags only): see [deploy/ec2/README.md](deploy/ec2/README.md).
+
+AI is optional. Open **⚙ AI settings** in the app to add your own key, or set server-wide keys in `.env`
+(copy `.env.example`). See [AI assistant](#ai-assistant).
+
+## AI assistant
+
+Every assistant feature works **without AI**. Built-in algorithms answer by default, and an AI service
+refines the result when configured.
+
+| Feature | Without AI (built-in) | With an AI service |
+|---|---|---|
+| **Suggest best settings** (step 2) | Measures the picture: background, colour count (k-means in LAB), noise level, thinnest line in mm at your size, photo vs. logo | A vision model judges the colour count, background and picture type. Measured values (noise, thin lines) stay from the built-in analysis |
+| **Picture clean-up**: redraw / remove background / sharpen & enhance | Not needed. The built-in preparation already denoises and removes plain backgrounds | An image model edits the picture. You always compare it with the original and can switch back |
+| **Check my stitches** (step 3) | Rule-based checks: density, foundation, thread cuts, tiny or very thin shapes, satin width, size and time, with one-click setting changes | A vision model also reviews the rendered stitch preview against the artwork |
+
+**Providers:**
+- Google Gemini
+- OpenAI
+- OpenRouter
+- Anthropic Claude
+- Ollama (local)
+- any OpenAI-compatible service (LM Studio, vLLM, Groq, …)
+
+**How it works:**
+- **Models are listed live** from each provider with the user's key and filtered by capability (image
+  editing or image understanding). A recommended model is preselected, so no model names go stale in the code.
+- **Keys** are entered in the browser and kept there: per session by default, or "Remember on this device".
+  They're sent only with AI requests, used for that one call, never saved or logged on the server, and
+  removed from error messages. Server-wide keys in `.env` are optional defaults.
+- **Safety:**
+  - AI answers are validated and clamped to safe ranges, and unknown settings are ignored.
+  - Any AI failure falls back to the built-in result with a note.
+  - `AI_ALLOW_PRIVATE_ENDPOINTS=0` stops users pointing the server at internal addresses on public deployments.
+- **Adding a provider:** one file in `embroidery_app/ai/providers/` with a `Provider` subclass and `@register`.
+  The settings screen, model lists and API pick it up automatically.
 
 ## Research summary and decisions
 
@@ -34,10 +68,10 @@ point it at an Ollama vision model.
 |---|---|---|
 | Background removal (logos) | Border-color detection, connected to the edge (deterministic, exact edges) | No |
 | Background removal (photos) | `rembg` / BiRefNet (local, free). Optional install | Optional |
-| Messy input (photo of a shirt, blurry or low-res logo) | Image-generation model redraws flat artwork (Gemini 2.5 Flash Image, `gpt-image-1`, via OpenRouter). User must approve: the model can change details or text | Optional, *where AI clearly wins* |
+| Messy input (photo of a shirt, blurry or low-res logo) | Image model redraws, cuts out or enhances the picture (Gemini image models, GPT Image, via OpenRouter…). User must approve: the model can change details or text | Optional, *where AI clearly wins* |
 | Color reduction | k-means in CIELAB + perceptual merge | No |
 | Vectorization | Smoothed label map → contour tracing (shapely). LLM-generated SVG is unreliable | No |
-| Parameter suggestions | Vision LLM (incl. local Ollama `qwen2.5vl`) suggests color count and flags cleanup | Optional, low value |
+| Parameter suggestions and stitch review | Built-in measurements and rules, refined by a vision model (incl. local Ollama `qwen3-vl`) | Optional |
 | Stitch generation | Geometric algorithms (scan-line tatami, satin columns, underlay). No AI model produces reliable stitch paths | No |
 
 AI costs money and isn't deterministic, so it's used only as an opt-in cleanup and advice step. The core
@@ -47,10 +81,10 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 | Need | Options considered | Chosen | Why |
 |---|---|---|---|
-| Embroidery file I/O | pyembroidery, libembroidery, Ink/Stitch | **pyembroidery** (MIT) | Pure Python. Writes DST, EXP, PES, JEF, VP3, U01 and TBF. Encodes DST trims the Tajima way |
+| Embroidery file I/O | pyembroidery (no release since Mar 2024), **pystitch**, libembroidery | **pystitch** (MIT) | The maintained Ink/Stitch fork of pyembroidery (released 2026), same API. DST/EXP/U01/JEF output is byte-identical; PES/VP3 differ only in rounding |
 | Stitch engine | Ink/Stitch (GPL, needs an Inkscape runtime, no supported headless library API), commercial engines (Wilcom, no API) | **Built-in engine** on shapely | Embeddable, testable, MIT-friendly. Ink/Stitch can be added later as an alternative backend |
-| SVG parsing | svgelements, svgpathtools, cairosvg | **svgelements** | Full transform, viewBox, CSS, arc and fill-rule support |
-| AI / PDF import | PyMuPDF, Inkscape CLI, Ghostscript | **PyMuPDF** | Modern `.ai` files are PDF containers. Converts to SVG with text as paths. *AGPL licence, see below* |
+| SVG / AI / PDF parsing | svgelements (inactive since 2024, and scaled transformed shapes inconsistently), svgpathtools, **PyMuPDF** | **PyMuPDF** plus a small CSS and gradient pre-pass | Actively maintained by Artifex. Handles transforms, `<use>`, arcs and fill rules consistently. The pre-pass adds Illustrator's `<style>` classes and gradient → average colour. *AGPL licence, see below* |
+| HTTP client (AI) | httpx (no release since Dec 2024), **httpx2**, SDKs per provider | **httpx2** (BSD) | Maintained successor by the Pydantic team, same API. Plain REST keeps each provider in one small file without vendor SDKs |
 | Raster tracing | potrace (GPL, 2-color), vtracer, own contour tracing | **OpenCV contours + label smoothing** | Gap-free shared borders between colors, which embroidery needs |
 | Web | Flask + Celery/Redis, FastAPI | **FastAPI**, no queue | Processing takes about a second, so a job queue adds ops cost without benefit |
 
@@ -65,7 +99,7 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 * **DSB/DSZ** (Dahao/Barudan) can't be written by any open-source library. DST covers the same machines.
 * Coordinates: 0.1 mm units, design centered on the hoop origin. Stitches are capped at 7 mm (the DST limit is 12.1 mm).
 
-> ⚠️ Generated files are validated by reading them back with pyembroidery and checking stitch counts,
+> ⚠️ Generated files are validated by reading them back with pystitch and checking stitch counts,
 > bounds, trims and color stops. Before production, sew a test piece on your WONYO machine and open the
 > DST in Wilcom to confirm trims and color stops behave as expected with your controller settings.
 
@@ -138,11 +172,17 @@ embroidery_app/
     generators.py     tatami, satin (area / line / band), running, underlay
     planner.py        classification, ordering, travel/jump/trim/lock assembly
   export/
-    embroidery.py     pyembroidery writers + worksheet
+    embroidery.py     pystitch writers + worksheet
     vector.py         clean SVG (mm)
     preview.py        browser preview JSON + realistic PNG render
-  ai/providers.py     OpenAI · Gemini · OpenRouter · Ollama (REST, no SDKs)
-  static/             index.html, app.js, style.css (no build step)
+  ai/
+    base.py           provider interface, credentials, safe HTTP (retry, redaction, endpoint check)
+    registry.py       provider registry, live model lists (cached), model choice
+    providers/        gemini · openai · openrouter · anthropic · ollama · custom (one file each)
+    builtin.py        non-AI picture analysis + stitch review (the default)
+    prompts.py        prompts per task
+    tasks.py          suggest / clean-up / review: built-in first, AI on top, validated
+  static/             index.html, app.js, shapes.js, ai.js, help.js, style.css (no build step)
 tests/                pytest suite
 ```
 
@@ -160,14 +200,24 @@ tests/                pytest suite
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |
 | POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, …}}` → preview data + stats |
 | GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip` |
-| POST | `/api/projects/{id}/ai/clean` · `ai/analyze` · `ai/revert` | optional AI assist |
+| POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
+| POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
+| POST | `/api/projects/{id}/ai/clean` | `{ai, mode: redraw\|remove_background\|enhance, colors?}` (needs an image-capable AI) |
+| POST | `/api/projects/{id}/ai/revert` | back to the original picture |
+| POST | `/api/projects/{id}/ai/review` | `{ai?}` → issues + setting changes for the current stitches |
+
+`ai` is `{provider, api_key?, base_url?, vision_model?, edit_model?}`. Leave it out (or use `provider: "builtin"`)
+for the built-in algorithms.
 
 ## Extending
 
 * **New stitch type**: add a generator in `stitch/generators.py` and a branch in `planner._stitch_item`.
 * **New input format**: convert it to SVG or RGBA in `service.create_project`.
-* **New AI provider**: subclass `Provider` in `ai/providers.py` and register it in `PROVIDERS`.
-* **Alternative stitch backend** (e.g. Ink/Stitch CLI): consume `design_to_svg()` output and return a pyembroidery pattern.
+* **New AI provider**: add `ai/providers/<name>.py` with a `Provider` subclass decorated with `@register`
+  (implement `list_models`, plus `edit_image` and/or `vision_json`), then import it in `ai/providers/__init__.py`.
+  Services that speak the OpenAI API need no code: use the "OpenAI-compatible" provider.
+* **New AI task**: add a prompt in `ai/prompts.py`, a built-in fallback in `ai/builtin.py` and the combination in `ai/tasks.py`.
+* **Alternative stitch backend** (e.g. Ink/Stitch CLI): consume `design_to_svg()` output and return a pystitch pattern.
 
 ## Known limitations / roadmap
 
@@ -179,7 +229,21 @@ tests/                pytest suite
 
 ## Licences
 
-The app's own code has no third-party copyleft. Dependency licences: pyembroidery (MIT), shapely (BSD),
-OpenCV (Apache-2), svgelements (MIT), FastAPI (MIT). **PyMuPDF is AGPL-3.0.** If you distribute the app or
-offer it as a network service without releasing your source, buy an Artifex commercial licence or drop
-`.ai`/PDF support (SVG import doesn't need it).
+The app's own code has no third-party copyleft. Dependency licences: pystitch (MIT), shapely (BSD), OpenCV
+(Apache-2), NumPy (BSD), Pillow (MIT-CMU), FastAPI (MIT), httpx2 (BSD).
+
+**PyMuPDF is AGPL-3.0, and it now handles all vector import (SVG, AI and PDF).** If you distribute the app
+or offer it as a public network service without releasing your source, buy an Artifex commercial licence.
+Picture (PNG/JPG) import doesn't use it.
+
+## Dependencies
+
+Every dependency is actively maintained (releases in 2026) and pinned to a tested minimum version in
+`requirements.txt`. Replaced in Nov 2026:
+- `pyembroidery` → `pystitch`
+- `svgelements` → PyMuPDF
+- `httpx` → `httpx2`
+- the deprecated `fitz` import → `pymupdf`
+
+The test suite runs with deprecation warnings treated as errors (`pytest -W error::DeprecationWarning`)
+to catch future deprecations early.

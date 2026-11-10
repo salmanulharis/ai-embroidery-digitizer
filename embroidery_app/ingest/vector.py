@@ -1,8 +1,11 @@
 """Vector artwork (SVG, AI, PDF) -> embroidery Design.
 
-* SVG is parsed with ``svgelements`` (transforms, viewBox, CSS, arcs, fill-rule).
+* Parsing uses PyMuPDF (MuPDF), which handles transforms, viewBox, ``<use>``, arcs,
+  fill rules and stroke widths consistently. A small pre-pass adds what MuPDF's SVG
+  reader lacks: ``<style>`` CSS rules (Illustrator exports colour every shape with
+  ``.cls-N`` classes) and gradient fills (replaced by their average colour).
 * Adobe Illustrator ``.ai`` files saved with "PDF compatibility" (the default since
-  CS) and PDFs are converted to SVG with PyMuPDF, then parsed the same way.
+  CS) and PDFs are converted to SVG with text as outlines, then parsed the same way.
 * Fills become area objects, strokes become line objects (stroke width kept so the
   stitch planner can choose running / satin / fill).
 * Overlapping shapes are "knocked out" in paint order (with a small underlap), as a
@@ -11,8 +14,9 @@
 
 from __future__ import annotations
 
-import io
 import math
+import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Optional
 
@@ -37,13 +41,22 @@ class VectorOptions:
     min_area_mm2: float = 0.5
 
 
+def pymupdf_module():
+    """PyMuPDF under its current import name (``fitz`` is deprecated)."""
+    try:
+        import pymupdf
+    except ImportError:  # pragma: no cover - very old PyMuPDF releases
+        try:
+            import fitz as pymupdf  # type: ignore[no-redef]
+        except ImportError as exc:
+            raise ValueError("Vector import needs PyMuPDF: pip install pymupdf") from exc
+    return pymupdf
+
+
 def ai_or_pdf_to_svg(data: bytes) -> str:
+    pymupdf = pymupdf_module()
     try:
-        import fitz  # PyMuPDF
-    except ImportError as exc:  # pragma: no cover
-        raise ValueError("PDF/AI import needs PyMuPDF: pip install pymupdf") from exc
-    try:
-        doc = fitz.open(stream=data, filetype="pdf")
+        doc = pymupdf.open(stream=data, filetype="pdf")
     except Exception as exc:
         raise ValueError(
             "This Illustrator file has no PDF-compatible content. Re-save it in Illustrator with "
@@ -62,103 +75,250 @@ class _Shape:
     stroke_width: float = 0.0
 
 
-def _subpath_points(sub, tolerance: float) -> list[tuple[float, float]]:
-    pts: list[tuple[float, float]] = []
-    for seg in sub:
-        name = type(seg).__name__
-        if name == "Move":
-            if seg.end is not None:
-                pts.append((seg.end.x, seg.end.y))
-            continue
-        if name in ("Line", "Close"):
-            if seg.end is not None:
-                pts.append((seg.end.x, seg.end.y))
-            continue
+# --------------------------------------------------------------------------- SVG pre-pass
+
+SVG_NS = "http://www.w3.org/2000/svg"
+XLINK_NS = "http://www.w3.org/1999/xlink"
+_GRADIENT_WARNING = "Colour fades (gradients) were replaced with one solid colour - check the thread colour."
+_SIMPLE_SELECTOR = re.compile(r"(\*|[A-Za-z][\w-]*)?((?:#[\w-]+)?)((?:\.[\w-]+)*)")
+_NAMED = {"black": "#000000", "white": "#ffffff", "red": "#ff0000", "green": "#008000", "blue": "#0000ff",
+          "yellow": "#ffff00", "gray": "#808080", "grey": "#808080", "orange": "#ffa500", "purple": "#800080"}
+
+
+def _local(tag) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _style_dict(style: str) -> dict[str, str]:
+    out = {}
+    for decl in style.split(";"):
+        if ":" in decl:
+            k, v = decl.split(":", 1)
+            out[k.strip().lower()] = v.replace("!important", "").strip()
+    return out
+
+
+def _parse_css(css: str) -> list[tuple[str, str, str, str]]:
+    """Simple selectors only (tag, #id, .class and combinations) - what design programs
+    emit. Returns (tag, id, classes, declarations) sorted by specificity, then order."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    css = re.sub(r"@[\w-]+[^{;]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "", css)  # drop @media / @font-face blocks
+    rules = []
+    for order, m in enumerate(re.finditer(r"([^{}]+)\{([^{}]*)\}", css)):
+        for sel in m.group(1).split(","):
+            sel = sel.strip()
+            sm = _SIMPLE_SELECTOR.fullmatch(sel)
+            if not sel or not sm:
+                continue  # descendant / attribute selectors are not supported
+            tag, sid, classes = sm.group(1) or "", sm.group(2)[1:], sm.group(3)
+            spec = (1 if sid else 0, classes.count("."), 1 if tag and tag != "*" else 0)
+            rules.append((spec, order, tag, sid, classes, m.group(2).strip()))
+    rules.sort(key=lambda r: (r[0], r[1]))
+    return [(tag, sid, classes, decls) for _, _, tag, sid, classes, decls in rules]
+
+
+def _hex_color(value: str | None) -> Optional[str]:
+    if not value:
+        return None
+    v = value.strip().lower()
+    if v in _NAMED:
+        return _NAMED[v]
+    m = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6})", v)
+    if m:
+        h = m.group(1)
+        return "#" + ("".join(c * 2 for c in h) if len(h) == 3 else h)
+    m = re.fullmatch(r"rgba?\(([^)]*)\)", v)
+    if m:
+        parts = [p.strip() for p in m.group(1).split(",")][:3]
         try:
-            length = seg.length(error=1e-3)
-        except Exception:
-            length = 10 * tolerance
-        n = max(2, min(400, int(math.ceil(length / tolerance))))
-        for p in seg.npoint(np.linspace(0, 1, n + 1)[1:]):
-            pts.append((float(p[0]), float(p[1])))
-    return pts
+            vals = [round(float(p[:-1]) * 2.55) if p.endswith("%") else round(float(p)) for p in parts]
+            return "#{:02x}{:02x}{:02x}".format(*(max(0, min(255, c)) for c in vals))
+        except ValueError:
+            return None
+    return None
 
 
-def _color(value) -> Optional[tuple[int, int, int, float]]:
-    from svgelements import Color
+def _gradient_colors(root: ET.Element) -> dict[str, str]:
+    """Average stop colour of every gradient (following href templates)."""
+    grads = {
+        el.get("id"): el for el in root.iter()
+        if _local(el.tag) in ("linearGradient", "radialGradient") and el.get("id")
+    }
 
-    if value is None or not isinstance(value, Color) or value.value is None:
+    def stops(el, depth=0):
+        found = [s for s in el if _local(s.tag) == "stop"]
+        if found or depth > 5:
+            return found
+        ref = (el.get(f"{{{XLINK_NS}}}href") or el.get("href") or "").lstrip("#")
+        return stops(grads[ref], depth + 1) if ref in grads else []
+
+    out = {}
+    for gid, el in grads.items():
+        cols = []
+        for s in stops(el):
+            c = _hex_color(_style_dict(s.get("style", "")).get("stop-color") or s.get("stop-color"))
+            if c:
+                cols.append([int(c[i : i + 2], 16) for i in (1, 3, 5)])
+        if cols:
+            out[gid] = "#{:02x}{:02x}{:02x}".format(*(int(round(v)) for v in np.mean(cols, axis=0)))
+    return out
+
+
+def _prepare_svg(svg_text: str | bytes) -> tuple[bytes, list[str]]:
+    """Inline <style> CSS and flatten gradient fills so MuPDF sees plain attributes."""
+    ET.register_namespace("", SVG_NS)
+    ET.register_namespace("xlink", XLINK_NS)
+    try:
+        root = ET.fromstring(svg_text.encode("utf-8") if isinstance(svg_text, str) else svg_text)
+    except ET.ParseError as exc:
+        raise ValueError("The SVG file could not be read - it is not valid SVG.") from exc
+    if _local(root.tag) != "svg":
+        raise ValueError("The file is not an SVG drawing.")
+    warnings: list[str] = []
+    elements = list(root.iter())
+    texts = sum(1 for el in elements if _local(el.tag) == "text")
+    images = sum(1 for el in elements if _local(el.tag) == "image")
+
+    css = "\n".join(el.text or "" for el in elements if _local(el.tag) == "style")
+    rules = _parse_css(css) if css.strip() else []
+    if rules:
+        for el in elements:
+            tag = _local(el.tag)
+            if tag in ("style", "svg", "defs", ""):
+                continue
+            classes = set((el.get("class") or "").split())
+            matched = [
+                decls for rtag, rid, rclasses, decls in rules
+                if (not rtag or rtag in ("*", tag))
+                and (not rid or el.get("id") == rid)
+                and all(c in classes for c in rclasses.split(".")[1:])
+            ]
+            if matched:
+                # later rules (higher specificity) override earlier ones and inline style wins,
+                # as in browsers. Merged into one declaration per property, because MuPDF
+                # keeps the *first* of duplicate properties.
+                merged: dict[str, str] = {}
+                for decls in matched + [el.get("style", "")]:
+                    merged.update(_style_dict(decls))
+                el.set("style", ";".join(f"{k}:{v}" for k, v in merged.items()))
+
+    grads = _gradient_colors(root)
+    replaced = False
+
+    def flatten(value: str) -> str:
+        def sub(m):
+            nonlocal replaced
+            replaced = True
+            return grads.get(m.group(1), "#808080")  # unknown pattern / gradient: neutral grey
+
+        return re.sub(r"url\(\s*['\"]?#([^'\")]+)['\"]?\s*\)", sub, value)
+
+    for el in elements:
+        for attr in ("fill", "stroke"):
+            if "url(" in (el.get(attr) or ""):
+                el.set(attr, flatten(el.get(attr)))
+        if "url(" in (el.get("style") or ""):
+            el.set("style", flatten(el.get("style")))
+    if replaced:
+        warnings.append(_GRADIENT_WARNING)
+    if texts:
+        warnings.append(
+            f"{texts} piece(s) of live text were skipped - in your design program convert text to "
+            "outlines (shapes) and upload again."
+        )
+    if images:
+        warnings.append(f"{images} picture(s) inside the artwork file were skipped - upload them separately as a picture.")
+    return ET.tostring(root, encoding="utf-8"), warnings
+
+
+# --------------------------------------------------------------------------- MuPDF drawings -> shapes
+
+def _subpaths(items, tol: float) -> list[list[tuple[float, float]]]:
+    """MuPDF drawing items (lines, cubic curves, rects, quads) -> point lists per subpath."""
+    out: list[list[tuple[float, float]]] = []
+    cur: list[tuple[float, float]] = []
+
+    def start_at(p):
+        nonlocal cur
+        if not cur or math.dist(cur[-1], p) > 1e-6:
+            if len(cur) >= 2:
+                out.append(cur)
+            cur = [p]
+
+    for it in items:
+        op = it[0]
+        if op == "l":
+            start_at((it[1].x, it[1].y))
+            cur.append((it[2].x, it[2].y))
+        elif op == "c":
+            p0, p1, p2, p3 = [(q.x, q.y) for q in it[1:5]]
+            start_at(p0)
+            length = math.dist(p0, p1) + math.dist(p1, p2) + math.dist(p2, p3)
+            n = max(2, min(400, int(math.ceil(length / tol))))
+            for t in np.linspace(0, 1, n + 1)[1:]:
+                u = 1 - t
+                cur.append((
+                    u**3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t**3 * p3[0],
+                    u**3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t**3 * p3[1],
+                ))
+        elif op in ("re", "qu"):
+            if len(cur) >= 2:
+                out.append(cur)
+            cur = []
+            q = it[1].quad if op == "re" else it[1]
+            out.append([(q.ul.x, q.ul.y), (q.ur.x, q.ur.y), (q.lr.x, q.lr.y), (q.ll.x, q.ll.y)])
+    if len(cur) >= 2:
+        out.append(cur)
+    return out
+
+
+def _rgb(color) -> Optional[tuple[int, int, int]]:
+    if color is None or len(color) < 3:
         return None
-    if value.alpha == 0:
-        return None
-    return (value.red, value.green, value.blue, value.alpha / 255)
+    return tuple(int(round(max(0.0, min(1.0, c)) * 255)) for c in color[:3])  # type: ignore[return-value]
+
+
+def _visible(opacity) -> bool:
+    return opacity is None or opacity > 0
 
 
 def _parse_svg(svg_text: str) -> tuple[list[_Shape], list[str]]:
-    from svgelements import SVG, Path, Shape, SVGImage, SVGText, Use
-
-    warnings: list[str] = []
-    svg = SVG.parse(io.StringIO(svg_text), reify=True, ppi=96.0)
-    bbox = svg.bbox()
-    span = max((bbox[2] - bbox[0]) if bbox else 100, (bbox[3] - bbox[1]) if bbox else 100, 1e-6)
-    tol = span / 1500.0  # curve flattening tolerance in document units
+    prepared, warnings = _prepare_svg(svg_text)
+    pymupdf = pymupdf_module()
+    try:
+        page = pymupdf.open(stream=prepared, filetype="svg")[0]
+    except Exception as exc:
+        raise ValueError("The SVG file could not be read.") from exc
+    r = page.rect
+    tol = max(r.width, r.height, 1e-6) / 1500.0  # curve flattening tolerance
 
     shapes: list[_Shape] = []
-    text_count = image_count = 0
-    for el in svg.elements():
-        if isinstance(el, SVGText):
-            text_count += 1
-            continue
-        if isinstance(el, SVGImage):
-            image_count += 1
-            continue
-        if not isinstance(el, Shape) or isinstance(el, Use):
-            continue
-        if el.values.get("visibility") == "hidden" or el.values.get("display") == "none":
-            continue
-        path = Path(el)
-        if len(path) == 0:
-            continue
-        fill, stroke = _color(el.fill), _color(el.stroke)
-        if fill is None and el.values.get("fill", "").startswith("url("):
-            fill = (128, 128, 128, 1.0)  # gradient/pattern: keep the shape, user picks a thread
-            warnings.append("Colour fades (gradients) were replaced with one solid colour - check the thread colour.")
-        subpaths = []
-        for sub in path.as_subpaths():
-            pts = _subpath_points(list(sub), tol)
-            if len(pts) >= 2:
-                subpaths.append(pts)
+    for d in page.get_drawings():
+        kind = d.get("type") or ""
+        subpaths = _subpaths(d.get("items", []), tol)
         if not subpaths:
             continue
-
+        fill = _rgb(d.get("fill")) if "f" in kind and _visible(d.get("fill_opacity")) else None
+        stroke = _rgb(d.get("color")) if "s" in kind and _visible(d.get("stroke_opacity")) else None
         if fill is not None:
             rings = [Polygon(p).buffer(0) for p in subpaths if len(p) >= 3]
-            rings = [r for r in rings if not r.is_empty and r.area > tol * tol]
+            rings = [g for g in rings if not g.is_empty and g.area > tol * tol]
             if rings:
-                if str(el.values.get("fill-rule", "nonzero")).lower() == "evenodd":
+                if d.get("even_odd"):
                     geom = rings[0]
-                    for r in rings[1:]:
-                        geom = geom.symmetric_difference(r)
+                    for g in rings[1:]:
+                        geom = geom.symmetric_difference(g)
                 else:
                     geom = _nonzero(subpaths, rings)
                 geom = clean_polygonal(geom)
                 if not geom.is_empty:
-                    shapes.append(_Shape(geom, fill[:3], "area"))  # type: ignore[arg-type]
+                    shapes.append(_Shape(geom, fill, "area"))
         if stroke is not None:
-            width = float(getattr(el, "stroke_width", 1.0) or 0.0)
-            try:
-                width *= math.sqrt(abs(el.transform.determinant)) if el.transform is not None else 1.0
-            except Exception:
-                pass
+            width = float(d.get("width") or 1.0)
             if width > 0:
                 lines = [LineString(p) for p in subpaths if len(p) >= 2]
                 geom = lines[0] if len(lines) == 1 else MultiLineString(lines)
-                shapes.append(_Shape(geom, stroke[:3], "line", width))  # type: ignore[arg-type]
-
-    if text_count:
-        warnings.append(f"{text_count} piece(s) of live text were skipped - in your design program convert text to outlines (shapes) and upload again.")
-    if image_count:
-        warnings.append(f"{image_count} picture(s) inside the artwork file were skipped - upload them separately as a picture.")
+                shapes.append(_Shape(geom, stroke, "line", width))
     return shapes, warnings
 
 

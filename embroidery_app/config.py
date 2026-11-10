@@ -35,23 +35,20 @@ class Settings:
     raster_px_per_mm: float = float(_env("RASTER_PX_PER_MM", "12"))
     raster_max_side_px: int = int(_env("RASTER_MAX_SIDE_PX", "2000"))
 
-    # --- Optional AI providers (all optional; app works fully without them) ---
-    openai_api_key: str = _env("OPENAI_API_KEY")
-    openai_image_model: str = _env("OPENAI_IMAGE_MODEL", "gpt-image-1")
-    openai_vision_model: str = _env("OPENAI_VISION_MODEL", "gpt-4o-mini")
-
-    gemini_api_key: str = _env("GEMINI_API_KEY")
-    gemini_image_model: str = _env("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
-    gemini_vision_model: str = _env("GEMINI_VISION_MODEL", "gemini-2.5-flash")
-
-    openrouter_api_key: str = _env("OPENROUTER_API_KEY")
-    openrouter_image_model: str = _env("OPENROUTER_IMAGE_MODEL", "google/gemini-2.5-flash-image")
-    openrouter_vision_model: str = _env("OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash")
-
-    ollama_url: str = _env("OLLAMA_URL", "http://localhost:11434")
-    ollama_vision_model: str = _env("OLLAMA_VISION_MODEL", "qwen2.5vl:7b")
-
+    # --- Optional AI (the app works fully without it) ---
+    # Each provider reads its own variables (e.g. OPENAI_API_KEY, GEMINI_VISION_MODEL) via
+    # ``env()`` - see embroidery_app/ai/providers/. Users can also bring their own keys
+    # from the browser; those are used per request and never stored on the server.
     ai_timeout_s: float = float(_env("AI_TIMEOUT_S", "120"))
+    # Allow AI endpoints on private/loopback addresses (needed for a local Ollama or
+    # LM Studio). Set to 0 on public deployments so users cannot make the server call
+    # internal addresses.
+    ai_allow_private_endpoints: bool = _env("AI_ALLOW_PRIVATE_ENDPOINTS", "1").lower() in ("1", "true", "yes")
+
+
+def env(name: str, default: str = "") -> str:
+    """Read an optional setting (used by AI providers for their own variables)."""
+    return _env(name, default)
 
 
 settings = Settings()

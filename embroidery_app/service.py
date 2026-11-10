@@ -23,7 +23,7 @@ import zipfile
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from .ai import get_provider
+from .ai import tasks as ai_tasks
 from .config import settings
 from .export import FORMATS, design_to_svg, export_embroidery, plan_preview_json, render_png, worksheet
 from .ingest import detect_kind
@@ -517,19 +517,27 @@ def export(pid: str, fmt: str) -> tuple[bytes, str, str]:
     raise ValueError(f"Unknown export format '{fmt}'")
 
 
-# --------------------------------------------------------------------------- AI
+# --------------------------------------------------------------------------- AI assistant
+# ``ai`` is the request's AI block: {"provider", "api_key", "base_url", "edit_model",
+# "vision_model"}. Keys are used for the single call only - never stored or logged.
+# Without it (or with provider "builtin") the built-in algorithms are used.
 
-def ai_clean(pid: str, provider: str, colors: int = 6) -> dict:
-    d = _dir(pid)
+def _raster_rgba(pid: str):
     meta = _meta(pid)
     if meta["kind"] != "raster":
-        raise ValueError("The AI helper works on pictures only - artwork files are already clean and are used as they are.")
+        raise ValueError("This works on pictures only - artwork files are already clean and are used as they are.")
+    return load_raster((_dir(pid) / "work.png").read_bytes()), meta
+
+
+def ai_clean(pid: str, ai: dict | None, mode: str = "redraw", colors: int | None = None) -> dict:
+    d = _dir(pid)
+    _, meta = _raster_rgba(pid)
     src = next(d.glob("source.*"))
-    rgba = load_raster(src.read_bytes())
-    cleaned = get_provider(provider).clean_image(encode_png(rgba), colors=colors)
-    rgba2 = load_raster(cleaned)  # validates it is an image
-    (d / "work.png").write_bytes(encode_png(rgba2))
-    meta["ai_cleaned"] = provider
+    rgba = load_raster(src.read_bytes())  # always clean up the original, not a previous AI result
+    png, label, model = ai_tasks.clean_image(rgba, ai, mode, colors or 6)
+    cleaned = load_raster(png)  # validates it is an image
+    (d / "work.png").write_bytes(encode_png(cleaned))
+    meta["ai_cleaned"] = {"provider": label, "model": model, "mode": mode}
     _save_meta(pid, meta)
     return meta
 
@@ -544,17 +552,25 @@ def ai_revert(pid: str) -> dict:
     return meta
 
 
-def ai_analyze(pid: str, provider: str) -> dict:
-    path, mime = source_file(pid)
-    if mime != "image/png":
-        raise ValueError("The AI helper works on pictures only.")
-    png = path.read_bytes()
-    # keep requests small: downscale large images
-    rgba = load_raster(png)
-    if max(rgba.shape[:2]) > 1024:
-        import cv2
+def ai_suggest(pid: str, ai: dict | None, width_mm: float | None = None) -> dict:
+    rgba, meta = _raster_rgba(pid)
+    width = float(width_mm or (meta.get("extract_options") or {}).get("width_mm") or 100)
+    return ai_tasks.suggest_settings(rgba, max(10.0, min(width, 500.0)), ai)
 
-        s = 1024 / max(rgba.shape[:2])
-        rgba = cv2.resize(rgba, (int(rgba.shape[1] * s), int(rgba.shape[0] * s)), interpolation=cv2.INTER_AREA)
-        png = encode_png(rgba)
-    return get_provider(provider).analyze(png)
+
+def ai_review(pid: str, ai: dict | None) -> dict:
+    plan = get_plan(pid)
+    design = load_design(pid)
+    params = StitchParams.from_dict(_meta(pid).get("stitch_params"))
+    preview = render_png(plan, px_per_mm=6.0)
+    original = None
+    if ai and ai.get("provider") not in (None, "", "builtin"):
+        path, mime = original_file(pid)
+        if mime == "image/png":
+            rgba = load_raster(path.read_bytes())
+            original = ai_tasks._png(rgba, 1024)
+    return ai_tasks.review_stitches(plan, design, params, preview, original, ai)
+
+
+def ai_models(ai: dict, refresh: bool = False) -> dict:
+    return ai_tasks.list_models(ai, refresh)

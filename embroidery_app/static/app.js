@@ -41,7 +41,6 @@ function showStep(n) {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // ------------------------------------------------------------------ init
-const AI_NAMES = { openai: "OpenAI", gemini: "Google Gemini", openrouter: "OpenRouter", ollama: "Ollama (on this computer)" };
 const DENOISE_LEVELS = ["Off", "Low", "Medium", "High"];
 
 async function init() {
@@ -58,9 +57,7 @@ async function init() {
   for (let i = 1; i <= 15; i++) nc.insertAdjacentHTML("beforeend", `<option value="${i}">${i}</option>`);
   $("denoise").oninput = () => $("denoise").setAttribute("aria-valuetext", DENOISE_LEVELS[+$("denoise").value]);
 
-  const ai = state.config.ai.filter((p) => p.available);
-  $("aiProvider").innerHTML = ai.map((p) => `<option value="${p.name}" data-clean="${p.clean}">${AI_NAMES[p.name] || p.name}${p.clean ? "" : " – advice only"}</option>`).join("");
-  $("aiNone").textContent = ai.length ? "" : "The optional AI helper is switched off. To use it, add an OpenAI, Gemini or OpenRouter key (or a local Ollama picture model) to the .env file.";
+  AI.init(state.config);
   buildStitchForm();
   bindUpload();
   bindCanvas();
@@ -90,12 +87,11 @@ async function upload(file) {
   const raster = meta.kind === "raster";
   $("rasterOpts").classList.toggle("hidden", !raster);
   $("vectorOpts").classList.toggle("hidden", raster);
-  $("aiBox").classList.toggle("hidden", !raster || !$("aiProvider").options.length);
+  AI.onProject(meta);
   $("fileInfo").textContent = `${meta.filename} · ${raster ? `picture, ${meta.info.width_px} × ${meta.info.height_px} pixels` : "artwork file"}`;
   $("layers").innerHTML = "";
   $("svgBox").innerHTML = "";
   $("btnApprove").disabled = true;
-  $("aiResult").textContent = "";
   await loadSource();
   showStep(2);
   await extract();
@@ -226,30 +222,7 @@ $("btnExtract").onclick = extract;
 $("btnApprove").onclick = async () => { showStep(3); await generate(); };
 $("btnBack").onclick = () => showStep(2);
 
-// AI
-$("btnAiClean").onclick = async () => {
-  const provider = $("aiProvider").value;
-  const opt = $("aiProvider").selectedOptions[0];
-  if (opt && opt.dataset.clean !== "true") return toast("This AI service can only give advice. Pick another service to redraw pictures.");
-  const colors = $("num_colors").value ? +$("num_colors").value : 6;
-  await busy("AI is redrawing your picture… (can take about 30 seconds)", () => api(`/api/projects/${state.project.id}/ai/clean`, json("POST", { provider, colors })));
-  await loadSource();
-  $("aiResult").textContent = "Your picture was redrawn by AI. Compare it carefully with your original before continuing.";
-  await extract();
-};
-$("btnAiRevert").onclick = async () => {
-  await busy("Restoring your original…", () => api(`/api/projects/${state.project.id}/ai/revert`, { method: "POST" }));
-  await loadSource();
-  $("aiResult").textContent = "";
-  await extract();
-};
-$("btnAiAnalyze").onclick = async () => {
-  const provider = $("aiProvider").value;
-  const r = await busy("Getting advice…", () => api(`/api/projects/${state.project.id}/ai/analyze`, json("POST", { provider })));
-  if (r.suggested_colors) $("num_colors").value = Math.min(15, Math.max(1, r.suggested_colors));
-  $("aiResult").innerHTML = `<b>${esc(r.design_type || "")}</b> · suggested colours: ${esc(r.suggested_colors ?? "?")}` +
-    (r.needs_ai_cleanup ? " · “Redraw cleanly” is recommended" : "") + `<br>${esc(r.notes || "")}`;
-};
+// AI assistant buttons live in ai.js
 
 // ------------------------------------------------------------------ step 3: stitch settings
 // [parameter name (sent to the server), plain-language label, min, max, step]
@@ -305,6 +278,7 @@ async function generate(opts = {}) {
   renderOptimizeInfo();
   renderStats();
   renderExports();
+  AI.onStitched();
   showStep(4);
   Shapes.refresh();
   if (opts.keepView) draw(); else fit(); // keep the zoom while editing shapes

@@ -1,20 +1,29 @@
-# Core (required)
-fastapi>=0.115
-uvicorn[standard]>=0.30
-python-multipart>=0.0.9
-numpy>=1.26
-opencv-python-headless>=4.10
-pillow>=10.4
-shapely>=2.0
-pyembroidery>=1.5
-svgelements>=1.9
-httpx>=0.27
+# Minimum versions are the ones this project is tested with (Nov 2026).
+# All packages are actively maintained; see README "Dependencies" for the reasoning.
 
-# Adobe Illustrator (.ai) / PDF import. NOTE: PyMuPDF is AGPL-3.0 licensed.
-pymupdf>=1.24
+# Web app
+fastapi>=0.162
+uvicorn[standard]>=0.54
+python-multipart>=0.0.33
 
-# Optional: AI background cut-out for photos (large download, ~200 MB of models)
-# rembg[cpu]>=2.0
+# Image processing and geometry
+numpy>=2.5
+opencv-python-headless>=5.0
+pillow>=13.0
+shapely>=2.2
+
+# Embroidery machine files - pystitch is the maintained Ink/Stitch fork of pyembroidery
+pystitch>=1.0.1
+
+# Vector artwork: SVG, Adobe Illustrator (.ai) and PDF import.
+# NOTE: PyMuPDF is AGPL-3.0 licensed (commercial licence available from Artifex).
+pymupdf>=2.1
+
+# HTTP client for the optional AI services (the maintained successor of httpx)
+httpx2>=2.16
+
+# Optional: AI cut-out of photo subjects (large download, ~200 MB of models)
+# rembg[cpu]>=2.0.87
 
 # Development
-pytest>=8
+pytest>=9.2

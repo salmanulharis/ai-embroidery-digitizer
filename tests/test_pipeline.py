@@ -1,6 +1,6 @@
 import math
 
-import pyembroidery as pe
+import pystitch as pe
 import pytest
 from shapely.geometry import LineString, Point, Polygon, box
 

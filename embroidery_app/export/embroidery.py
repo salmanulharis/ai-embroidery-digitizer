@@ -1,4 +1,4 @@
-"""StitchPlan -> machine embroidery files via pyembroidery.
+"""StitchPlan -> machine embroidery files via pystitch (the maintained Ink/Stitch fork of pyembroidery).
 
 DST (Tajima) is the primary target: it is read by Dahao-based controllers (used in
 WONYO and most Chinese multi-needle machines) and imported by Wilcom
@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-import pyembroidery as pe
+import pystitch as pe
 
 from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, StitchPlan, rgb_to_hex
 
@@ -26,7 +26,7 @@ FORMATS: dict[str, dict[str, str]] = {
     "vp3": {"label": "Pfaff/Husqvarna VP3", "note": "For Husqvarna Viking and Pfaff machines; keeps thread colours"},
 }
 
-UNITS_PER_MM = 10  # pyembroidery works in 0.1 mm
+UNITS_PER_MM = 10  # pystitch works in 0.1 mm
 
 
 def plan_to_pattern(plan: StitchPlan, name: str = "design") -> pe.EmbPattern:

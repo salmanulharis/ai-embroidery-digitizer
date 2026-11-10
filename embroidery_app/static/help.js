@@ -58,26 +58,55 @@ const HELP = {
     why: "Check it carefully before continuing: anything missing here will be missing in the embroidery.",
   },
   ai: {
-    t: "AI helper (optional)",
-    what: "Online AI services that can redraw a messy picture cleanly or give advice.",
-    why: "Helps with photos or blurry logos. Not needed for clean logos and artwork files.",
+    t: "Smart assistant",
+    what: "Helps you choose good settings and clean up pictures. Works without any AI service using built-in smart analysis; with an AI service (AI settings, top right) the advice gets better.",
+    why: "Photos, blurry or low-resolution logos benefit most. Clean logos and artwork files rarely need it.",
     eg: "A phone photo of a printed T-shirt logo.",
   },
-  aiProvider: {
-    t: "AI service",
-    what: "Which AI service to use. Only services you have set up appear here.",
-    why: "Services differ in price and quality; some can only give advice.",
+  aiSuggest: {
+    t: "Suggest best settings",
+    what: "Looks at your picture and recommends the number of thread colours, background handling, detail level and noise clean-up. You see the suggestions first and decide whether to apply them.",
+    why: "Measures things that are hard to judge by eye, like the thinnest line in millimetres at your chosen size.",
+    eg: "Warns when lines are too thin to sew and suggests a larger design width.",
   },
   aiClean: {
-    t: "Redraw cleanly",
-    what: "The AI redraws your picture as clean, flat artwork.",
-    why: "Removes blur, shadows and photo backgrounds. AI may change small details or text – always compare with your original.",
+    t: "Picture clean-up (AI)",
+    what: "An AI service redraws your picture before it is turned into stitches. Redraw = clean flat artwork; Remove background = keep the design, drop everything around it; Sharpen & enhance = fix blur and low resolution.",
+    why: "Removes blur, shadows and photo backgrounds. AI may change small details or text – always compare with your original (you can switch back anytime).",
     eg: "Turns a blurry scanned logo into crisp shapes.",
   },
-  aiAnalyze: {
-    t: "Get advice",
-    what: "The AI looks at your picture and suggests a number of colours and tips.",
-    why: "A quick second opinion – it does not change your design.",
+  aiReview: {
+    t: "Check my stitches",
+    what: "Checks the generated stitches for problems such as stitching that is too dense, thin shapes that may look broken, too many thread cuts or missing foundation stitches – and suggests setting changes you can apply with one click.",
+    why: "Catches problems before you sew on real fabric. Works without AI; with an AI service it also looks at the preview picture like a digitizer would.",
+  },
+  ai_keys: {
+    t: "Your API keys",
+    what: "AI services need a key from your own account with them. The key stays in this browser and is sent only with AI requests - the server uses it for that request and never saves it.",
+    why: "You stay in control of costs and can remove the key anytime.",
+    eg: "Google Gemini has a free tier - a good place to start.",
+  },
+  ai_vision_use: {
+    t: "Advice & stitch checks",
+    what: "Which service answers “Suggest best settings” and “Check my stitches”. “Built-in” uses the app's own analysis and needs no key.",
+  },
+  ai_edit_use: {
+    t: "Picture clean-up",
+    what: "Which service redraws or cleans your pictures. Only services that can create pictures are listed (Claude and Ollama cannot).",
+  },
+  ai_base_url: {
+    t: "Address",
+    what: "Where the service runs. Only needed for Ollama on another computer or for OpenAI-compatible services.",
+    eg: "http://localhost:11434 for Ollama, http://localhost:1234/v1 for LM Studio.",
+  },
+  ai_model: {
+    t: "Model",
+    what: "Which of the service's AI models to use. “Automatic” picks a suitable current model for you.",
+    why: "Press “Connect & load models” to see what your account offers. Bigger models give better results but cost more.",
+  },
+  ai_remember: {
+    t: "Remember on this device",
+    what: "Keeps your settings and keys after you close the browser. Leave it off on shared computers - then they are forgotten when you close the browser.",
   },
   layers_sew: {
     t: "Stitch this colour",
