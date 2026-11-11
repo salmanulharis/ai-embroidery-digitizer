@@ -370,10 +370,15 @@ const HELP = {
     what: "Shows the original picture (or the design as first extracted) faded under your shapes, exactly lined up with them - also when you zoom or move.",
     why: "Compare your edits with the artwork you started from. Use the slider to make it fainter or stronger.",
   },
+  layers_drag: {
+    t: "Drag to merge colours",
+    what: "Drag a colour by its ⠿ handle (or drag a colour chip) and drop it on another colour. Every area of the dragged colour takes the colour you drop it on, and both become one region.",
+    why: "Two shades of the same thread (for example light blue and blue, or two navies) sew as separate passes with overlaps and an extra thread change. Merged, they sew as one clean area. Undo separates them again.",
+  },
   colour_select: {
     t: "Select by colour",
     what: "Selects every area sewn in that thread colour, all over the design.",
-    why: "Change the stitch style, direction, thickness or thread colour of all those areas at once. Shift-click to add another colour.",
+    why: "Change the stitch style, direction, thickness or thread colour of all those areas at once. Shift-click to add another colour. Drag a chip onto another chip to merge the two colours.",
   },
   shape_colour: {
     t: "Thread colour",

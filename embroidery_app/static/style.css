@@ -180,11 +180,18 @@ canvas:active { cursor: grabbing; }
 .optinfo.warn { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
 
 /* ------------------------------------------------------------------ help "?" + tooltip */
-.help, .help-sample { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; min-width: 18px; min-height: 18px; padding: 0;
-  border-radius: 50%; border: 1px solid var(--muted); background: transparent; color: var(--muted); font: 600 11px/1 system-ui, sans-serif;
-  cursor: help; vertical-align: middle; margin-left: 2px; }
-.help:hover, .help:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; box-shadow: var(--focus); }
-@media (pointer: coarse) { .help { width: 24px; height: 24px; min-width: 24px; min-height: 24px; } }
+/* the "?" is an icon, not a button: its size must not follow button rules (tables, toolbars) */
+.help, .help-sample { display: inline-flex !important; align-items: center; justify-content: center; position: relative; flex: none;
+  width: 16px !important; height: 16px !important; min-width: 16px !important; min-height: 16px !important; max-height: 16px; padding: 0 !important;
+  margin: 0 0 0 3px; border-radius: 50% !important; border: 1px solid color-mix(in srgb, var(--muted) 55%, transparent) !important;
+  background: color-mix(in srgb, var(--muted) 10%, transparent) !important; color: var(--muted) !important;
+  font: 700 10px/1 system-ui, -apple-system, "Segoe UI", sans-serif !important; letter-spacing: 0; vertical-align: -2px;
+  cursor: help; box-shadow: none; transform: none !important; transition: color .15s, border-color .15s, background .15s; }
+.help:hover, .help:focus-visible { border-color: var(--accent) !important; color: var(--accent) !important;
+  background: var(--accent-soft) !important; outline: none; box-shadow: var(--focus); }
+.help::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; } /* larger tap area, same look */
+@media (pointer: coarse) { .help::after { inset: -10px; } }
+th .help, legend .help, .lbl .help { margin-left: 4px; }
 .tooltip { position: fixed; z-index: 30; max-width: min(320px, calc(100vw - 16px)); padding: 10px 12px; border-radius: var(--radius-sm);
   background: #1d2330; color: #f2f4f8; font-size: 13px; line-height: 1.45; box-shadow: 0 8px 28px rgba(0,0,0,.28); pointer-events: none; }
 .tooltip b { display: block; margin-bottom: 4px; font-size: 13px; }
@@ -326,3 +333,21 @@ body.pin .canvasWrap { height: clamp(240px, 52vh, 640px); }
   body.pin .preview-zone .hint { display: none; }
 }
 @media (max-width: 560px) { .hdr-actions .help { display: none; } }
+
+/* ------------------------------------------------------------------ drag a colour onto another to merge */
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+table.layers .grip-col { width: 28px; padding-left: 6px; padding-right: 0; text-align: center; }
+.grip { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 30px; border-radius: 6px;
+  color: var(--muted); font-size: 16px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.grip:hover { background: var(--raised); color: var(--accent); }
+.chip[data-drag-layer] { touch-action: none; }
+body.dragging-colour, body.dragging-colour * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+body.dragging-colour [data-merge-target]:not(.drag-src) { outline: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -2px; }
+body.dragging-colour .drag-src { opacity: .45; }
+body.dragging-colour .drop-ok { outline: 2px solid var(--accent) !important; background: var(--accent-soft) !important; }
+body.dragging-colour tr.drop-ok td { background: var(--accent-soft); }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px 6px 8px; border-radius: 999px; background: var(--card); color: var(--text); border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0,0,0,.3); font-size: 13px; white-space: nowrap; }
+.drag-ghost.ok { border-color: var(--accent); }
+.drag-ghost i { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); vertical-align: -3px; margin: 0 3px; }

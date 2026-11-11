@@ -223,3 +223,21 @@ def test_history_is_capped_and_old_single_undo_is_migrated():
     (d / "design.prev.json").write_text((d / "design.json").read_text(encoding="utf-8"), encoding="utf-8")
     assert service.can_undo(pid) and not (d / "design.prev.json").exists()
     assert client.post(f"/api/projects/{pid}/undo").status_code == 200
+
+
+def test_merging_a_shade_into_a_colour_makes_one_region_and_one_thread():
+    img = np.full((400, 700, 3), 255, np.uint8)
+    cv2.rectangle(img, (40, 100), (340, 300), (30, 60, 200), -1)  # blue
+    cv2.rectangle(img, (340, 100), (640, 300), (120, 170, 245), -1)  # light blue, touching
+    pid = client.post("/api/projects", files={"file": ("b.png", _png(img))}).json()["id"]
+    res = client.post(f"/api/projects/{pid}/extract", json={"options": {"width_mm": 80, "num_colors": 2}}).json()
+    blue = next(l for l in res["design"]["layers"] if l["rgb"][0] < 80)
+    light = next(l for l in res["design"]["layers"] if l["rgb"][0] > 80)
+    total = sum(o["area_mm2"] for o in res["objects"] if o["layer"] in (blue["index"], light["index"]))
+    r = client.post(f"/api/projects/{pid}/layers/merge", json={"source": light["index"], "target": blue["index"]}).json()
+    assert [l["hex"] for l in r["design"]["layers"] if l["enabled"]] == [blue["hex"]]  # light blue entry gone
+    merged = [o for o in r["objects"] if o["layer"] == blue["index"]]
+    assert len(merged) == 1 and merged[0]["area_mm2"] == pytest.approx(total, rel=0.01)  # one larger blue region
+    s = client.post(f"/api/projects/{pid}/stitch", json={"params": {}}).json()
+    assert len(s["colors"]) == 1 and s["stats"]["color_changes"] == 0
+    assert client.post(f"/api/projects/{pid}/undo").json()["design"]["layers"][1]["hex"] in (light["hex"], blue["hex"])

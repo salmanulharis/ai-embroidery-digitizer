@@ -238,12 +238,13 @@ function renderLayers() {
   const L = state.design.layers;
   const th = (label, key) => `<th scope="col">${label} ${Tip.icon(key)}</th>`;
   $("layers").innerHTML =
-    `<tr>${th("Stitch", "layers_sew")}${th("Thread", "layers_thread")}${th("Name", "layers_name")}${th("Area", "layers_area")}` +
+    `<tr><th scope="col" class="grip-col"><span class="visually-hidden">Drag to merge</span>${Tip.icon("layers_drag")}</th>${th("Stitch", "layers_sew")}${th("Thread", "layers_thread")}${th("Name", "layers_name")}${th("Area", "layers_area")}` +
     `${th("Stitch style", "layers_stitch")}${th("Direction", "layers_angle")}${th("Shapes", "layers_shapes")}${th("Order", "layers_order")}${th("Merge into", "layers_merge")}</tr>` +
     L.map((l, i) => {
       const n = esc(l.name);
       return `
-      <tr class="${l.enabled ? "" : "off"}" data-index="${l.index}">
+      <tr class="${l.enabled ? "" : "off"}" data-index="${l.index}" data-merge-target="${l.index}">
+        <td class="grip-col"><span class="grip" data-drag-layer="${l.index}" title="Drag onto another colour to merge ${n} into it" role="img" aria-label="Drag ${n} onto another colour to merge">⠿</span></td>
         <td><input type="checkbox" data-k="enabled" ${l.enabled ? "checked" : ""} aria-label="Stitch ${n}"></td>
         <td><input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}"></td>
         <td><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
@@ -264,8 +265,7 @@ $("layers").addEventListener("change", async (ev) => {
   const idx = +tr.dataset.index;
   if (ev.target.dataset.merge !== undefined) {
     if (!ev.target.value) return;
-    const res = await busy("Combining colours…", () => api(`/api/projects/${state.project.id}/layers/merge`, json("POST", { source: idx, target: +ev.target.value })));
-    return renderDesign(res);
+    return mergeColours(idx, +ev.target.value);
   }
   const layer = state.design.layers.find((l) => l.index === idx);
   const k = ev.target.dataset.k;
@@ -288,6 +288,100 @@ async function saveLayers() {
   const res = await api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers })).catch((e) => toast(e.message));
   if (res) renderDesign(res);
 }
+
+// ------------------------------------------------------------------ merging colours (menu or drag & drop)
+const layerName = (idx) => state.design.layers.find((l) => l.index === idx)?.name || "colour";
+
+// Every area of `source` takes the `target` thread; both become one region and the
+// `source` entry disappears. Stitches are recreated when the stitch preview is open.
+async function mergeColours(source, target) {
+  if (source === target || !state.project) return;
+  const from = layerName(source), to = layerName(target);
+  const res = await busy(`Merging ${from} into ${to}…`, () => api(`/api/projects/${state.project.id}/layers/merge`, json("POST", { source, target })));
+  renderDesign(res);
+  if (!$("step3").classList.contains("hidden")) await generate({ keepView: true });
+  toast(`${from} merged into ${to}. Use Undo to separate them again.`, true);
+}
+
+// Drag a colour (grip in the colour table, or a colour chip) and drop it on another one.
+// Pointer events, so it works with a mouse, a pen and touch alike.
+const ColourDrag = (() => {
+  let drag = null;
+  let swallowClickUntil = 0;
+  const THRESHOLD = 6;
+  const swatch = (idx) => state.design.layers.find((l) => l.index === idx)?.hex || "#999";
+
+  function targetAt(x, y) {
+    const t = document.elementFromPoint(x, y)?.closest("[data-merge-target]");
+    if (!t) return null;
+    const idx = +t.dataset.mergeTarget;
+    return idx === drag.source ? null : { el: t, idx };
+  }
+
+  function start(ev) {
+    const h = ev.target.closest("[data-drag-layer]");
+    if (!h || !state.design || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+    drag = { source: +h.dataset.dragLayer, handle: h, x0: ev.clientX, y0: ev.clientY, on: false, over: null, id: ev.pointerId };
+  }
+
+  function begin() {
+    drag.on = true;
+    const g = document.createElement("div");
+    g.className = "drag-ghost";
+    g.innerHTML = `<i style="background:${swatch(drag.source)}"></i><span>${esc(layerName(drag.source))}</span>`;
+    document.body.append(g);
+    drag.ghost = g;
+    document.body.classList.add("dragging-colour");
+    document.querySelectorAll(`[data-merge-target="${drag.source}"]`).forEach((n) => n.classList.add("drag-src"));
+    try { drag.handle.setPointerCapture(drag.id); } catch (_) {}
+  }
+
+  function move(ev) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    if (!drag.on) {
+      if (Math.hypot(ev.clientX - drag.x0, ev.clientY - drag.y0) < THRESHOLD) return;
+      begin();
+    }
+    ev.preventDefault();
+    drag.ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
+    const t = targetAt(ev.clientX, ev.clientY);
+    if (drag.over?.el !== t?.el) {
+      document.querySelectorAll(".drop-ok").forEach((n) => n.classList.remove("drop-ok"));
+      if (t) document.querySelectorAll(`[data-merge-target="${t.idx}"]`).forEach((n) => n.classList.add("drop-ok"));
+    }
+    drag.over = t;
+    drag.ghost.querySelector("span").innerHTML = t
+      ? `Merge <b>${esc(layerName(drag.source))}</b> into <i style="background:${swatch(t.idx)}"></i><b>${esc(layerName(t.idx))}</b>`
+      : esc(layerName(drag.source)) + " – drop on another colour";
+    drag.ghost.classList.toggle("ok", !!t);
+  }
+
+  function end(ev, cancelled = false) {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    if (!d.on) return; // a plain click: chips keep selecting their colour
+    d.ghost.remove();
+    document.body.classList.remove("dragging-colour");
+    document.querySelectorAll(".drop-ok, .drag-src").forEach((n) => n.classList.remove("drop-ok", "drag-src"));
+    // the click that follows a drag must not also select / toggle anything
+    swallowClickUntil = performance.now() + 400;
+    if (!cancelled && d.over) mergeColours(d.source, d.over.idx).catch(() => {});
+  }
+
+  function init() {
+    window.addEventListener("click", (e) => {
+      if (performance.now() < swallowClickUntil) { swallowClickUntil = 0; e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    document.addEventListener("pointerdown", start);
+    document.addEventListener("pointermove", move, { passive: false });
+    document.addEventListener("pointerup", (ev) => end(ev));
+    document.addEventListener("pointercancel", (ev) => end(ev, true));
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && drag?.on) end({ pointerId: drag.id }, true); });
+  }
+  return { init };
+})();
+ColourDrag.init();
 
 // Undo / redo: many steps, kept on the server per project (every design change).
 async function historyStep(kind) {

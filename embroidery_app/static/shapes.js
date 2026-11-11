@@ -158,7 +158,7 @@ const Shapes = (() => {
       <span class="small muted">Select by colour ${Tip.icon("colour_select")}</span>
       ${ls.map((l) => {
         const on = fullySelected(l.index);
-        return `<button type="button" class="chip ${on ? "on" : ""}" data-action="pick-colour" data-layer="${l.index}" aria-pressed="${on}" title="Select every ${esc(l.name)} area (Shift: add to selection)">
+        return `<button type="button" class="chip ${on ? "on" : ""}" data-action="pick-colour" data-layer="${l.index}" data-drag-layer="${l.index}" data-merge-target="${l.index}" aria-pressed="${on}" title="Click: select every ${esc(l.name)} area (Shift: add). Drag onto another colour to merge.">
           <i style="background:${l.hex}"></i>${esc(l.name)} <span class="muted">${layerObjects(l.index).length}</span></button>`;
       }).join("")}</div>`;
   }
