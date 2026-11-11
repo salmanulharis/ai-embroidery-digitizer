@@ -23,6 +23,8 @@ def plan_preview_json(plan: StitchPlan) -> dict:
         "kinds": list(KIND_CODES),
         "ops": data,
         "stats": plan.stats(),
+        "thread_weight": plan.thread_weight,
+        "risks": plan.risks,  # machine check markers (mm), see stitch/safety.py
     }
 
 

@@ -109,9 +109,13 @@ def test_optimised_plan_is_never_worse_and_keeps_the_design(design_factory):
 
 def test_thin_lettering_saves_duplicate_foundation_stitches():
     d = _script_text_design(110)
-    before = plan_stitches(d, StitchParams(optimize=False)).stats()["stitches"]
-    after = plan_stitches(d, StitchParams()).stats()["stitches"]
-    assert after < before * 0.8
+    before = plan_stitches(d, StitchParams(optimize=False))
+    after = plan_stitches(d, StitchParams())
+    # thin strokes are sewn by the stroke engine (no duplicate foundation to begin with);
+    # the remaining wider fill shapes still lose their duplicate underlay
+    under = lambda p: sum(1 for op in p.ops if op[3] == "underlay")
+    assert under(after) < under(before) * 0.5
+    assert after.stats()["stitches"] < before.stats()["stitches"] * 0.9
 
 
 def test_optimize_off_reports_nothing():

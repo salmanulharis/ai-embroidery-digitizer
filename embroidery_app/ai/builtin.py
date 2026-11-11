@@ -15,8 +15,8 @@ import cv2
 import numpy as np
 
 from ..colors import merge_palette, rgb_to_lab
-from ..ingest.raster import _assign, _border_background, _denoise, _kmeans_lab
-from ..models import Design, StitchParams, StitchPlan
+from ..ingest.raster import _assign, _border_background, _denoise, _fold_edge_shades, _kmeans_lab
+from ..models import THREAD_WEIGHTS, Design, StitchParams, StitchPlan
 
 # Valid ranges for settings the assistant may change (same limits as the UI).
 STITCH_LIMITS: dict[str, tuple] = {
@@ -29,6 +29,7 @@ STITCH_LIMITS: dict[str, tuple] = {
     "min_object_area_mm2": (0.0, 10.0),
     "underlay": (bool,),
     "optimize": (bool,),
+    "thread_weight": ("choice", THREAD_WEIGHTS),
 }
 
 
@@ -39,6 +40,12 @@ def clamp_change(name: str, value):
         return None
     if limits == (bool,):
         return value if isinstance(value, bool) else None
+    if limits[0] == "choice":
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            return None
+        return v if v in limits[1] else None
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -61,10 +68,11 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
     lab = rgb_to_lab(_denoise(rgb, 1))
     notes: list[str] = []
 
+    bg_lab = None
     if has_alpha:
         bg_found, fg = True, valid
     else:
-        bg, _ = _border_background(lab, valid, 14.0, connected_only=True)
+        bg, bg_lab = _border_background(lab, valid, 14.0, connected_only=True)
         bg_found, fg = bool(bg.any()), valid & ~bg
     if fg.sum() < 100:
         fg = valid
@@ -83,7 +91,15 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
     centers = _kmeans_lab(sample, min(16, max(1, len(sample) // 50)))
     weights = np.bincount(_assign(sample, centers), minlength=len(centers)).astype(float)
     groups = merge_palette(centers, weights, threshold=16.0)
-    share = np.array([weights[groups == g].sum() for g in range(groups.max() + 1)]) / max(weights.sum(), 1)
+    group_centers = np.array([
+        np.average(centers[groups == g], axis=0, weights=weights[groups == g] + 1e-9) for g in range(groups.max() + 1)
+    ], np.float32)
+    labels = np.full(fg.shape, -1, np.int32)
+    labels[fg] = groups[_assign(pixels, centers)]
+    # anti-aliased letter edges are not thread colours (same rule as the extraction)
+    labels = _fold_edge_shades(labels, rgb, group_centers, bg_lab)
+    counts_g = np.bincount(labels[labels >= 0], minlength=len(group_centers)).astype(float)
+    share = counts_g / max(counts_g.sum(), 1)
     significant = [g for g in range(len(share)) if share[g] >= 0.015]
     n_colors = max(1, len(significant))
 
@@ -94,8 +110,6 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
     photo_like = int(np.sum(counts >= max(1, 0.0005 * len(codes)))) > 120
 
     # thinnest line, in mm at the chosen design width
-    labels = np.full(fg.shape, -1, np.int32)
-    labels[fg] = groups[_assign(pixels, centers)]
     ys, xs = np.nonzero(fg)
     fg_w_px = (xs.max() - xs.min() + 1) if len(xs) else fg.shape[1]
     mm_per_px = width_mm / max(fg_w_px, 1)
@@ -109,9 +123,27 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
         widths.append(2 * dt[ridge])
     thin_mm = float(np.percentile(np.concatenate(widths), 10) * mm_per_px) if widths and sum(map(len, widths)) else None
 
-    min_feature = 0.7
-    if thin_mm is not None and thin_mm < 0.7:
-        min_feature = max(0.4, round(thin_mm * 0.8, 1))
+    min_feature = 0.3  # the extraction default: keeps lettering intact
+    if thin_mm is not None and thin_mm < 0.35:
+        min_feature = max(0.2, round(thin_mm * 0.8, 1))
+
+    # lettering: rows of similar-sized marks sitting on a common baseline
+    text = detect_text(fg, mm_per_px)
+    thread_weight = 40
+    if text["found"]:
+        h = text["letter_height_mm"]
+        if h < 8:
+            min_feature = min(min_feature, 0.25)  # keep letter shapes, holes and punctuation
+            denoise = min(denoise, 2)  # strong grain clean-up softens small letters
+        if h < 5:
+            thread_weight = 60
+        msg = (f"Text found: {text['lines']} line(s), letters about {h:.1f} mm tall. "
+               "Letters are kept sharp and sewn with satin that follows each stroke")
+        msg += " - fine 60 wt thread is suggested for letters this small." if thread_weight == 60 else "."
+        notes.append(msg)
+        if h < 3:
+            needed = int(math.ceil(width_mm * 4.0 / h / 5) * 5)
+            notes.append(f"Letters under 3 mm tall are hard to sew cleanly - about {needed} mm design width makes them 4 mm tall.")
     if thin_mm is not None and thin_mm < 0.5:
         needed = int(math.ceil(width_mm * 0.6 / thin_mm / 5) * 5)
         notes.append(
@@ -147,6 +179,8 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
             "min_feature_mm": min_feature,
             "denoise": denoise,
         },
+        "stitch": {"thread_weight": thread_weight},
+        "text": text,
         "cleanup": cleanup,
         "notes": notes,
         "measurements": {
@@ -157,17 +191,57 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
     }
 
 
+def detect_text(fg: np.ndarray, mm_per_px: float) -> dict:
+    """Find lines of lettering in a foreground mask: at least four marks of similar
+    height whose bottoms line up (a baseline), close together along the line. Works for
+    Latin print/script and Arabic (connected letters + dots) well enough to switch on the
+    fine-detail settings; it does not read the text."""
+    out = {"found": False, "lines": 0, "letter_height_mm": None}
+    if fg.sum() < 50:
+        return out
+    n, _, stats, _ = cv2.connectedComponentsWithStats(fg.astype(np.uint8), connectivity=8)
+    if n < 5:
+        return out
+    H = fg.shape[0]
+    x, y, w, h, area = (stats[1:, i].astype(float) for i in range(5))
+    ok = (h >= 4) & (h <= 0.35 * H) & (w <= 4 * h) & (area >= 6)
+    idx = np.nonzero(ok)[0]
+    if len(idx) < 4:
+        return out
+    bottom = y + h
+    cx = x + w / 2
+    text_ids = []
+    for i in idx:
+        same = idx[
+            (np.abs(bottom[idx] - bottom[i]) <= 0.25 * h[i])
+            & (h[idx] >= 0.5 * h[i]) & (h[idx] <= 2.0 * h[i])
+            & (np.abs(cx[idx] - cx[i]) <= 12 * h[i])
+        ]
+        if len(same) >= 4:
+            text_ids.append(i)
+    if len(text_ids) < 4:
+        return out
+    ids = np.array(text_ids)
+    order = ids[np.argsort(bottom[ids])]
+    lines, last = 0, None
+    for i in order:  # count baselines
+        if last is None or bottom[i] - last > 0.5 * h[i]:
+            lines += 1
+        last = bottom[i]
+    height = float(np.median(h[ids]) * mm_per_px)
+    return {"found": True, "lines": int(lines), "letter_height_mm": round(height, 1)}
+
+
 # --------------------------------------------------------------------------- stitch review
 
 def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
-    from ..stitch.planner import describe_objects
+    from ..stitch.safety import summarize_risks
 
     stats = plan.stats()
     issues: list[dict] = []
     changes: dict = {}
     enabled = {l.index for l in design.layers if l.enabled}
     shapes = [o for o in design.objects if o.layer in enabled and o.enabled]
-    info = {d["id"]: d for d in describe_objects(design, params)}
     area_mm2 = sum(o.geometry.area for o in shapes if o.kind == "area")
 
     def add(severity, title, detail, **change):
@@ -195,20 +269,45 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
             f"{stats['trims']} thread cuts add about {stats['trims'] * 10 // 60} min of sewing time.",
             trim_threshold_mm=3.0)
 
-    tiny = [o for o in shapes if o.kind == "area" and o.geometry.area < 2.0]
-    if len(tiny) > 5 and params.min_object_area_mm2 < 1.5:
-        add("medium", "Many tiny shapes",
-            f"{len(tiny)} shapes are smaller than 2 mm² - they become blobs of thread and need extra cuts.",
-            min_object_area_mm2=1.5)
+    # Tiny shapes are often dots and punctuation of lettering (meaningful - e.g. Arabic
+    # dots), so never suggest deleting them; suggest a larger design instead.
+    skipped = [o for o in shapes if o.kind == "area" and o.geometry.area < params.min_object_area_mm2]
+    tiny = [o for o in shapes if o.kind == "area" and params.min_object_area_mm2 <= o.geometry.area < 2.0]
+    if skipped:
+        add("medium", "Small marks are not stitched",
+            f"{len(skipped)} shape(s) such as dots or punctuation are smaller than "
+            f"“Skip shapes smaller than” ({params.min_object_area_mm2:g} mm²) and are left out. "
+            "Lower that setting or make the design larger to keep them.")
+    if len(tiny) > 5:
+        add("low", "Many very small shapes",
+            f"{len(tiny)} shapes are smaller than 2 mm² - they sew as tiny knots. For lettering, "
+            "a larger design width gives cleaner results.")
 
-    thin_satin = [
-        o for o in shapes if o.kind == "area" and info.get(o.id, {}).get("method") in ("satin", "satin_band")
-        and 2 * o.geometry.area / max(o.geometry.length, 1e-6) < 1.0
-    ]
-    if thin_satin and params.pull_compensation_mm < 0.3:
-        add("medium", "Very thin satin shapes",
-            f"{len(thin_satin)} satin shape(s) are under 1 mm wide and may look broken - a little extra width helps.",
-            pull_compensation_mm=min(params.pull_compensation_mm + 0.1, 0.4))
+    # Machine check (stitch/safety.py): where the thread may break or a detail may not show.
+    # Small lettering is never "fixed" with extra width - that closes the gaps between
+    # letters; the stroke engine already widens strokes as far as the gaps allow.
+    risk = summarize_risks(plan.risks)
+    if risk.get("thin"):
+        if params.thread_weight != 60:
+            add("medium", "Lettering thinner than the machine can sew",
+                f"{risk['thin']} spot(s) in small lettering are thinner than a 40 wt thread column and could not be "
+                "widened without closing gaps between letters. Fine 60 wt thread (with a 65/9 or 70/10 needle) sews "
+                "narrower columns cleanly - or make the design larger. See the Machine check view.",
+                thread_weight=60)
+        else:
+            add("medium", "Lettering thinner than the machine can sew",
+                f"{risk['thin']} spot(s) in small lettering are thinner than even fine thread can sew as satin; they are "
+                "sewn as a triple run or slightly narrow. Make the design larger for crisp letters. See the Machine check view.")
+    if risk.get("stack") or risk.get("short"):
+        n = risk.get("stack", 0) + risk.get("short", 0)
+        add("high", "Spots where the thread may break",
+            f"{n} spot(s) have very short stitches or hit one needle hole many times. Turning on smart stitch "
+            "reduction or a slightly lighter thickness helps; see the Machine check view.",
+            **({"optimize": True} if not params.optimize else {"satin_spacing_mm": params.satin_spacing_mm + 0.05}))
+    if risk.get("dense"):
+        add("medium", "Very dense spots",
+            f"{risk['dense']} small area(s) get more stitches than the fabric can take (hard spots, needle holes). "
+            "A slightly thinner fill helps.", fill_spacing_mm=params.fill_spacing_mm + 0.05)
 
     if params.satin_max_width_mm > 8:
         add("low", "Long satin stitches allowed",

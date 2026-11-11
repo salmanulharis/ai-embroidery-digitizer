@@ -5,10 +5,12 @@ Pipeline (deterministic, no AI required):
      final size in mm, so "detail" settings are physical (mm) not pixels
   2. edge-preserving denoise (flattens JPEG noise / paper texture)
   3. background removal: alpha channel, or border-colour flood (logos), or rembg
-  4. colour reduction: k-means in CIELAB + perceptual merge of near-duplicates
+  4. colour reduction: k-means in CIELAB + perceptual merge of near-duplicates;
+     anti-aliased edge shades are split per pixel between their two neighbour colours
   5. label-map smoothing (blurred one-hot argmax) -> smooth, gap-free region borders
-  6. speck removal: regions smaller than the minimum stitchable area are
-     re-assigned to their neighbours
+  6. speck removal: ragged/faint fragments smaller than the minimum area are
+     re-assigned to their neighbours; solid small marks (dots, hyphens, full stops,
+     letter holes) are kept - they carry meaning, especially in lettering
   7. contour tracing -> shapely polygons (with holes) in mm
 """
 
@@ -30,6 +32,14 @@ from ..models import ColorLayer, Design, DesignObject
 
 BG = -1
 
+# Small marks smaller than "remove specks" are still kept when they are real marks:
+MARK_MIN_MM2 = 0.04  # never keep anything smaller (~0.2 x 0.2 mm) - that is noise
+MARK_SOLID_DE = 12.0  # pixel counts as "solid" (full colour) when this close (ΔE) to its colour
+# A real mark has a solid core at full colour; faint noise blotches never reach it.
+# Thin strokes are mostly anti-aliased edge pixels, so the core can be a small share.
+MARK_MIN_SOLID = 0.2
+MARK_MIN_FILL = 0.3  # area / bounding box: dots and dashes are compact, slivers are not
+
 
 @dataclass
 class RasterOptions:
@@ -38,9 +48,13 @@ class RasterOptions:
     max_auto_colors: int = 10
     background: str = "auto"  # auto | none | color | ai
     bg_tolerance: float = 14.0  # ΔE
-    min_feature_mm: float = 0.7  # details thinner than this are smoothed away
-    min_area_mm2: float = 1.0
-    denoise: int = 2  # 0..3
+    min_feature_mm: float = 0.3  # details thinner than this are smoothed away
+    min_area_mm2: float = 1.0  # ragged/faint specks below this are removed (solid marks are kept)
+    denoise: int = 2  # 0..3 picture grain clean-up
+    # manual picture adjustments (applied before colours are found)
+    brightness: int = 0  # -100..100
+    contrast: int = 0  # -100..100
+    sharpen: int = 0  # 0..3 - crisper letter edges in soft / blurry pictures
 
 
 def load_raster(data: bytes) -> np.ndarray:
@@ -67,12 +81,34 @@ def _resample(rgba: np.ndarray, width_mm: float) -> tuple[np.ndarray, float]:
     return out, new_w / width_mm  # px per mm
 
 
+def _adjust(rgb: np.ndarray, brightness: int, contrast: int, sharpen: int) -> np.ndarray:
+    """Manual picture adjustments. Contrast pivots on mid-grey; sharpening is an unsharp
+    mask whose radius stays below a thin stroke, so it crisps letter edges without halos."""
+    b = int(np.clip(brightness, -100, 100))
+    c = int(np.clip(contrast, -100, 100))
+    k = int(np.clip(sharpen, 0, 3))
+    out = rgb
+    if b or c:
+        gain = (100 + c) / 100 if c <= 0 else 100 / max(1, 100 - c * 0.9)
+        lut = np.clip((np.arange(256, dtype=np.float32) - 128) * gain + 128 + b * 1.28, 0, 255).astype(np.uint8)
+        out = cv2.LUT(out, lut)
+    if k:
+        blur = cv2.GaussianBlur(out, (0, 0), 0.8 + 0.4 * k)
+        out = cv2.addWeighted(out, 1 + 0.6 * k, blur, -0.6 * k, 0)
+    return np.ascontiguousarray(out)
+
+
 def _denoise(rgb: np.ndarray, level: int) -> np.ndarray:
+    """Picture grain clean-up (JPEG blotches, scan/photo noise) before colours are found.
+
+    Edge-preserving bilateral passes keep letter edges sharp. The strongest level adds
+    a 3x3 median for salt-and-pepper noise; a 5x5 median used to erase strokes thinner
+    than ~3 px, which broke small lettering."""
     out = rgb
     for _ in range(level):
         out = cv2.bilateralFilter(out, 9, 35, 7)
-    if level >= 2:
-        out = cv2.medianBlur(out, 5)
+    if level >= 3:
+        out = cv2.medianBlur(out, 3)
     return out
 
 
@@ -175,14 +211,30 @@ def _smooth_labels(labels: np.ndarray, n: int, sigma: float) -> np.ndarray:
     return out
 
 
-def _remove_specks(labels: np.ndarray, n: int, min_px: int) -> np.ndarray:
+def _remove_specks(
+    labels: np.ndarray,
+    n: int,
+    min_px: int,
+    lab: Optional[np.ndarray] = None,
+    centers: Optional[np.ndarray] = None,
+    bg_lab: Optional[np.ndarray] = None,
+    keep_px: int = 0,
+) -> np.ndarray:
+    """Re-assign pieces smaller than ``min_px`` to their neighbours.
+
+    With ``lab``/``centers`` given, small pieces that are clearly real marks are kept:
+    at least ``keep_px`` big, mostly solid in their own colour and compact (dots,
+    hyphens, full stops, letter holes). Ragged or faint fragments are still removed."""
     unknown = np.zeros(labels.shape, bool)
     for c in range(BG, n):
         mask = (labels == c).astype(np.uint8)
         if not mask.any():
             continue
         count, comp, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        small = np.where(stats[1:, cv2.CC_STAT_AREA] < min_px)[0] + 1
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        small = np.where(areas < min_px)[0] + 1
+        if len(small) and keep_px and lab is not None:
+            small = small[~_real_marks(comp, stats, small, lab, centers, bg_lab, c, keep_px)]
         if len(small):
             unknown |= np.isin(comp, small)
     if not unknown.any():
@@ -204,6 +256,71 @@ def _remove_specks(labels: np.ndarray, n: int, min_px: int) -> np.ndarray:
             choice[upd] = c
         labels[todo] = choice[todo]
     labels[labels == -2] = BG
+    return labels
+
+
+def _real_marks(comp, stats, ids, lab, centers, bg_lab, c, keep_px) -> np.ndarray:
+    """Which of the small components ``ids`` (of class ``c``) are real marks."""
+    area = stats[ids, cv2.CC_STAT_AREA].astype(float)
+    box = (stats[ids, cv2.CC_STAT_WIDTH] * stats[ids, cv2.CC_STAT_HEIGHT]).astype(float)
+    keep = (area >= keep_px) & (area / np.maximum(box, 1) >= MARK_MIN_FILL)
+    ref = bg_lab if c == BG else (centers[c] if centers is not None and c < len(centers) else None)
+    if ref is None:
+        return keep  # e.g. transparent holes: no colour to compare against, shape test only
+    sel = np.isin(comp, ids[keep])
+    if not sel.any():
+        return keep
+    solid = delta_e(lab[sel], ref) < MARK_SOLID_DE
+    solid_count = np.bincount(comp[sel], weights=solid.astype(float), minlength=comp.max() + 1)
+    share = solid_count[ids] / np.maximum(area, 1)
+    return keep & (share >= MARK_MIN_SOLID)
+
+
+def _fold_edge_shades(labels: np.ndarray, rgb: np.ndarray, centers: np.ndarray, bg_lab: Optional[np.ndarray]) -> np.ndarray:
+    """Anti-aliased edges between two colours (e.g. navy text on white) form small
+    "in-between" colour clusters. Give each such pixel to whichever of the two
+    neighbouring colours it is closer to, so outlines sit where the original edge was -
+    instead of the whole in-between shade going to one side, which thins or fattens
+    thin strokes. Only thin, edge-only clusters lying on the mix of two colours are
+    touched; real colours (with an interior) are never folded."""
+    fg = labels >= 0
+    total = int(fg.sum())
+    if total == 0 or len(centers) < 2:
+        return labels
+    counts = np.bincount(labels[fg], minlength=len(centers))
+    rgb_c = lab_to_rgb(centers.reshape(-1, 3)).astype(np.float32)
+    candidates = []
+    for i in range(len(centers)):
+        if counts[i] == 0 or counts[i] / total >= 0.05:
+            continue
+        mask = (labels == i).astype(np.uint8)
+        interior = cv2.erode(mask, np.ones((3, 3), np.uint8)).sum()
+        if interior <= 0.25 * counts[i]:  # 1-2 px wide fringe, no body of its own
+            candidates.append(i)
+    if not candidates:
+        return labels
+    ends = [(c, rgb_c[c]) for c in range(len(centers)) if counts[c] and c not in candidates]
+    if bg_lab is not None:
+        ends.append((BG, lab_to_rgb(np.asarray(bg_lab, np.float32).reshape(1, 3))[0].astype(np.float32)))
+    if len(ends) < 2:
+        return labels
+    labels = labels.copy()
+    pix = rgb.astype(np.float32)
+    for i in candidates:
+        best = None
+        for k, (a, ca) in enumerate(ends):
+            for b, cb in ends[k + 1 :]:
+                ab = cb - ca
+                t = float(np.dot(rgb_c[i] - ca, ab) / max(float(np.dot(ab, ab)), 1e-6))
+                d = float(np.linalg.norm(rgb_c[i] - (ca + t * ab)))
+                if 0.08 < t < 0.92 and d < 22 and (best is None or d < best[0]):
+                    best = (d, a, ca, b, ab)
+        if best is None:
+            continue
+        _, a, ca, b, ab = best
+        sel = labels == i
+        t_pix = ((pix[sel] - ca) @ ab) / max(float(np.dot(ab, ab)), 1e-6)
+        labels[sel] = np.where(t_pix < 0.5, a, b)  # 50 % coverage = the true edge
     return labels
 
 
@@ -260,6 +377,7 @@ def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.
     valid = alpha >= 128 if has_alpha else np.ones(alpha.shape, bool)
 
     rgb = _denoise(rgb, max(0, min(3, opts.denoise)))
+    rgb = _adjust(rgb, opts.brightness, opts.contrast, opts.sharpen)
     lab = rgb_to_lab(rgb)
 
     warnings: list[str] = []
@@ -276,9 +394,15 @@ def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.
 
     labels, centers = _quantize(lab, fg, opts)
     n = len(centers)
+    if not opts.num_colors:
+        labels = _fold_edge_shades(labels, rgb, centers, bg_lab)
     min_feature_px = opts.min_feature_mm * ppm
     labels = _smooth_labels(labels, n, sigma=min_feature_px * 0.45)
-    labels = _remove_specks(labels, n, int(max(4, opts.min_area_mm2 * ppm * ppm)))
+    keep_px = int(max(4, MARK_MIN_MM2 * ppm * ppm))
+    labels = _remove_specks(
+        labels, n, int(max(4, opts.min_area_mm2 * ppm * ppm)),
+        lab=lab, centers=centers, bg_lab=bg_lab, keep_px=keep_px,
+    )
     if not opts.num_colors:
         labels = _fold_minor_colors(labels, centers)
 
@@ -291,7 +415,8 @@ def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.
         layer_area = 0.0
         for p in polys:
             g = affinity.scale(p, 1 / ppm, 1 / ppm, origin=(0, 0)).simplify(0.03)
-            if g.is_empty or g.area < opts.min_area_mm2:
+            # speck removal already decided what is noise; only drop tracing crumbs here
+            if g.is_empty or g.area < MARK_MIN_MM2 / 2:
                 continue
             objects.append(DesignObject(layer=c, geometry=g))
             layer_area += g.area

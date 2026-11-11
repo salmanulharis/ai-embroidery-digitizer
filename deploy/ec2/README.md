@@ -84,6 +84,10 @@ Answer `yes` when asked about the fingerprint.
 
 Skip both to make the site public.
 
+The login is switched with `SITE_LOGIN` at the top of `.github/workflows/deploy.yml`:
+`"on"` uses these two values, `"off"` (current, temporary) opens the site without signing in.
+Change it and push a new tag to apply.
+
 ## 7. Optional settings (only add what you need)
 | Save | Name | Default / example |
 |---|---|---|

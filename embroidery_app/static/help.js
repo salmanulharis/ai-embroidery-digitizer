@@ -30,21 +30,21 @@ const HELP = {
   },
   min_feature_mm: {
     t: "Smallest detail to keep",
-    what: "Lines or details thinner than this are smoothed away.",
-    why: "Thread is about 0.4 mm thick – details thinner than that cannot be sewn cleanly and look messy.",
-    eg: "0.7 mm suits most logos. Lower it (0.4) to keep fine details, raise it (1.2) to simplify a busy picture.",
+    what: "Controls how smooth the shapes are: lines and gaps thinner than this are smoothed away.",
+    why: "This is the setting that decides whether thin lettering stays intact. Raise it only to simplify a busy picture.",
+    eg: "0.3 mm keeps lettering intact (recommended). 0.7 mm or more simplifies – thin letters and small gaps may disappear.",
   },
   min_area_mm2: {
     t: "Remove specks",
-    what: "Tiny spots smaller than this area are removed.",
-    why: "Dust, noise and tiny dots would each need their own stitches and thread cuts.",
-    eg: "1 mm² is about the size of a 1 × 1 mm dot.",
+    what: "Removes ragged or faint spots smaller than this area (dust, scan or JPG noise).",
+    why: "Noise would otherwise become extra shapes with their own stitches and thread cuts. Solid small marks – dots, hyphens, full stops, holes in letters – are recognised and kept.",
+    eg: "1 mm² is about the size of a 1 × 1 mm spot.",
   },
   denoise: {
-    t: "Smooth out picture noise",
-    what: "Evens out grainy or blotchy colours before the colours are detected.",
-    why: "Photos and compressed JPG files have speckled colours that would otherwise become messy shapes.",
-    eg: "Left (0) for clean digital logos, right (3) for photos or blurry images.",
+    t: "Clean up picture grain",
+    what: "Evens out grainy or blotchy colours (photo noise, JPG blotches) before the colours are detected.",
+    why: "It does not change how smooth the shapes or letters are – use “Smallest detail to keep” for that.",
+    eg: "Left (0) for clean digital logos, middle for normal pictures, right (3) for photos or scans.",
   },
   knockout: {
     t: "Skip hidden parts",
@@ -258,6 +258,41 @@ const HELP = {
     why: "Smaller gap = fuller and shinier, but more stitches.",
     eg: "0.40 mm is standard; 0.35 mm for bolder lettering.",
   },
+  text_mode: {
+    t: "Text & fine details",
+    what: "How carefully small lettering and fine lines are kept. Automatic measures your picture: when it finds text, letter shapes, holes and punctuation are kept sharp.",
+    why: "Small text needs every detail; photos and rough sketches look cleaner when tiny details are smoothed away.",
+    eg: "Keep sharp: names, slogans, Arabic script, small print. Simplify: photos, textured artwork.",
+  },
+  brightness: {
+    t: "Brightness",
+    what: "Makes the picture lighter or darker before thread colours are picked.",
+    why: "Helps when a dark photo or scan makes colours look muddy or similar.",
+    eg: "Usually 0. Try +20 for a dark phone photo.",
+  },
+  contrast: {
+    t: "Contrast",
+    what: "Makes the difference between light and dark parts stronger or weaker.",
+    why: "More contrast separates text and shapes from a faded or greyish background.",
+    eg: "+20 to +40 for faded scans or photos of printed logos.",
+  },
+  sharpen: {
+    t: "Sharpen edges",
+    what: "Crisps up soft, blurry edges before the shapes are traced.",
+    why: "Blurry pictures make letters blobby; sharpening keeps their corners and gaps.",
+    eg: "Low or Medium for small or blurry pictures. Leave Off for clean artwork.",
+  },
+  thread_weight: {
+    t: "Thread",
+    what: "The thread you will load on the machine. Small lettering is sewn as a smooth satin that follows each stroke of a letter; thin strokes are widened to the narrowest column the thread can sew, only as far as the gaps between letters allow.",
+    why: "Fine 60 wt thread lies thinner, so letter strokes can stay narrower (0.6 mm instead of 0.8 mm) and letters stay open and readable. Use it with a 65/9 or 70/10 needle.",
+    eg: "Standard 40 wt for normal designs. Fine 60 wt for lettering under about 5 mm tall or fine script.",
+  },
+  stitch_lettering: {
+    t: "Lettering style",
+    what: "Sews a shape as letter strokes: a smooth satin column that follows each stroke, widened only as much as the gaps between letters allow.",
+    why: "Automatic already uses it for thin text; choose it for bolder text or script you want sewn like lettering.",
+  },
   satin_max_width_mm: {
     t: "Widest satin shape",
     what: "Shapes narrower than this are sewn in smooth satin; wider shapes switch to fill.",
@@ -291,8 +326,8 @@ const HELP = {
   min_object_area_mm2: {
     t: "Skip shapes smaller than",
     what: "Shapes smaller than this area are not sewn.",
-    why: "Tiny shapes become blobs of thread and need extra cuts.",
-    eg: "0.8 mm² is about a 1 mm dot.",
+    why: "Keep it low so dots and punctuation in lettering are stitched – tiny dots are enlarged to the smallest dot the machine can sew, where there is room.",
+    eg: "0.05 mm² keeps even a 0.25 mm dot. Raise it (e.g. 1) only to drop small stray shapes.",
   },
   underlay: {
     t: "Foundation stitches",
@@ -307,8 +342,8 @@ const HELP = {
   },
   tie_stitches: {
     t: "Lock stitches",
-    what: "Tiny back-and-forth stitches at the start and end of every section of thread.",
-    why: "Like a knot – they stop the stitching from coming undone after the thread is cut.",
+    what: "Small back-and-forth stitches wherever the thread is cut (start and end of each section). They follow the stitching path and are never shorter than the thread can take.",
+    why: "Like a knot – they stop the stitching from coming undone after the thread is cut. Short hops without a cut need no lock, which keeps tiny lettering clean.",
     eg: "Keep on for anything that will be worn or washed.",
   },
   triple_run: {
@@ -326,8 +361,8 @@ const HELP = {
   // ---------------------------------------------------------------- preview & results
   view: {
     t: "Preview style",
-    what: "Realistic: how the finished embroidery will look. Sewing direction: arrows show which way the needle moves. Stitch types: each kind of stitch in its own colour.",
-    why: "Use Stitch types to spot loose jumps (red dashes) and thread cuts (red dots).",
+    what: "Realistic: how the finished embroidery will look. Sewing direction: arrows show which way the needle moves. Stitch types: each kind of stitch in its own colour. Machine check: circles mark spots where the thread may break or a detail may not show.",
+    why: "Use Stitch types to spot loose jumps (red dashes) and thread cuts (red dots). Use Machine check before sending small lettering to the machine – orange circles are strokes too thin to sew cleanly: make the design bigger or choose fine 60 wt thread.",
   },
   variant: {
     t: "Compare versions",

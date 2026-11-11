@@ -19,8 +19,10 @@ from shapely.geometry.base import BaseGeometry
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan
 from . import generators as gen
+from . import strokes as st
 from .optimize import optimize_ops
 from .rows import best_satin_angle
+from .safety import machine_check, make_safe
 
 ANGLE_OFFSETS = (0, 90, -30, 60, 30, -60)
 
@@ -29,19 +31,26 @@ ANGLE_OFFSETS = (0, 90, -30, 60, 30, -60)
 class _Item:
     oid: int
     geom: BaseGeometry  # polygon (areas) or line
-    method: str  # fill | satin | satin_line | satin_band | running | outline
+    method: str  # fill | satin | satin_line | satin_band | stroke | dot | running | outline
     width: float = 0.0
     satin_angle: float | None = None
     centre: LineString | None = None  # centreline for ring-shaped bands
     angle: float = 0.0  # fill direction for this item
     source_id: str = ""  # DesignObject.id it came from
     params: StitchParams | None = None  # design params with this shape's overrides
+    ink: st.InkMap | None = None  # same-colour ink, so widened strokes keep gaps open
+    narrow_spots: list | None = None  # stroke spots that could not reach a sewable width
 
 
 # Methods whose stitch direction can be chosen; the others follow the shape's path.
 DIRECTIONAL_METHODS = ("fill", "satin")
 # Methods affected by the per-shape thickness / extra-width settings.
-DENSITY_METHODS = ("fill", "satin", "satin_band", "satin_line")
+DENSITY_METHODS = ("fill", "satin", "satin_band", "satin_line", "stroke", "dot")
+# Small-lettering methods (see stitch/strokes.py): narrow free-form strokes up to this
+# average width get satin that follows each stroke; wider shapes keep the usual methods.
+STROKE_MAX_WIDTH_MM = 2.0
+CLASSIC_MIN_WIDTH_MM = 1.0  # from this width plain satin / fill sew a shape well too
+BAND_MIN_WIDTH_MM = 1.2  # thinner rings go to the stroke engine (widening, gap protection)
 OUTLINE_METHODS = ("running", "outline")
 
 
@@ -76,6 +85,7 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
     items: list[_Item] = []
     if obj.kind == "line":
         w = obj.stroke_width_mm
+        forced = "auto" if forced == "lettering" else forced  # a line already follows its path
         if forced == "running" or (forced == "auto" and w < 1.0):
             return [_Item(-1, obj.geometry, "running", w)]
         if forced == "fill" or (forced == "auto" and w > params.satin_max_width_mm):
@@ -93,6 +103,32 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
             items.append(_Item(-1, poly, "fill"))
             continue
         narrow = poly.buffer(-params.satin_max_width_mm / 2).is_empty
+        if forced == "lettering":
+            # chosen by the user: follow the strokes whenever the shape can be sewn that way
+            limits = st.thread_limits(params.thread_weight, params.satin_min_width_mm)
+            if st.is_dot(poly, limits):
+                items.append(_Item(-1, poly, "dot"))
+                continue
+            if narrow and st.fits_stroke_engine(poly):
+                items.append(_Item(-1, poly, "stroke"))
+                continue
+            forced = "auto"  # too wide for a satin column (very large letters): usual methods
+        if forced == "auto" and satin_angle is None:
+            limits = st.thread_limits(params.thread_weight, params.satin_min_width_mm)
+            if st.is_dot(poly, limits):
+                items.append(_Item(-1, poly, "dot"))
+                continue
+            width = st.small_stroke_width(poly)
+            # clean rings already sewable as they are keep the band satin (below)
+            band_ok = len(poly.interiors) == 1 and width >= BAND_MIN_WIDTH_MM
+            if (
+                narrow and width < STROKE_MAX_WIDTH_MM and not band_ok and st.fits_stroke_engine(poly)
+                # compact blobs (e.g. letter counters) are not strokes; thinner than a sewable
+                # column the stroke engine is still the only way to get them sewn cleanly
+                and (width < CLASSIC_MIN_WIDTH_MM or st.analyse_stroke_shape(poly).uncovered_share <= st.MAX_UNCOVERED)
+            ):
+                items.append(_Item(-1, poly, "stroke"))
+                continue
         if narrow and len(poly.interiors) == 1:
             centre = gen.band_centerline(poly)
             if centre is not None:
@@ -160,6 +196,8 @@ def _stitch_item(item: _Item, angle: float, params: StitchParams, start: Pt) -> 
             add("underlay", [gen.running(line, 2.0)])
             line = LineString(list(line.coords)[::-1])  # satin comes back over the underlay
         add("satin", [gen.satin_line(line, item.width, params.satin_spacing_mm, params.pull_compensation_mm, params.max_stitch_mm)])
+    elif item.method in ("stroke", "dot"):
+        runs.extend(_stitch_strokes(item, params, start))
     elif item.method == "running":
         line = item.geom
         if dist(start, line.coords[-1]) < dist(start, line.coords[0]):
@@ -171,6 +209,93 @@ def _stitch_item(item: _Item, angle: float, params: StitchParams, start: Pt) -> 
             pieces = [gen.running(LineString(p), params.running_stitch_length_mm, 3) for p in pieces]
         add("running", pieces)
     return runs
+
+
+def _limits(params: StitchParams) -> st.ThreadLimits:
+    return st.thread_limits(params.thread_weight, params.satin_min_width_mm)
+
+
+def _stroke_spacing(params: StitchParams, width: float) -> float:
+    """Narrow columns get slightly lighter density: on a 0.6-1 mm column the needle
+    drops are already close together and a dense setting piles up thread."""
+    if width < 1.2:
+        return max(params.satin_spacing_mm, 0.45)
+    return params.satin_spacing_mm
+
+
+def _stitch_strokes(item: _Item, params: StitchParams, start: Pt) -> list[Run]:
+    poly: Polygon = item.geom
+    limits = _limits(params)
+    ink = item.ink or st.InkMap([poly], *_extent(poly))
+    runs: list[Run] = []
+    if item.method == "dot":
+        res = st.satin_dot(poly, ink, limits, 0.3)
+        item.narrow_spots = res.narrow_spots
+        if len(res.points) >= 2:
+            runs.append(Run("satin", res.points, item.oid))
+        return runs
+    shape = st.analyse_stroke_shape(poly)
+    strokes = list(shape.strokes)
+    if not strokes:  # nothing left after thinning (a speck): sew it as a dot
+        res = st.satin_dot(poly, ink, limits, 0.3)
+        item.narrow_spots = res.narrow_spots
+        return [Run("satin", res.points, item.oid)] if len(res.points) >= 2 else []
+    width = st.small_stroke_width(poly)
+    spacing = _stroke_spacing(params, width)
+    spots: list[Pt] = []
+    cur = start
+    todo = list(strokes)
+    while todo:  # nearest stroke next, entered from its nearer end
+        k = min(range(len(todo)), key=lambda i: _stroke_entry(todo[i], cur)[0])
+        stroke = todo.pop(k)
+        # the satin is computed on the stroke as found and reversed when entered from
+        # the other end, so the stitching does not depend on the sewing order
+        backwards = False
+        if stroke.closed:
+            stroke = st.Stroke(_rotate_ring(stroke.line, cur), True)
+        else:
+            backwards = dist(cur, stroke.line.coords[-1]) < dist(cur, stroke.line.coords[0])
+        under = st.stroke_underlay(stroke, poly) if params.underlay else []
+        if len(under) >= 2:
+            runs.append(Run("underlay", under[::-1] if backwards else under, item.oid))
+            if not stroke.closed:  # the satin comes back over its centre run
+                backwards = not backwards
+        res = st.satin_stroke(stroke, poly, ink, limits, spacing, params.pull_compensation_mm, params.max_stitch_mm)
+        spots.extend(res.narrow_spots)
+        if len(res.points) >= 2:
+            pts = res.points[::-1] if backwards else res.points
+            runs.append(Run(res.kind, pts, item.oid))
+            cur = pts[-1]
+    for patch in shape.patches:  # square corners the stroke columns cut off
+        pieces = gen.satin_area(patch, spacing, cur, params.max_stitch_mm)
+        for piece in pieces:
+            if len(piece) >= 2:
+                runs.append(Run("satin", piece, item.oid))
+                cur = piece[-1]
+    item.narrow_spots = spots
+    return runs
+
+
+def _stroke_entry(stroke: st.Stroke, pos: Pt) -> tuple[float, int]:
+    coords = list(stroke.line.coords)
+    if stroke.closed:
+        return stroke.line.distance(Point(pos)), 0
+    a, b = dist(pos, coords[0]), dist(pos, coords[-1])
+    return (a, 0) if a <= b else (b, 1)
+
+
+def _rotate_ring(line: LineString, pos: Pt) -> LineString:
+    coords = list(line.coords)
+    if dist(coords[0], coords[-1]) < 1e-6:
+        coords = coords[:-1]
+    k = min(range(len(coords)), key=lambda i: dist(coords[i], pos))
+    ring = coords[k:] + coords[:k]
+    return LineString(ring + [ring[0]])
+
+
+def _extent(geom: BaseGeometry) -> tuple[float, float]:
+    minx, miny, maxx, maxy = geom.bounds
+    return max(maxx, 1.0), max(maxy, 1.0)
 
 
 def describe_objects(design: Design, params: StitchParams) -> list[dict]:
@@ -214,7 +339,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "spacing_mm": obj.spacing_mm,
             "pull_mm": obj.pull_mm,
             "bold": obj.bold,
-            "method": method,  # fill | satin | satin_band | satin_line | running | outline | mixed | none
+            "method": method,  # fill | satin | satin_band | satin_line | stroke | dot | running | outline | mixed | none
             "effective_angle": None if angle is None else round(angle % 180, 1),
             "effective_spacing_mm": spacing,
             "effective_pull_mm": sp.pull_compensation_mm if density else None,
@@ -239,6 +364,8 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
     geoms: dict[int, BaseGeometry] = {}
     pos: Pt = (0.0, 0.0)
     oid = 0
+    stroke_oids: set[int] = set()
+    narrow_spots: list[Pt] = []
     min_fill_spacing = params.fill_spacing_mm  # smallest fill row gap actually sewn
     enabled = [l for l in design.layers if l.enabled]
     for position, layer in enumerate(enabled):
@@ -255,16 +382,24 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
                 it.params = own
                 if it.method == "fill":
                     min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
+                if it.method in st.STROKE_METHODS:
+                    stroke_oids.add(oid)
                 geoms[oid] = it.geom if it.method not in ("running", "satin_line") else it.geom.buffer(max(0.5, it.width / 2))
                 oid += 1
                 items.append(it)
         if not items:
             continue
+        if any(it.method in st.STROKE_METHODS for it in items):
+            # everything sewn in this colour: widened strokes must not close gaps to it
+            ink = st.InkMap([geoms[it.oid] for it in items], design.width_mm, design.height_mm)
+            for it in items:
+                it.ink = ink
         block = ColorBlock(rgb=layer.rgb, name=layer.name)
         while items:
             idx = min(range(len(items)), key=lambda i: _entry_distance(items[i], pos))
             item = items.pop(idx)
             runs = _stitch_item(item, item.angle, item.params or params, pos)
+            narrow_spots.extend(item.narrow_spots or [])
             if runs:
                 block.runs.extend(runs)
                 pos = runs[-1].points[-1]
@@ -272,41 +407,79 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
             blocks.append(block)
 
     plan = StitchPlan(width_mm=design.width_mm, height_mm=design.height_mm, blocks=blocks)
-    plan.ops = assemble(blocks, geoms, params)
+    limits = _limits(params)
+    plan.thread_weight = limits.weight
+    plan.ops = assemble(blocks, geoms, params, stroke_oids)
+    # always on: no stitch shorter than the thread can take (thread breaks / needle cuts)
+    # (kept below the smallest fill row gap: the turn-around between two rows is not a fault)
+    plan.ops = make_safe(plan.ops, min(limits.min_stitch_mm, 0.9 * min_fill_spacing), params.max_stitch_mm)
     if params.optimize:
         # threshold below the *smallest* row gap in use, so turn-around stitches of a
         # shape set to "dense" are never mistaken for stacked stitches
         plan.ops, plan.optimization = optimize_ops(plan.ops, min_fill_spacing, params.max_stitch_mm)
+    plan.risks = machine_check(plan.ops, limits, narrow_spots)
     return plan
 
 
 # --------------------------------------------------------------------------- assembly
 
-def _tie(points: list[Pt], at_start: bool, length: float = 0.5) -> list[Pt]:
-    """Lock stitches: tiny back-and-forth along the first/last segment."""
-    if len(points) < 2:
-        return []
-    a, b = (points[0], points[1]) if at_start else (points[-1], points[-2])
-    d = dist(a, b)
-    if d < 1e-6:
-        return []
-    t = min(length, d * 0.9) / d
-    m = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-    # at the start the caller stitches the first point itself right after
-    return [m, a, m] if at_start else [m, a, m, a]
+TIE_STEP_MM = 0.6  # lock stitch length: long enough to hold, never a sub-0.4 mm stitch
+STROKE_TRAVEL_MM = 4.0  # max hidden run between strokes of one letter instead of a cut
 
 
-def assemble(blocks: list[ColorBlock], geoms: dict[int, BaseGeometry], params: StitchParams) -> list[tuple[str, float, float, str]]:
+def _along(points: list[Pt], d: float) -> Pt | None:
+    """Point ``d`` mm along a polyline (None if it is shorter)."""
+    for a, b in zip(points, points[1:]):
+        seg = dist(a, b)
+        if seg >= d and seg > 1e-9:
+            t = d / seg
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        d -= seg
+    return None
+
+
+def _tie(points: list[Pt], at_start: bool, length: float = TIE_STEP_MM, min_stitch: float = 0.4) -> list[Pt]:
+    """Lock stitches along the run's own path (they are sewn over / sit under the
+    last stitches): two steps forward and one back at the start, the mirror at the
+    end. Every lock stitch is at least ``min_stitch`` long; short pieces get a single
+    step, pieces too short for even that get none rather than stacked drops."""
+    path = points if at_start else points[::-1]
+    if len(path) < 2:
+        return []
+    total = sum(dist(a, b) for a, b in zip(path, path[1:]))
+    step = min(length, total / 2)
+    if step < min_stitch:
+        step = min(length, total)
+        if step < min_stitch:
+            return []
+        p1 = _along(path, step)
+        return [p1] if at_start else [p1, path[0]]
+    p1, p2 = _along(path, step), _along(path, 2 * step)
+    if p1 is None or p2 is None:
+        return []
+    # start: (landed at path[0]) -> p1 -> p2 -> p1 -> caller stitches path[0] and runs over them
+    # end:   (at path end)       -> p1 -> p2 -> p1 -> end
+    return [p1, p2, p1] if at_start else [p1, p2, p1, path[0]]
+
+
+def assemble(
+    blocks: list[ColorBlock],
+    geoms: dict[int, BaseGeometry],
+    params: StitchParams,
+    stroke_oids: set[int] | frozenset = frozenset(),
+) -> list[tuple[str, float, float, str]]:
     ops: list[tuple[str, float, float, str]] = []
     cur: Pt | None = None
     last_run: Run | None = None
+    min_stitch = st.thread_limits(params.thread_weight, params.satin_min_width_mm).min_stitch_mm
+    cut = True  # thread was cut (start, trim, colour change): the next run needs a tie-in
 
     def stitch(p: Pt, kind: str) -> None:
         ops.append((STITCH, p[0], p[1], kind))
 
     def end_segment() -> None:
         if params.tie_stitches and last_run is not None:
-            for p in _tie(last_run.points, at_start=False):
+            for p in _tie(last_run.points, at_start=False, min_stitch=min_stitch):
                 stitch(p, "tie")
 
     for bi, block in enumerate(blocks):
@@ -315,6 +488,7 @@ def assemble(blocks: list[ColorBlock], geoms: dict[int, BaseGeometry], params: S
             ops.append((TRIM, cur[0], cur[1], ""))  # type: ignore[index]
             ops.append((COLOR_CHANGE, cur[0], cur[1], ""))  # type: ignore[index]
             last_run = None
+            cut = True
         for run in block.runs:
             pts = run.points
             start = pts[0]
@@ -324,21 +498,28 @@ def assemble(blocks: list[ColorBlock], geoms: dict[int, BaseGeometry], params: S
                 # straight connections inside an object are only hidden when the top
                 # stitching still has to cover them (underlay -> top / underlay -> underlay)
                 same = last_run.object_id == run.object_id and last_run.kind == "underlay"  # type: ignore[union-attr]
+                # strokes of one letter: a short run inside the letter sinks into its satin
+                # and saves a cut + two locks on a tiny piece
+                stroke = last_run.object_id == run.object_id and run.object_id in stroke_oids and gap <= STROKE_TRAVEL_MM  # type: ignore[union-attr]
                 geom = geoms.get(run.object_id)
-                if gap <= 1.0 or (same and geom is not None and segment_inside(geom, cur, start)):  # type: ignore[arg-type]
-                    for p in subdivide(cur, start, min(params.max_stitch_mm, 3.0)):  # type: ignore[arg-type]
+                if gap <= 1.0 or ((same or stroke) and geom is not None and segment_inside(geom, cur, start)):  # type: ignore[arg-type]
+                    step = min(params.max_stitch_mm, 1.5 if stroke else 3.0)
+                    for p in subdivide(cur, start, step):  # type: ignore[arg-type]
                         stitch(p, "travel")
                 else:
                     needs_jump = True
                     if gap > params.trim_threshold_mm:
                         end_segment()
                         ops.append((TRIM, cur[0], cur[1], ""))  # type: ignore[index]
+                        cut = True
             if needs_jump:
                 ops.append((JUMP, start[0], start[1], ""))
-                if params.tie_stitches:
-                    for p in _tie(pts, at_start=True):
+                # locks only where the thread was cut; a jump without trim keeps the thread tied
+                if params.tie_stitches and cut:
+                    for p in _tie(pts, at_start=True, min_stitch=min_stitch):
                         stitch(p, "tie")
                 stitch(start, run.kind)
+                cut = False
             for p in pts[1:]:
                 stitch(p, run.kind)
             cur = pts[-1]

@@ -133,7 +133,7 @@ def test_ai_suggestion_is_merged_and_validated(fake):
     pid = _project()
     s = client.post(f"/api/projects/{pid}/ai/suggest", json={"ai": AI}).json()
     assert s["source"] == "ai" and s["provider"] == "Fake AI" and s["model"] == "fake-vision-2"  # recommended pick
-    assert s["extract"] == {"num_colors": 3, "background": "none", "min_feature_mm": 0.45, "denoise": 3}
+    assert s["extract"] == {"num_colors": 3, "background": "none", "min_feature_mm": 0.25, "denoise": 3}
     assert s["cleanup"] == "enhance" and s["notes"][0] == "Use dense satin for the letters."
     assert fake.seen[-1]["key"] == KEY
 

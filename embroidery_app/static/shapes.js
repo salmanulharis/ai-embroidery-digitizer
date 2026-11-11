@@ -16,11 +16,12 @@ const Shapes = (() => {
 
   const STYLE_OPTIONS = [
     ["inherit", "Same as colour"], ["auto", "Automatic"], ["fill", "Fill (large areas)"],
-    ["satin", "Satin (smooth, narrow)"], ["running", "Outline only"], ["skip", "Don't stitch"],
+    ["satin", "Satin (smooth, narrow)"], ["lettering", "Lettering (follows each stroke)"], ["running", "Outline only"], ["skip", "Don't stitch"],
   ];
-  const COLOUR_STYLE = { auto: "Automatic", fill: "Fill", satin: "Satin", running: "Outline only" };
+  const COLOUR_STYLE = { auto: "Automatic", fill: "Fill", satin: "Satin", running: "Outline only", lettering: "Lettering" };
   const METHOD_LABEL = {
     fill: "fill", satin: "satin", satin_band: "satin that follows the shape", satin_line: "satin that follows the line",
+    stroke: "satin that follows each stroke", dot: "satin dot",
     running: "outline", outline: "outline", mixed: "mixed styles", none: "too small to stitch",
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
@@ -200,7 +201,7 @@ const Shapes = (() => {
       : "";
 
     const followNote = !dirApplies
-      ? `<p class="small muted">${chosen.some((o) => o.method === "satin_band" || o.method === "satin_line")
+      ? `<p class="small muted">${chosen.some((o) => ["satin_band", "satin_line", "stroke", "dot"].includes(o.method))
         ? "This satin follows the shape's curve, so its direction is set automatically. Choose <i>Fill</i> as the stitch style to set a direction."
         : "Direction does not apply to outlines or shapes that are not stitched."}</p>`
       : "";

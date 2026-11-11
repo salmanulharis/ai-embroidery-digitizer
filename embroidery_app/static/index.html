@@ -9,14 +9,14 @@
 </head>
 <body>
 <header>
-  <h1>Embroidery Digitizer</h1>
+  <h1><span class="logo" aria-hidden="true">&#10045;</span> Embroidery Digitizer</h1>
   <ol class="steps" id="steps">
-    <li data-step="1" class="active">Upload</li>
-    <li data-step="2">Prepare design</li>
-    <li data-step="3">Create stitches</li>
-    <li data-step="4">Download</li>
+    <li data-step="1" class="active"><span>Upload</span></li>
+    <li data-step="2"><span>Prepare design</span></li>
+    <li data-step="3"><span>Create stitches</span></li>
+    <li data-step="4"><span>Download</span></li>
   </ol>
-  <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; AI settings <span id="aiBadge" class="badge">Built-in</span></button>
+  <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
 </header>
 
 <main>
@@ -24,42 +24,83 @@
   <section id="step1" class="panel">
     <label class="drop" id="drop">
       <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg,.ai,.pdf" hidden>
+      <span class="drop-icon" aria-hidden="true">&#8682;</span>
       <strong>Drop your logo or picture here</strong>
-      <span>Pictures: PNG, JPG, WEBP &nbsp;·&nbsp; Artwork files: SVG, Adobe Illustrator (.ai), PDF</span>
-      <span class="btn">Choose file</span>
+      <span class="muted">or tap to choose a file</span>
+      <span class="btn primary-btn">Choose file</span>
+      <span class="small muted">Pictures: PNG, JPG, WEBP &nbsp;·&nbsp; Artwork: SVG, Adobe Illustrator (.ai), PDF</span>
     </label>
+    <ul class="features">
+      <li><b>Smart by default</b><span>Colours, background and text are detected automatically.</span></li>
+      <li><b>Clear small lettering</b><span>Satin that follows every stroke, widened only where gaps allow.</span></li>
+      <li><b>Full control</b><span>Adjust the picture, colours, each shape and every stitch setting.</span></li>
+      <li><b>Machine-ready</b><span>DST for WONYO / Dahao and Wilcom, plus EXP, PES and more.</span></li>
+    </ul>
   </section>
 
   <!-- STEP 2 -->
   <section id="step2" class="panel hidden">
     <div class="grid">
-      <aside class="card">
+      <aside class="card side">
         <h2>Prepare your design</h2>
-        <p class="muted" id="fileInfo"></p>
-        <label><span class="lbl">Hoop size <i data-help="hoop"></i></span><select id="hoop"></select></label>
-        <label><span class="lbl">Design width on fabric (mm) <i data-help="width_mm"></i></span><input type="number" id="width_mm" min="10" max="500" step="1" value="100"></label>
-        <label><span class="lbl">Number of thread colours <i data-help="num_colors"></i></span>
-          <select id="num_colors">
-            <option value="">Automatic (recommended)</option>
-          </select>
-        </label>
-        <div id="rasterOpts">
-          <label><span class="lbl">Background <i data-help="background"></i></span>
-            <select id="background">
-              <option value="auto">Remove plain background (recommended)</option>
-              <option value="color">Remove background colour everywhere (also inside letters)</option>
-              <option value="none">Keep everything</option>
-              <option value="ai">Cut out subject from a photo (needs add-on)</option>
+        <p class="muted small" id="fileInfo"></p>
+        <div id="smartInfo" class="smart hidden" aria-live="polite"></div>
+
+        <fieldset class="group">
+          <legend>Size</legend>
+          <label><span class="lbl">Hoop size <i data-help="hoop"></i></span><select id="hoop"></select></label>
+          <label><span class="lbl">Design width on fabric (mm) <i data-help="width_mm"></i></span><input type="number" id="width_mm" min="10" max="500" step="1" value="100" inputmode="decimal"></label>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Colours &amp; text</legend>
+          <label><span class="lbl">Number of thread colours <i data-help="num_colors"></i></span>
+            <select id="num_colors">
+              <option value="">Automatic (recommended)</option>
             </select>
           </label>
-          <label><span class="lbl">Smallest detail to keep (mm) <i data-help="min_feature_mm"></i></span><input type="number" id="min_feature_mm" min="0.2" max="3" step="0.1" value="0.7"></label>
-          <label><span class="lbl">Remove specks smaller than (mm²) <i data-help="min_area_mm2"></i></span><input type="number" id="min_area_mm2" min="0.2" max="20" step="0.1" value="1.0"></label>
-          <label><span class="lbl">Smooth out picture noise <i data-help="denoise"></i></span><input type="range" id="denoise" min="0" max="3" value="2" aria-valuetext="Medium"></label>
+          <div id="textOpts">
+            <label><span class="lbl">Text &amp; fine details <i data-help="text_mode"></i></span>
+              <select id="text_mode">
+                <option value="auto">Automatic (recommended)</option>
+                <option value="sharp">Keep small text &amp; fine details sharp</option>
+                <option value="standard">Standard</option>
+                <option value="simple">Simplify – smooth out small details</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <div id="rasterOpts">
+          <fieldset class="group">
+            <legend>Background</legend>
+            <label><span class="lbl">Background <i data-help="background"></i></span>
+              <select id="background">
+                <option value="auto">Remove plain background (recommended)</option>
+                <option value="color">Remove background colour everywhere (also inside letters)</option>
+                <option value="none">Keep everything</option>
+                <option value="ai">Cut out subject from a photo (needs add-on)</option>
+              </select>
+            </label>
+          </fieldset>
+          <details class="group" id="adjustBox">
+            <summary>Picture adjustments</summary>
+            <label><span class="lbl">Brightness <output id="brightnessOut">0</output> <i data-help="brightness"></i></span><input type="range" id="brightness" min="-100" max="100" step="5" value="0"></label>
+            <label><span class="lbl">Contrast <output id="contrastOut">0</output> <i data-help="contrast"></i></span><input type="range" id="contrast" min="-100" max="100" step="5" value="0"></label>
+            <label><span class="lbl">Sharpen edges <output id="sharpenOut">Off</output> <i data-help="sharpen"></i></span><input type="range" id="sharpen" min="0" max="3" step="1" value="0"></label>
+            <label><span class="lbl">Clean up picture grain <output id="denoiseOut">Medium</output> <i data-help="denoise"></i></span><input type="range" id="denoise" min="0" max="3" value="2" aria-valuetext="Medium"></label>
+            <button type="button" class="ghost small" id="btnResetAdjust">Reset adjustments</button>
+          </details>
+          <details class="group">
+            <summary>Advanced detail settings</summary>
+            <label><span class="lbl">Smallest detail to keep (mm) <i data-help="min_feature_mm"></i></span><input type="number" id="min_feature_mm" min="0.1" max="3" step="0.1" value="0.3" inputmode="decimal"></label>
+            <label><span class="lbl">Remove specks smaller than (mm²) <i data-help="min_area_mm2"></i></span><input type="number" id="min_area_mm2" min="0.2" max="20" step="0.1" value="1.0" inputmode="decimal"></label>
+          </details>
         </div>
         <div id="vectorOpts" class="hidden">
           <label class="check"><input type="checkbox" id="knockout" checked> Skip hidden parts of overlapping shapes <i data-help="knockout"></i></label>
         </div>
-        <button class="primary" id="btnExtract">Update preview</button>
+        <button class="primary sticky-action" id="btnExtract">Update preview</button>
 
         <div id="aiBox" class="ai hidden">
           <h3>Smart assistant <i data-help="ai"></i></h3>
@@ -115,11 +156,11 @@
   <!-- STEP 3 + 4 -->
   <section id="step3" class="panel hidden">
     <div class="grid">
-      <aside class="card">
+      <aside class="card side">
         <h2>Stitch settings</h2>
         <p class="muted small">The defaults suit most designs on regular fabric. Hover or tap <span class="help-sample">?</span> to learn what each setting does.</p>
         <form id="stitchForm" class="params"></form>
-        <button class="primary" id="btnStitch">Create stitches</button>
+        <button class="primary sticky-action" id="btnStitch">Create stitches</button>
         <button class="ghost" id="btnBack">&larr; Back to design</button>
       </aside>
       <div class="card">
@@ -128,6 +169,7 @@
             <button data-mode="real" class="on" aria-pressed="true">Realistic</button>
             <button data-mode="direction" aria-pressed="false">Sewing direction</button>
             <button data-mode="type" aria-pressed="false">Stitch types</button>
+            <button data-mode="check" aria-pressed="false">Machine check</button>
           </div><i data-help="view"></i>
           <div class="seg hidden" id="variant" role="group" aria-label="Compare stitch versions">
             <button data-variant="optimized" class="on" aria-pressed="true">Optimised</button>

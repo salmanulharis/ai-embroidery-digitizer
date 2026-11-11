@@ -16,6 +16,7 @@ import tempfile
 import pystitch as pe
 
 from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, StitchPlan, rgb_to_hex
+from ..stitch.safety import RISK_TEXT, summarize_risks
 
 FORMATS: dict[str, dict[str, str]] = {
     "dst": {"label": "Tajima DST", "note": "For WONYO and almost all commercial machines; opens in Wilcom. Thread colours are listed on the worksheet"},
@@ -93,5 +94,15 @@ def worksheet(plan: StitchPlan, name: str) -> str:
             per_color[color] += 1
     for i, block in enumerate(plan.blocks, 1):
         lines.append(f"  {i:>2}. {block.name:<12} {rgb_to_hex(block.rgb)}   {per_color[i - 1]:,} stitches")
+    if plan.thread_weight == 60:
+        lines += ["", "Thread: fine 60 wt (small lettering). Needle: 65/9 or 70/10 sharp; lower top tension slightly."]
+    else:
+        lines += ["", "Thread: standard 40 wt. Needle: 75/11 (ballpoint for knits, sharp for woven fabric)."]
+    risk = summarize_risks(plan.risks)
+    if risk:
+        lines.append("Machine check - sew a test piece first and watch these spots (see the Machine check preview):")
+        lines += [f"  {n} spot(s): {RISK_TEXT[k]}" for k, n in risk.items()]
+    else:
+        lines.append("Machine check: no problem spots found.")
     lines += ["", "Hoop: centre of design = centre of hoop (DST origin)."]
     return "\n".join(lines) + "\n"

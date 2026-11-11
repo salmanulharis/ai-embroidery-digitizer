@@ -14,7 +14,7 @@ from typing import Iterable, Literal, Optional
 from shapely import wkt
 from shapely.geometry.base import BaseGeometry
 
-StitchType = Literal["auto", "fill", "satin", "running"]
+StitchType = Literal["auto", "fill", "satin", "running", "lettering"]
 ObjectKind = Literal["area", "line"]
 
 RGB = tuple[int, int, int]
@@ -56,12 +56,13 @@ class ColorLayer:
             rgb=rgb,  # type: ignore[arg-type]
             name=d.get("name", ""),
             enabled=bool(d.get("enabled", True)),
-            stitch_type=d.get("stitch_type", "auto"),
+            stitch_type=d.get("stitch_type") if d.get("stitch_type") in STITCH_TYPES else "auto",
             angle=None if d.get("angle") in (None, "") else float(d["angle"]),
         )
 
 
-STITCH_TYPES = ("auto", "fill", "satin", "running")
+# "lettering": satin that follows each stroke (small text, script, fine line art)
+STITCH_TYPES = ("auto", "fill", "satin", "running", "lettering")
 
 
 def new_object_id() -> str:
@@ -295,6 +296,9 @@ class Design:
         }
 
 
+THREAD_WEIGHTS = (40, 60)
+
+
 @dataclass
 class StitchParams:
     """Digitizing parameters. Defaults are conservative commercial values
@@ -312,11 +316,16 @@ class StitchParams:
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
     pull_compensation_mm: float = 0.2
-    min_object_area_mm2: float = 0.8
+    min_object_area_mm2: float = 0.05  # keeps dots/punctuation of lettering (enlarged to a sewable dot); specks are removed in step 2
     trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
     tie_stitches: bool = True
     max_stitch_mm: float = 7.0
     optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
+    thread_weight: int = 40  # 40 = standard thread; 60 = fine thread for small lettering
+
+    def __post_init__(self) -> None:
+        if self.thread_weight not in THREAD_WEIGHTS:
+            self.thread_weight = 40
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "StitchParams":
@@ -325,6 +334,7 @@ class StitchParams:
             if hasattr(params, key) and value is not None:
                 current = getattr(params, key)
                 setattr(params, key, type(current)(value) if not isinstance(current, bool) else bool(value))
+        params.__post_init__()
         return params
 
     def to_dict(self) -> dict:
@@ -359,6 +369,10 @@ class StitchPlan:
     # Flattened machine sequence: (command, x_mm, y_mm, kind)
     ops: list[tuple[str, float, float, str]] = field(default_factory=list)
     optimization: dict = field(default_factory=dict)  # smart reduction report (empty when off)
+    thread_weight: int = 40
+    # machine check: spots where the thread may break or detail may not show
+    # [{"x", "y", "type", "count"}], see stitch/safety.py
+    risks: list[dict] = field(default_factory=list)
 
     def stats(self) -> dict:
         stitches = sum(1 for op in self.ops if op[0] == STITCH)

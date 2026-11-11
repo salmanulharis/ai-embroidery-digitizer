@@ -470,6 +470,12 @@ def stitch(pid: str, params: dict) -> dict:
         warnings.append("Very high number of stitches - try a larger fill gap (thinner fill) or a smaller design size.")
     if stats["width_mm"] > 400 or stats["height_mm"] > 400:
         warnings.append("This design is larger than most hoops - check that it fits yours.")
+    risky = [r for r in preview.get("risks", []) if r["type"] in ("short", "stack", "dense")]
+    if risky:
+        warnings.append(f"Machine check: {len(risky)} spot(s) where the thread may break - open the Machine check view to see them.")
+    if any(r["type"] == "thin" for r in preview.get("risks", [])):
+        warnings.append("Machine check: some lettering is thinner than the machine can sew cleanly - see the Machine check view "
+                        "(fine 60 wt thread or a larger design helps).")
     if _dense_on_tiny_shapes(load_design(pid)):
         warnings.append("Some very small shapes are set to dense stitching - this can pile up thread and cause thread breaks.")
     preview["warnings"] = warnings

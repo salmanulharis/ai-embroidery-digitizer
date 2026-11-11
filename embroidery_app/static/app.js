@@ -31,6 +31,7 @@ async function busy(text, fn) {
   try { return await fn(); } catch (e) { toast(e.message); throw e; } finally { $("busy").classList.add("hidden"); }
 }
 function showStep(n) {
+  window.scrollTo({ top: 0, behavior: "smooth" });
   ["step1", "step2", "step3"].forEach((id, i) => $(id).classList.toggle("hidden", (n >= 3 ? 3 : n) !== i + 1));
   document.querySelectorAll("#steps li").forEach((li) => {
     const s = +li.dataset.step;
@@ -55,12 +56,91 @@ async function init() {
   };
   const nc = $("num_colors");
   for (let i = 1; i <= 15; i++) nc.insertAdjacentHTML("beforeend", `<option value="${i}">${i}</option>`);
-  $("denoise").oninput = () => $("denoise").setAttribute("aria-valuetext", DENOISE_LEVELS[+$("denoise").value]);
+  bindAdjustments();
 
   AI.init(state.config);
   buildStitchForm();
   bindUpload();
   bindCanvas();
+}
+
+// ------------------------------------------------------------------ picture adjustments + text detail
+const SHARPEN_LEVELS = ["Off", "Low", "Medium", "High"];
+const ADJUST_DEFAULTS = { brightness: 0, contrast: 0, sharpen: 0, denoise: 2 };
+function showAdjustValues() {
+  const sign = (v) => (v > 0 ? `+${v}` : `${v}`);
+  $("brightnessOut").textContent = sign(+$("brightness").value);
+  $("contrastOut").textContent = sign(+$("contrast").value);
+  $("sharpenOut").textContent = SHARPEN_LEVELS[+$("sharpen").value];
+  $("denoiseOut").textContent = DENOISE_LEVELS[+$("denoise").value];
+  $("denoise").setAttribute("aria-valuetext", DENOISE_LEVELS[+$("denoise").value]);
+}
+// "Text & fine details" presets -> the advanced detail fields
+const TEXT_MODES = {
+  sharp: { min_feature_mm: 0.2, min_area_mm2: 0.3 },
+  standard: { min_feature_mm: 0.3, min_area_mm2: 1.0 },
+  simple: { min_feature_mm: 0.8, min_area_mm2: 2.0 },
+};
+function applyTextMode() {
+  const mode = $("text_mode").value;
+  const smart = state.smart && state.smart.extract;
+  const v = mode === "auto" ? (smart ? { min_feature_mm: smart.min_feature_mm, min_area_mm2: 1.0 } : TEXT_MODES.standard) : TEXT_MODES[mode];
+  $("min_feature_mm").value = v.min_feature_mm;
+  $("min_area_mm2").value = v.min_area_mm2;
+}
+function bindAdjustments() {
+  ["brightness", "contrast", "sharpen", "denoise"].forEach((k) => {
+    $(k).addEventListener("input", showAdjustValues);
+    $(k).addEventListener("change", () => state.project && extract());
+  });
+  $("btnResetAdjust").onclick = () => {
+    const smart = state.smart && state.smart.extract;
+    Object.entries(ADJUST_DEFAULTS).forEach(([k, v]) => ($(k).value = smart && k === "denoise" ? smart.denoise : v));
+    showAdjustValues();
+    if (state.project) extract();
+  };
+  $("text_mode").onchange = () => { applyTextMode(); if (state.project) extract(); };
+  ["min_feature_mm", "min_area_mm2"].forEach((k) => $(k).addEventListener("change", () => {
+    const match = Object.entries(TEXT_MODES).find(([, v]) => v.min_feature_mm === +$("min_feature_mm").value && v.min_area_mm2 === +$("min_area_mm2").value);
+    $("text_mode").value = match ? match[0] : "auto";
+  }));
+  showAdjustValues();
+}
+
+// Built-in picture analysis right after upload: smart settings by default (no AI key needed).
+async function smartDefaults() {
+  state.smart = null;
+  $("smartInfo").classList.add("hidden");
+  if (state.project.kind !== "raster") return;
+  let r;
+  try {
+    r = await api(`/api/projects/${state.project.id}/ai/suggest`, json("POST", { ai: null, width_mm: +$("width_mm").value || 100 }));
+  } catch (e) {
+    return; // the analysis is a convenience: the standard settings still work
+  }
+  state.smart = r;
+  const e = r.extract || {};
+  $("num_colors").value = "";
+  if (e.background) $("background").value = e.background;
+  if (e.min_feature_mm != null) $("min_feature_mm").value = e.min_feature_mm;
+  $("min_area_mm2").value = 1.0;
+  if (e.denoise != null) $("denoise").value = e.denoise;
+  $("text_mode").value = "auto";
+  ["brightness", "contrast", "sharpen"].forEach((k) => ($(k).value = 0));
+  showAdjustValues();
+  const tw = r.stitch && r.stitch.thread_weight;
+  if (tw && $("stitchForm").elements.thread_weight) $("stitchForm").elements.thread_weight.value = String(tw);
+  const t = r.text || {};
+  const facts = [
+    `${e.num_colors} thread colour${e.num_colors === 1 ? "" : "s"}`,
+    e.background === "auto" ? "background removed" : "background kept",
+    t.found ? `text found (${t.lines} line${t.lines === 1 ? "" : "s"}, letters ~${t.letter_height_mm} mm)` : "no small text found",
+  ];
+  if (tw === 60) facts.push("fine 60 wt thread suggested");
+  $("smartInfo").innerHTML = `<b>&#10024; Smart settings applied</b><span>${facts.map(esc).join(" · ")}</span>` +
+    (r.notes || []).slice(0, 2).map((n) => `<span class="small muted">${esc(n)}</span>`).join("") +
+    `<span class="small muted">Change anything below if the result is not what you want.</span>`;
+  $("smartInfo").classList.remove("hidden");
 }
 
 function aspect() {
@@ -94,6 +174,7 @@ async function upload(file) {
   $("btnApprove").disabled = true;
   await loadSource();
   showStep(2);
+  await busy("Analysing your picture…", smartDefaults).catch(() => {});
   await extract();
 }
 
@@ -114,6 +195,9 @@ function extractOptions() {
       min_feature_mm: +$("min_feature_mm").value,
       min_area_mm2: +$("min_area_mm2").value,
       denoise: +$("denoise").value,
+      brightness: +$("brightness").value,
+      contrast: +$("contrast").value,
+      sharpen: +$("sharpen").value,
     });
   } else {
     o.knockout = $("knockout").checked;
@@ -145,7 +229,7 @@ function renderDesign(res) {
   Shapes.afterRender(res);
 }
 
-const STITCH_STYLES = [["auto", "Automatic"], ["fill", "Fill (large areas)"], ["satin", "Satin (smooth, narrow)"], ["running", "Outline only"]];
+const STITCH_STYLES = [["auto", "Automatic"], ["fill", "Fill (large areas)"], ["satin", "Satin (smooth, narrow)"], ["lettering", "Lettering (follows strokes)"], ["running", "Outline only"]];
 
 function renderLayers() {
   const L = state.design.layers;
@@ -226,17 +310,18 @@ $("btnBack").onclick = () => showStep(2);
 
 // ------------------------------------------------------------------ step 3: stitch settings
 // [parameter name (sent to the server), plain-language label, min, max, step]
+// [parameter name, label, min, max, step, advanced?]
 const PARAMS = [
   ["fill_spacing_mm", "Fill thickness – gap between rows (mm)", 0.25, 1.0, 0.05],
-  ["fill_stitch_length_mm", "Fill stitch length (mm)", 2, 7, 0.1],
-  ["fill_angle", "Fill direction (°)", 0, 180, 5],
   ["satin_spacing_mm", "Satin thickness – gap between stitches (mm)", 0.25, 1.0, 0.05],
-  ["satin_max_width_mm", "Widest satin shape (mm)", 3, 12, 0.5],
   ["pull_compensation_mm", "Shrink compensation (mm)", 0, 0.8, 0.05],
-  ["running_stitch_length_mm", "Outline stitch length (mm)", 1, 5, 0.1],
-  ["underlay_spacing_mm", "Foundation spacing (mm)", 1.5, 5, 0.1],
-  ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5],
-  ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.1],
+  ["fill_angle", "Fill direction (°)", 0, 180, 5],
+  ["fill_stitch_length_mm", "Fill stitch length (mm)", 2, 7, 0.1, true],
+  ["satin_max_width_mm", "Widest satin shape (mm)", 3, 12, 0.5, true],
+  ["running_stitch_length_mm", "Outline stitch length (mm)", 1, 5, 0.1, true],
+  ["underlay_spacing_mm", "Foundation spacing (mm)", 1.5, 5, 0.1, true],
+  ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
+  ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
@@ -251,15 +336,26 @@ function buildStitchForm() {
     const on = k === "triple_run" ? d.running_repeats >= 3 : !!d[k];
     return `<label class="check"><input type="checkbox" name="${k}" ${on ? "checked" : ""}> ${label} ${Tip.icon(k)}</label>`;
   };
+  const tw = d.thread_weight === 60 ? 60 : 40;
+  const field = ([k, label, min, max, step]) =>
+    `<label><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
   $("stitchForm").innerHTML =
     CHECKS.slice(0, 1).map(checkbox).join("") +
-    PARAMS.map(([k, label, min, max, step]) => `<label><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}"></label>`).join("") +
-    CHECKS.slice(1).map(checkbox).join("");
+    `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight">` +
+    `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
+    `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
+    PARAMS.filter((p) => !p[5]).map(field).join("") +
+    CHECKS.slice(1, 3).map(checkbox).join("") +
+    `<details class="group full"><summary>Advanced stitch settings</summary><div class="params">` +
+    PARAMS.filter((p) => p[5]).map(field).join("") +
+    CHECKS.slice(3).map(checkbox).join("") +
+    `</div></details>`;
 }
 function stitchParams() {
   const f = $("stitchForm"), p = {};
   PARAMS.forEach(([k]) => (p[k] = +f.elements[k].value));
   CHECKS.forEach(([k]) => (p[k] = f.elements[k].checked));
+  p.thread_weight = +f.elements.thread_weight.value;
   p.running_repeats = p.triple_run ? 3 : 1;
   delete p.triple_run;
   return p;
@@ -373,17 +469,46 @@ function bindCanvas() {
     v.scale *= f;
     draw();
   }, { passive: false });
+  // touch: two fingers pinch to zoom (one finger drags, a tap selects)
+  const touches = new Map();
+  let pinch = null;
   c.addEventListener("pointerdown", (ev) => {
+    touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+      drag = null;
+      return;
+    }
     drag = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY };
     c.setPointerCapture(ev.pointerId);
   });
   c.addEventListener("pointermove", (ev) => {
+    if (touches.has(ev.pointerId)) touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pinch && touches.size === 2) {
+      const [a, b] = [...touches.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const r = c.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top, f = d / pinch.d, v = state.view;
+      v.x = mx - (mx - v.x) * f;
+      v.y = my - (my - v.y) * f;
+      v.scale *= f;
+      pinch.d = d;
+      draw();
+      return;
+    }
     if (!drag) return;
     state.view.x += ev.clientX - drag.x;
     state.view.y += ev.clientY - drag.y;
     drag = { ...drag, x: ev.clientX, y: ev.clientY };
     draw();
   });
+  const lift = (ev) => {
+    touches.delete(ev.pointerId);
+    if (touches.size < 2) pinch = null;
+  };
+  c.addEventListener("pointerup", lift);
+  c.addEventListener("pointercancel", lift);
   c.addEventListener("pointerup", (ev) => {
     const d = drag;
     drag = null;
@@ -461,7 +586,8 @@ function draw() {
     if (cmd === 1) { if (px !== null) jumps.push([px, py, x, y]); px = x; py = y; continue; }
     if (px === null) { px = x; py = y; continue; }
     const hex = p.colors[Math.min(color, p.colors.length - 1)].hex;
-    if (mode === "real") {
+    if (mode === "real" || mode === "check") {
+      if (mode === "check") ctx.globalAlpha = 0.35; // faded so the problem markers stand out
       ctx.lineWidth = threadW;
       ctx.strokeStyle = shade(hex, 0.62);
       ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(x), Y(y)); ctx.stroke();
@@ -469,6 +595,7 @@ function draw() {
       ctx.strokeStyle = hex;
       ctx.stroke();
       if (threadW > 3) { ctx.lineWidth = threadW * 0.22; ctx.strokeStyle = shade(hex, 1.35); ctx.stroke(); }
+      ctx.globalAlpha = 1;
     } else {
       ctx.lineWidth = 1;
       ctx.strokeStyle = mode === "type" ? KIND_COLORS[kind] : hex;
@@ -479,7 +606,8 @@ function draw() {
     }
     px = x; py = y; n++;
   }
-  if (mode !== "real") {
+  if (mode === "check") drawRisks(ctx, X, Y, p.risks || []);
+  if (mode !== "real" && mode !== "check") {
     ctx.setLineDash([4, 4]); ctx.strokeStyle = "#e03131"; ctx.lineWidth = 1;
     jumps.forEach(([a, b, c2, d]) => { ctx.beginPath(); ctx.moveTo(X(a), Y(b)); ctx.lineTo(X(c2), Y(d)); ctx.stroke(); });
     ctx.setLineDash([]);
@@ -493,9 +621,32 @@ function draw() {
   Shapes.drawSelection3(ctx, v, dpr);
   $("legend").innerHTML = mode === "type"
     ? ["fill", "satin", "outline", "foundation", "moving", "lock"].map((k, i) => `<span style="background:${KIND_COLORS[i]}"></span>${k}`).join("") + `<span style="background:#e03131"></span>jump / thread cut`
-    : mode === "direction" ? "Arrows show which way the needle sews · red dashes = jumps · red dots = thread cuts" : "";
+    : mode === "direction" ? "Arrows show which way the needle sews · red dashes = jumps · red dots = thread cuts"
+    : mode === "check" ? riskLegend(p.risks || []) : "";
   $("legend").classList.toggle("hidden", mode === "real");
   $("scrubInfo").textContent = `${n.toLocaleString()} stitches sewn · colour ${Math.min(color + 1, p.colors.length)} of ${p.colors.length}`;
+}
+
+// Machine check: spots where the thread may break or a detail may not show (stitch/safety.py)
+const RISKS = {
+  thin: ["#f08c00", "too thin to sew cleanly"],
+  short: ["#e03131", "very short stitches"],
+  stack: ["#ae3ec9", "needle hits one hole many times"],
+  dense: ["#d6336c", "too many stitches in a small spot"],
+};
+function drawRisks(ctx, X, Y, risks) {
+  ctx.lineWidth = 2;
+  risks.forEach((r) => {
+    const [col] = RISKS[r.type] || ["#e03131"];
+    ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.arc(X(r.x * 10), Y(r.y * 10), 9, 0, 7); ctx.stroke();
+  });
+}
+function riskLegend(risks) {
+  if (!risks.length) return `<span style="background:#2f9e44"></span>No problem spots found – safe to sew`;
+  const n = {};
+  risks.forEach((r) => (n[r.type] = (n[r.type] || 0) + 1));
+  return Object.entries(RISKS).filter(([k]) => n[k]).map(([k, [col, label]]) => `<span style="background:${col}"></span>${label} (${n[k]})`).join("");
 }
 
 function arrow(ctx, x1, y1, x2, y2) {

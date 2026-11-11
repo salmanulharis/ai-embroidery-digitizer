@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from ..stitch.safety import summarize_risks
 from . import builtin, prompts, registry
 from .base import EDIT, VISION, AIError, Credentials
 
@@ -65,7 +66,8 @@ def clean_image(rgba: np.ndarray, ai: Optional[dict], mode: str = "redraw", colo
 
 # --------------------------------------------------------------------------- settings suggestions
 
-_DETAIL_MM = {"high": 0.45, "medium": 0.7, "low": 1.0}
+_DETAIL_HIGH_MM = 0.25  # fine detail / small text: keep even thinner lines
+_DETAIL_LOW_MM = 0.5  # simple artwork from a blurry picture: smooth more
 _QUALITY_DENOISE = {"clean": 0, "slightly_noisy": 2, "noisy_or_blurry": 3}
 
 
@@ -94,10 +96,12 @@ def _merge_suggestion(base: dict, ai: dict, label: str, model: str) -> dict:
         ext["num_colors"] = int(colors)
     if isinstance(ai.get("background_is_part_of_design"), bool):
         ext["background"] = "none" if ai["background_is_part_of_design"] else (ext["background"] if ext["background"] != "none" else "auto")
-    if ai.get("detail_level") in _DETAIL_MM:
-        ext["min_feature_mm"] = min(ext["min_feature_mm"], _DETAIL_MM[ai["detail_level"]])
-    if ai.get("has_small_text") is True:
-        ext["min_feature_mm"] = min(ext["min_feature_mm"], 0.5)
+    if ai.get("detail_level") == "high" or ai.get("has_small_text") is True:
+        ext["min_feature_mm"] = min(ext["min_feature_mm"], _DETAIL_HIGH_MM)
+    if ai.get("has_small_text") is True and out.get("text", {}).get("found"):
+        out.setdefault("stitch", {})["thread_weight"] = 60
+    elif ai.get("detail_level") == "low":
+        ext["min_feature_mm"] = max(ext["min_feature_mm"], _DETAIL_LOW_MM)
     if ai.get("picture_quality") in _QUALITY_DENOISE:
         ext["denoise"] = max(ext["denoise"], _QUALITY_DENOISE[ai["picture_quality"]])
     if ai.get("design_type") in ("logo", "text", "illustration", "photo", "mixed"):
@@ -121,6 +125,7 @@ def review_stitches(plan, design, params, preview_png: bytes, original_png: Opti
     facts = json.dumps({
         "size_mm": [stats["width_mm"], stats["height_mm"]], "stitches": stats["stitches"], "colours": stats["colors"],
         "thread_cuts": stats["trims"], "layers": [l.name for l in design.layers if l.enabled],
+        "machine_check_spots": summarize_risks(plan.risks),
     })
     settings = json.dumps({k: getattr(params, k) for k in builtin.STITCH_LIMITS})
     prompt = prompts.REVIEW.format(

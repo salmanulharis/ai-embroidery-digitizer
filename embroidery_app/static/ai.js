@@ -225,7 +225,8 @@ const AI = (() => {
       if (e.num_colors) $("num_colors").value = String(Math.min(15, e.num_colors));
       if (e.background) $("background").value = e.background;
       if (e.min_feature_mm != null) $("min_feature_mm").value = e.min_feature_mm;
-      if (e.denoise != null) { $("denoise").value = e.denoise; $("denoise").setAttribute("aria-valuetext", DENOISE[e.denoise]); }
+      if (e.denoise != null) { $("denoise").value = e.denoise; showAdjustValues(); }
+      if (r.stitch && r.stitch.thread_weight && $("stitchForm").elements.thread_weight) $("stitchForm").elements.thread_weight.value = String(r.stitch.thread_weight);
       $("aiSuggestResult").innerHTML = `<p class="small good">Suggested settings applied.</p>`;
       await extract();
     };
@@ -263,6 +264,7 @@ const AI = (() => {
   }
 
   function settingLabel(key) {
+    if (key === "thread_weight") return "Thread (40 = standard, 60 = fine)";
     const row = PARAMS.find(([k]) => k === key) || CHECKS.find(([k]) => k === key);
     return row ? row[1] : key;
   }

@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # Site login (Caddy basic auth from BASIC_AUTH_USER / BASIC_AUTH_PASSWORD).
+  # TEMPORARILY "off": the site is open without signing in. Set to "on" and push a new
+  # tag to require the login again - the variable and secret are kept in GitHub.
+  SITE_LOGIN: "off"
+
 concurrency:
   group: production-deploy
   cancel-in-progress: false
@@ -54,7 +60,7 @@ jobs:
           LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
           EC2_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
           HAS_SSH_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY != '' }}
-          BASIC_AUTH_USER: ${{ vars.BASIC_AUTH_USER }}
+          BASIC_AUTH_USER: ${{ env.SITE_LOGIN == 'on' && vars.BASIC_AUTH_USER || '' }}
           HAS_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD != '' }}
         run: |
           missing=""
@@ -93,8 +99,8 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
           DOMAIN: ${{ vars.APP_DOMAIN }}
           EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
-          BASIC_AUTH_USER: ${{ vars.BASIC_AUTH_USER }}
-          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+          BASIC_AUTH_USER: ${{ env.SITE_LOGIN == 'on' && vars.BASIC_AUTH_USER || '' }}
+          BASIC_AUTH_PASSWORD: ${{ env.SITE_LOGIN == 'on' && secrets.BASIC_AUTH_PASSWORD || '' }}
           MAX_UPLOAD_MB: ${{ vars.MAX_UPLOAD_MB }}
           RASTER_MAX_SIDE_PX: ${{ vars.RASTER_MAX_SIDE_PX }}
           RASTER_PX_PER_MM: ${{ vars.RASTER_PX_PER_MM }}
@@ -129,8 +135,8 @@ jobs:
       - name: Check the live site
         env:
           APP_DOMAIN: ${{ vars.APP_DOMAIN }}
-          BASIC_AUTH_USER: ${{ vars.BASIC_AUTH_USER }}
-          BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+          BASIC_AUTH_USER: ${{ env.SITE_LOGIN == 'on' && vars.BASIC_AUTH_USER || '' }}
+          BASIC_AUTH_PASSWORD: ${{ env.SITE_LOGIN == 'on' && secrets.BASIC_AUTH_PASSWORD || '' }}
         run: |
           auth=()
           [ -n "$BASIC_AUTH_USER" ] && auth=(-u "$BASIC_AUTH_USER:$BASIC_AUTH_PASSWORD")
