@@ -268,3 +268,61 @@ dialog#aiDialog::backdrop { background: rgba(10,14,22,.5); backdrop-filter: blur
 .spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; animation-duration: 2s !important; } }
+
+/* ------------------------------------------------------------------ header actions: undo / redo / pin */
+.hdr-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.edit-actions { display: inline-flex; align-items: center; gap: 4px; }
+.edit-actions button { min-height: 34px; padding: 4px 10px; }
+#btnPin.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* ------------------------------------------------------------------ select by colour + thread colour */
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.chip { min-height: 32px; padding: 3px 10px 3px 6px; border-radius: 999px; font-size: 13px; gap: 6px; }
+.chip i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); display: inline-block; }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.sp-colour { margin: 4px 0 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.sp-colour .row { color: var(--text); }
+.sp-colour select { min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); font: inherit; max-width: 100%; }
+.sp-colour input[type=color] { width: 40px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; }
+.sp-colour .ghost { align-self: flex-start; }
+.sp-head button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+/* ------------------------------------------------------------------ reference + shape editing */
+.refbar, .editbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 8px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--raised); }
+.refbar label, .editbar label { margin: 0; display: flex; align-items: center; gap: 8px; }
+.refbar select { min-height: 30px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; }
+.refbar input[type=range], .editbar input[type=range] { width: 120px; accent-color: var(--accent); }
+.editbar { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 70%, var(--card)); }
+.editbar .seg button { min-height: 34px; padding: 4px 10px; }
+.editbar .primary { width: auto; margin: 0 0 0 auto; }
+.editbar .brush output { min-width: 52px; display: inline-block; }
+.checker.with-ref .shape { opacity: .7; }
+.checker.with-ref .layer-off .shape { opacity: .15; }
+.checker.editing { outline: 2px solid var(--accent); outline-offset: -2px; }
+.checker.editing[data-tool="add"], .checker.editing[data-tool="erase"],
+.checker.editing[data-tool="lasso-add"], .checker.editing[data-tool="lasso-erase"] { cursor: crosshair; }
+.checker.editing[data-tool="add"] .shape, .checker.editing[data-tool="erase"] .shape,
+.checker.editing[data-tool="lasso-add"] .shape, .checker.editing[data-tool="lasso-erase"] .shape { cursor: crosshair; }
+@media (max-width: 560px) {
+  .editbar .seg button span { display: none; }
+  .editbar .seg button { padding: 4px 9px; font-size: 16px; }
+  .refbar input[type=range], .editbar input[type=range] { width: 100px; }
+}
+
+/* ------------------------------------------------------------------ pinned preview: stays in view, settings scroll */
+:root { --hdr: 64px; }
+body.pin .preview-zone { position: sticky; top: var(--hdr); z-index: 6; background: var(--card);
+  margin: -18px -18px 10px; padding: 18px 18px 10px; border-bottom: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0; box-shadow: 0 8px 14px -12px rgba(0,0,0,.35); }
+body.pin .grid > .side { top: calc(var(--hdr) + 8px); max-height: calc(100vh - var(--hdr) - 16px); }
+body.pin .preview-zone .checker { aspect-ratio: auto; height: clamp(220px, 44vh, 520px); }
+body.pin .canvasWrap { height: clamp(240px, 52vh, 640px); }
+@media (max-width: 960px) {
+  body.pin .preview-zone { margin: -14px -14px 10px; padding: 10px 14px 8px; }
+  body.pin .preview-zone .src-fig { display: none; } /* one preview on small screens: the editable design */
+  body.pin .preview-zone .checker { height: 36vh; }
+  body.pin .canvasWrap { height: 40vh; }
+  body.pin .preview-zone .hint { display: none; }
+}
+@media (max-width: 560px) { .hdr-actions .help { display: none; } }

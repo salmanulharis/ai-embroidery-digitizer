@@ -158,9 +158,10 @@ const HELP = {
     why: "Check the directions at a glance before creating stitches.",
   },
   undo: {
-    t: "Undo",
-    what: "Takes back your last change to the design (shape settings, colours, merging or “Update preview”).",
-    eg: "Shortcut: Ctrl+Z (Cmd+Z on Mac).",
+    t: "Undo / Redo",
+    what: "Undo takes back your changes to the design one by one (shape edits, colours, stitch styles, merging, “Update preview”) - up to 50 steps. Redo brings back what you undid.",
+    why: "Try things freely: nothing is lost until you make a new change after undoing.",
+    eg: "Undo: Ctrl+Z (Cmd+Z). Redo: Ctrl+Y or Ctrl+Shift+Z.",
   },
   shape_style: {
     t: "Stitch style for the selected shapes",
@@ -359,6 +360,36 @@ const HELP = {
   },
 
   // ---------------------------------------------------------------- preview & results
+  pin: {
+    t: "Pin preview",
+    what: "Keeps the preview in view at the top while you scroll through the settings below it.",
+    why: "You see every change on the design straight away. Click again for the normal layout, where the preview scrolls with the page.",
+  },
+  reference: {
+    t: "Reference",
+    what: "Shows the original picture (or the design as first extracted) faded under your shapes, exactly lined up with them - also when you zoom or move.",
+    why: "Compare your edits with the artwork you started from. Use the slider to make it fainter or stronger.",
+  },
+  colour_select: {
+    t: "Select by colour",
+    what: "Selects every area sewn in that thread colour, all over the design.",
+    why: "Change the stitch style, direction, thickness or thread colour of all those areas at once. Shift-click to add another colour.",
+  },
+  shape_colour: {
+    t: "Thread colour",
+    what: "With all areas of a colour selected, picking a colour changes the thread for every one of them. With only some areas selected, they move to another colour (existing or new).",
+    why: "Fix a wrong colour everywhere at once, or give a single part of the design its own thread.",
+  },
+  shape_edit: {
+    t: "Edit shape",
+    what: "Change the outline of the selected areas by hand: paint area on, erase it, or draw an outline to add or cut away.",
+    why: "Fix a broken letter, close a gap, remove a stray bit or tidy an edge the automatic tracing got wrong. Every change can be undone.",
+  },
+  shape_edit_tools: {
+    t: "Editing tools",
+    what: "Paint / Erase use the brush size. Lasso +/- add or cut the area inside the outline you draw. Grow / Shrink change the size by 0.2 mm all round; Smooth rounds off jagged edges.",
+    why: "Area you add is taken away from other colours underneath, so nothing is stitched twice. Zoom with the mouse wheel or two fingers; hold Space (or use Move) to pan.",
+  },
   view: {
     t: "Preview style",
     what: "Realistic: how the finished embroidery will look. Sewing direction: arrows show which way the needle moves. Stitch types: each kind of stitch in its own colour. Machine check: circles mark spots where the thread may break or a detail may not show.",

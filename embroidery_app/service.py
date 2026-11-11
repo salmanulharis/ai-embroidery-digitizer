@@ -6,6 +6,8 @@ Each project lives in ``data/projects/<id>/``:
   work.png      current raster working image (original or AI-cleaned)
   vector.svg    SVG text for vector uploads (AI/PDF converted on upload)
   design.json   the extracted, user-editable design
+  history/      undo / redo snapshots of design.json
+  design.extracted.json, reference.png   editing reference (as first extracted)
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ from .ingest import detect_kind
 from .ingest.raster import RasterOptions, encode_png, load_raster, raster_to_design
 from .ingest.vector import VectorOptions, ai_or_pdf_to_svg, svg_to_design
 from .export.vector import object_d
+from .geometry import iter_polygons, union_all
+from .ingest.raster import MARK_MIN_MM2
 from .models import (
     PULL_RANGE_MM,
     SPACING_RANGE_MM,
@@ -86,28 +90,82 @@ def load_design(pid: str) -> Design:
     return design
 
 
+HISTORY_LIMIT = 50  # undo steps kept per project
+
+
+def _history(pid: str, kind: str) -> Path:
+    """Undo / redo stacks: numbered snapshots of design.json (newest = highest)."""
+    d = _dir(pid)
+    p = d / "history" / kind
+    p.mkdir(parents=True, exist_ok=True)
+    old = d / "design.prev.json"  # one-level undo of earlier versions
+    if kind == "undo" and old.exists():
+        if not any(p.glob("*.json")):
+            shutil.move(str(old), p / "000001.json")
+        else:
+            old.unlink()
+    return p
+
+
+def _entries(p: Path) -> list[Path]:
+    return sorted(p.glob("*.json"))
+
+
+def _push(pid: str, kind: str, text: str) -> None:
+    p = _history(pid, kind)
+    files = _entries(p)
+    n = int(files[-1].stem) + 1 if files else 1
+    (p / f"{n:06d}.json").write_text(text, encoding="utf-8")
+    for f in _entries(p)[:-HISTORY_LIMIT]:
+        f.unlink()
+
+
+def _pop(pid: str, kind: str) -> str | None:
+    files = _entries(_history(pid, kind))
+    if not files:
+        return None
+    text = files[-1].read_text(encoding="utf-8")
+    files[-1].unlink()
+    return text
+
+
 def _save_design(pid: str, design: Design, undoable: bool = True) -> None:
     d = _dir(pid)
     current = d / "design.json"
     if undoable and current.exists():
-        shutil.copyfile(current, d / "design.prev.json")  # one-level undo
+        _push(pid, "undo", current.read_text(encoding="utf-8"))
+        for f in _entries(_history(pid, "redo")):  # a new change ends the redo chain
+            f.unlink()
     current.write_text(json.dumps(design.to_dict()), encoding="utf-8")
     _plan_cache.pop(pid, None)
 
 
 def can_undo(pid: str) -> bool:
-    return (_dir(pid) / "design.prev.json").exists()
+    return bool(_entries(_history(pid, "undo")))
+
+
+def can_redo(pid: str) -> bool:
+    return bool(_entries(_history(pid, "redo")))
+
+
+def _step(pid: str, src: str, dst: str, empty_msg: str) -> dict:
+    current = _dir(pid) / "design.json"
+    text = _pop(pid, src)
+    if text is None:
+        raise ValueError(empty_msg)
+    if current.exists():
+        _push(pid, dst, current.read_text(encoding="utf-8"))
+    current.write_text(text, encoding="utf-8")
+    _plan_cache.pop(pid, None)
+    return design_payload(load_design(pid), pid)
 
 
 def undo(pid: str) -> dict:
-    d = _dir(pid)
-    prev = d / "design.prev.json"
-    if not prev.exists():
-        raise ValueError("There is nothing to undo.")
-    shutil.copyfile(prev, d / "design.json")
-    prev.unlink()
-    _plan_cache.pop(pid, None)
-    return design_payload(load_design(pid), pid)
+    return _step(pid, "undo", "redo", "There is nothing to undo.")
+
+
+def redo(pid: str) -> dict:
+    return _step(pid, "redo", "undo", "There is nothing to redo.")
 
 
 def cleanup_old_projects(max_age_days: float = 7) -> int:
@@ -192,11 +250,13 @@ def extract(pid: str, options: dict) -> dict:
     width = float(options.get("width_mm") or 100)
     if not 10 <= width <= 500:
         raise ValueError("Design width must be between 10 and 500 mm.")
+    reference = None
     if meta["kind"] == "raster":
         opts = _options(RasterOptions, options)
         rgba = load_raster((d / "work.png").read_bytes())
         design, preview = raster_to_design(rgba, opts)
         (d / "extracted.png").write_bytes(encode_png(preview))
+        reference = getattr(design, "reference", None)
     else:
         opts = _options(VectorOptions, options)
         design = svg_to_design((d / "vector.svg").read_text(encoding="utf-8"), opts)
@@ -206,9 +266,58 @@ def extract(pid: str, options: dict) -> dict:
     if (d / "design.json").exists():
         _carry_shape_settings(load_design(pid), design)
     _save_design(pid, design)
+    _save_reference(pid, meta, design, reference)
     meta["extract_options"] = asdict(opts)
     _save_meta(pid, meta)
     return design_payload(design, pid)
+
+
+REFERENCE_MAX_PX = 1600
+
+
+def _save_reference(pid: str, meta: dict, design: Design, reference: dict | None) -> None:
+    """Keep the design as first extracted (and, for pictures, the picture exactly
+    where the shapes were traced from) as a see-through guide for shape editing."""
+    d = _dir(pid)
+    (d / "design.extracted.json").write_text(json.dumps(design.to_dict()), encoding="utf-8")
+    meta["reference_size"] = [round(design.width_mm, 4), round(design.height_mm, 4)]
+    meta.pop("reference_box", None)
+    (d / "reference.png").unlink(missing_ok=True)
+    if reference is None:
+        return
+    pic = reference["picture"]
+    h, w = pic.shape[:2]
+    s = min(1.0, REFERENCE_MAX_PX / max(h, w))
+    if s < 1:
+        import cv2
+
+        pic = cv2.resize(pic, (max(1, int(w * s)), max(1, int(h * s))), interpolation=cv2.INTER_AREA)
+    (d / "reference.png").write_bytes(encode_png(pic))
+    meta["reference_box"] = reference["box"]
+
+
+def reference_info(pid: str) -> dict:
+    d = _dir(pid)
+    meta = _meta(pid)
+    box = meta.get("reference_box")
+    snap = d / "design.extracted.json"
+    return {
+        "picture": bool(box) and (d / "reference.png").exists(),
+        "box": box,
+        "design": snap.exists(),
+        "size": meta.get("reference_size"),  # [w, h] mm of the design as first extracted
+        "version": int(snap.stat().st_mtime_ns // 1_000_000) if snap.exists() else 0,  # cache-buster
+    }
+
+
+def reference_file(pid: str, kind: str) -> tuple[bytes, str]:
+    d = _dir(pid)
+    if kind == "picture" and (d / "reference.png").exists():
+        return (d / "reference.png").read_bytes(), "image/png"
+    if kind == "design" and (d / "design.extracted.json").exists():
+        snap = Design.from_dict(json.loads((d / "design.extracted.json").read_text(encoding="utf-8")))
+        return design_to_svg(snap).encode(), "image/svg+xml"
+    raise NotFound()
 
 
 def _carry_shape_settings(old: Design, new: Design, min_overlap: float = 0.5) -> None:
@@ -262,6 +371,8 @@ def design_payload(design: Design, pid: str | None = None) -> dict:
         "svg": design_to_svg(design, interactive=True),
         "objects": describe_objects(design, params),
         "can_undo": can_undo(pid) if pid else False,
+        "can_redo": can_redo(pid) if pid else False,
+        "reference": reference_info(pid) if pid else None,
     }
 
 
@@ -360,6 +471,164 @@ def update_objects(
             o.bold = None if bold == _INHERIT else bold
     _save_design(pid, design)
     return design_payload(design, pid)
+
+
+# --------------------------------------------------------------------------- colour + shape editing
+
+def recolor_objects(pid: str, ids: list[str], target: int | None = None, hex_color: str | None = None) -> dict:
+    """Move shapes to another thread colour: an existing one (``target``) or the colour
+    ``hex_color`` (an existing colour with that value is reused, else a new one is added).
+    Colours left without shapes are removed; the receiving colour is fused into regions."""
+    from .colors import color_name
+    from .models import hex_to_rgb
+
+    design = load_design(pid)
+    by_id = {o.id: o for o in design.objects}
+    chosen = [by_id[i] for i in ids if i in by_id]
+    if not chosen:
+        raise ValueError("Select at least one shape first.")
+    if target is not None:
+        design.layer(int(target))  # validate
+        dest = int(target)
+    else:
+        if not hex_color or not re.fullmatch(r"#?[0-9a-fA-F]{6}", hex_color):
+            raise ValueError("Pick a thread colour.")
+        rgb = hex_to_rgb(hex_color)
+        found = next((l for l in design.layers if tuple(l.rgb) == tuple(rgb)), None)
+        if found is None:
+            src = design.layer(chosen[0].layer)
+            found = ColorLayer(index=max(l.index for l in design.layers) + 1, rgb=rgb, name=color_name(rgb),
+                               stitch_type=src.stitch_type, angle=src.angle)
+            pos = design.layers.index(src) + 1  # sewn right after the colour the shapes came from
+            design.layers.insert(pos, found)
+        found.enabled = True
+        dest = found.index
+    for o in chosen:
+        o.layer = dest
+    moved = union_all([o.geometry for o in chosen])
+    used = {o.layer for o in design.objects}
+    design.layers = [l for l in design.layers if l.index in used]
+    design.normalize(layers=[dest])
+    _save_design(pid, design)
+    return {**design_payload(design, pid), "selected": _covering(design, {dest}, moved)}
+
+
+def _covering(design: Design, layers: set, geom) -> list[str]:
+    """Ids of the shapes that now hold ``geom`` (after merging / splitting), so the
+    editor keeps the same areas selected."""
+    if geom is None or geom.is_empty:
+        return []
+    probe = geom.buffer(-0.02) if geom.area > 0.01 else geom
+    probe = geom if probe.is_empty else probe
+    return [o.id for o in design.objects if o.layer in layers and o.geometry.intersects(probe)]
+
+
+EDIT_OPS = ("add", "erase", "grow", "shrink", "smooth")
+MAX_EDIT_POINTS = 5000
+
+
+def _clean_area(geom):
+    """Valid polygons only, without tracing crumbs."""
+    from shapely import make_valid
+    from shapely.geometry import MultiPolygon
+
+    parts = [p for p in iter_polygons(make_valid(geom)) if p.area >= MARK_MIN_MM2 / 2]
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else MultiPolygon(parts)
+
+
+def _edit_region(tool: str, points, size_mm: float):
+    from shapely.geometry import LineString, Point, Polygon
+
+    pts = []
+    for p in points or []:
+        try:
+            x, y = float(p[0]), float(p[1])
+        except (TypeError, ValueError, IndexError):
+            raise ValueError("Invalid drawing points.") from None
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise ValueError("Invalid drawing points.")
+        pts.append((x, y))
+    if not pts or len(pts) > MAX_EDIT_POINTS:
+        raise ValueError("Draw on the design to edit the shape.")
+    if tool == "lasso":
+        if len(pts) < 3:
+            raise ValueError("Draw a closed outline around the area.")
+        region = Polygon(pts).buffer(0)
+    else:  # brush
+        region = Point(pts[0]).buffer(size_mm / 2) if len(pts) == 1 else LineString(pts).buffer(size_mm / 2)
+    if region.is_empty or region.area <= 0:
+        raise ValueError("The drawn area is empty.")
+    return region
+
+
+def edit_shapes(pid: str, ids: list[str], op: str, tool: str = "brush", points=None, size_mm: float = 1.0) -> dict:
+    """Change the outline of selected areas: paint / lasso area on (``add``) or off
+    (``erase``), or ``grow`` / ``shrink`` / ``smooth`` them by ``size_mm``.
+    Area added to a colour is removed from the other colours under it, so nothing is
+    stitched twice."""
+    if op not in EDIT_OPS:
+        raise ValueError("Unknown shape edit.")
+    if tool not in ("brush", "lasso"):
+        raise ValueError("Unknown drawing tool.")
+    try:
+        size_mm = float(size_mm)
+    except (TypeError, ValueError):
+        raise ValueError("Brush size must be a number.") from None
+    if not (0.05 <= size_mm <= 30):
+        raise ValueError("Size must be between 0.05 and 30 mm.")
+    design = load_design(pid)
+    by_id = {o.id: o for o in design.objects}
+    chosen = [by_id[i] for i in ids if i in by_id and by_id[i].kind == "area"]
+    if not chosen:
+        raise ValueError("Select a filled shape to edit.")
+    touched = {o.layer for o in chosen}
+    added = None
+    if op == "add":
+        region = _edit_region(tool, points, size_mm)
+        target = max((o for o in chosen if o.layer == chosen[0].layer), key=lambda o: o.geometry.area)
+        target.geometry = target.geometry.union(region)
+        added = region
+    elif op == "erase":
+        region = _edit_region(tool, points, size_mm)
+        for o in chosen:
+            o.geometry = o.geometry.difference(region)
+    else:
+        for o in chosen:
+            g = o.geometry
+            if op == "grow":
+                new = g.buffer(size_mm, join_style="round")
+                added = new if added is None else added.union(new)
+            elif op == "shrink":
+                new = g.buffer(-size_mm, join_style="round")
+            else:  # smooth: round off jaggies and notches smaller than size
+                r = size_mm / 2
+                new = g.buffer(r, join_style="round").buffer(-2 * r, join_style="round").buffer(r, join_style="round")
+            o.geometry = new
+    if added is not None:  # cover, don't stack: other colours give way under the new area
+        mine = set(id(o) for o in chosen)
+        for o in design.objects:
+            if o.kind == "area" and id(o) not in mine and o.layer not in touched and o.geometry.intersects(added):
+                o.geometry = o.geometry.difference(added)
+                touched.add(o.layer)
+    kept = []
+    for o in design.objects:
+        if o.kind == "area":
+            cleaned = _clean_area(o.geometry)
+            if cleaned is None:
+                continue
+            o.geometry = cleaned
+        kept.append(o)
+    if not any(o.kind == "area" or o.kind == "line" for o in kept):
+        raise ValueError("That would remove the whole design.")
+    design.objects = kept
+    alive = {id(o) for o in kept}
+    edited = union_all([o.geometry for o in chosen if id(o) in alive])
+    chosen_layers = {o.layer for o in chosen}
+    design.normalize(layers=touched)
+    _save_design(pid, design)
+    return {**design_payload(design, pid), "selected": _covering(design, chosen_layers, edited)}
 
 
 def _checked_mm(value, bounds: tuple[float, float], label: str):

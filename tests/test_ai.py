@@ -177,7 +177,7 @@ def test_ai_cleanup_modes_revert_and_key_never_stored(fake):
     assert "at most 4 colours" not in fake.seen[-1]["prompt"]  # enhance prompt has no colour limit
     assert client.post(f"/api/projects/{pid}/ai/clean", json={"ai": AI, "mode": "paint"}).status_code == 400
     assert client.post(f"/api/projects/{pid}/ai/revert").json()["ai_cleaned"] is False
-    for f in (service.PROJECTS / pid).iterdir():
+    for f in (p for p in (service.PROJECTS / pid).rglob("*") if p.is_file()):  # incl. undo history
         assert KEY.encode() not in f.read_bytes(), f"API key leaked into {f.name}"
 
 

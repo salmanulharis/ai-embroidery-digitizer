@@ -437,6 +437,9 @@ def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.
     objects = [DesignObject(layer=remap[o.layer], geometry=o.geometry) for o in objects if o.layer in remap]
 
     h, w = labels.shape
+    # where the working picture sits in design mm (x, y, width, height): lets the editor
+    # show the original picture exactly under the traced shapes
+    reference_box = (0.0, 0.0, w / ppm, h / ppm)
     if objects:
         from shapely.affinity import translate
 
@@ -449,6 +452,9 @@ def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.
         if abs(k - 1) > 1e-3:
             objects = [DesignObject(layer=o.layer, geometry=affinity.scale(o.geometry, k, k, origin=(0, 0))) for o in objects]
             width_mm, height_mm = width_mm * k, height_mm * k
+        else:
+            k = 1.0
+        reference_box = (-minx * k, -miny * k, w / ppm * k, h / ppm * k)
     else:
         width_mm, height_mm = w / ppm, h / ppm
     design = Design(
@@ -464,4 +470,6 @@ def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.
     for c in range(n):
         preview[labels == c, :3] = rgb_centers[c]
         preview[labels == c, 3] = 255
+    # not part of the saved design: the service stores it as the editing reference
+    design.reference = {"box": [round(v, 4) for v in reference_box], "picture": work}  # type: ignore[attr-defined]
     return design, preview

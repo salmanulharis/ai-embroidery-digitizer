@@ -32,6 +32,8 @@ async function busy(text, fn) {
 }
 function showStep(n) {
   window.scrollTo({ top: 0, behavior: "smooth" });
+  $("editActions").classList.toggle("hidden", n < 2);
+  requestAnimationFrame(measureHeader);
   ["step1", "step2", "step3"].forEach((id, i) => $(id).classList.toggle("hidden", (n >= 3 ? 3 : n) !== i + 1));
   document.querySelectorAll("#steps li").forEach((li) => {
     const s = +li.dataset.step;
@@ -226,6 +228,7 @@ function renderDesign(res) {
     }
   });
   $("btnUndo").disabled = !res.can_undo;
+  $("btnRedo").disabled = !res.can_redo;
   Shapes.afterRender(res);
 }
 
@@ -286,21 +289,42 @@ async function saveLayers() {
   if (res) renderDesign(res);
 }
 
-async function undoLast() {
-  if ($("btnUndo").disabled || !state.project) return;
-  const res = await busy("Undoing…", () => api(`/api/projects/${state.project.id}/undo`, { method: "POST" }));
+// Undo / redo: many steps, kept on the server per project (every design change).
+async function historyStep(kind) {
+  const btn = kind === "undo" ? $("btnUndo") : $("btnRedo");
+  if (btn.disabled || !state.project) return;
+  const res = await busy(kind === "undo" ? "Undoing…" : "Redoing…", () => api(`/api/projects/${state.project.id}/${kind}`, { method: "POST" }));
   renderDesign(res);
   if (!$("step3").classList.contains("hidden")) await generate({ keepView: true });
 }
+const undoLast = () => historyStep("undo");
+const redoLast = () => historyStep("redo");
 $("btnUndo").onclick = undoLast;
+$("btnRedo").onclick = redoLast;
 document.addEventListener("keydown", (ev) => {
-  // Ctrl/Cmd+Z on the design screens, but never while typing in a field
-  if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === "z" && !ev.target.matches("input, select, textarea")
-      && state.project && $("step1").classList.contains("hidden")) {
-    ev.preventDefault();
-    undoLast();
-  }
+  // Ctrl/Cmd+Z = undo, Ctrl+Y or Ctrl/Cmd+Shift+Z = redo - never while typing in a field
+  if (!(ev.ctrlKey || ev.metaKey) || ev.target.matches("input, select, textarea") || !state.project || !$("step1").classList.contains("hidden")) return;
+  const k = ev.key.toLowerCase();
+  if (k === "z" && !ev.shiftKey) { ev.preventDefault(); undoLast(); }
+  else if (k === "y" || (k === "z" && ev.shiftKey)) { ev.preventDefault(); redoLast(); }
 });
+
+// Pin preview: the preview stays in view while the settings scroll (remembered per browser).
+function measureHeader() {
+  const h = document.querySelector("header").getBoundingClientRect().height;
+  document.documentElement.style.setProperty("--hdr", `${Math.round(h)}px`);
+}
+function setPinned(on) {
+  document.body.classList.toggle("pin", on);
+  $("btnPin").setAttribute("aria-pressed", on);
+  $("btnPin").classList.toggle("on", on);
+  try { localStorage.setItem("pinPreview", on ? "1" : "0"); } catch (_) {}
+  measureHeader();
+  if (state.preview && !$("step3").classList.contains("hidden")) requestAnimationFrame(draw);
+}
+$("btnPin").onclick = () => setPinned(!document.body.classList.contains("pin"));
+window.addEventListener("resize", measureHeader);
+(() => { let on = false; try { on = localStorage.getItem("pinPreview") === "1"; } catch (_) {} setPinned(on); })();
 
 $("btnExtract").onclick = extract;
 $("btnApprove").onclick = async () => { showStep(3); await generate(); };

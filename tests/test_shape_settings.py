@@ -217,16 +217,26 @@ def test_dont_stitch_shape_is_skipped_everywhere():
     assert svg.count("<path") == len(res["objects"]) - 1
 
 
-def test_reset_and_one_level_undo():
+def test_reset_and_multi_level_undo_redo():
     pid, res = _project()
     ids = [o["id"] for o in res["objects"]]
+    angle = lambda r, i: {o["id"]: o["angle"] for o in r["objects"]}[i]
     client.put(f"/api/projects/{pid}/objects", json={"ids": ids[:2], "angle": 10})
     r = client.post(f"/api/projects/{pid}/objects/reset", json={"ids": [ids[0]]}).json()
-    assert {o["id"]: o["angle"] for o in r["objects"]}[ids[0]] is None
+    assert angle(r, ids[0]) is None and r["can_redo"] is False
     r = client.post(f"/api/projects/{pid}/undo").json()  # back to before the reset
-    assert {o["id"]: o["angle"] for o in r["objects"]}[ids[0]] == 10
-    assert r["can_undo"] is False
+    assert angle(r, ids[0]) == 10 and r["can_undo"] is True and r["can_redo"] is True
+    r = client.post(f"/api/projects/{pid}/undo").json()  # and before the direction change
+    assert angle(r, ids[0]) is None and r["can_undo"] is False
     assert client.post(f"/api/projects/{pid}/undo").status_code == 400
+    r = client.post(f"/api/projects/{pid}/redo").json()
+    assert angle(r, ids[0]) == 10
+    r = client.post(f"/api/projects/{pid}/redo").json()
+    assert angle(r, ids[0]) is None and r["can_redo"] is False
+    assert client.post(f"/api/projects/{pid}/redo").status_code == 400
+    client.post(f"/api/projects/{pid}/undo")
+    r = client.put(f"/api/projects/{pid}/objects", json={"ids": ids[:1], "angle": 30}).json()
+    assert r["can_redo"] is False  # a new change ends the redo chain
     r = client.post(f"/api/projects/{pid}/objects/reset", json={}).json()
     assert all(o["angle"] is None for o in r["objects"])
 

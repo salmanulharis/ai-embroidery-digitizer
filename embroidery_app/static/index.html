@@ -16,7 +16,16 @@
     <li data-step="3"><span>Create stitches</span></li>
     <li data-step="4"><span>Download</span></li>
   </ol>
-  <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
+  <div class="hdr-actions">
+    <span class="edit-actions hidden" id="editActions">
+      <button type="button" class="ghost" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;<span class="hide-sm"> Undo</span></button>
+      <button type="button" class="ghost" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo">&#8631;<span class="hide-sm"> Redo</span></button>
+      <i data-help="undo"></i>
+      <button type="button" class="ghost" id="btnPin" aria-pressed="false" title="Keep the preview in view while you scroll the settings">&#128204;<span class="hide-sm"> Pin preview</span></button>
+      <i data-help="pin"></i>
+    </span>
+    <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
+  </div>
 </header>
 
 <main>
@@ -124,16 +133,27 @@
       </aside>
 
       <div class="card">
-        <div class="compare">
-          <figure><figcaption>Your file</figcaption><div class="checker"><img id="srcImg" alt="Your uploaded file"></div></figure>
+        <div class="compare preview-zone">
+          <figure class="src-fig"><figcaption>Your file</figcaption><div class="checker"><img id="srcImg" alt="Your uploaded file"></div></figure>
           <figure>
             <figcaption class="figbar">
               <span>Design ready for stitching <i data-help="vector_preview"></i></span>
               <span class="figtools">
-                <label class="check small"><input type="checkbox" id="showDirections"> Show directions <i data-help="show_directions"></i></label>
+                <label class="check small"><input type="checkbox" id="showDirections"> Directions <i data-help="show_directions"></i></label>
+                <label class="check small"><input type="checkbox" id="showRef"> Reference <i data-help="reference"></i></label>
                 <button type="button" class="ghost small" id="btnFitSvg" aria-label="Fit design to view">Fit</button>
               </span>
             </figcaption>
+            <div class="refbar hidden" id="refBar">
+              <label class="small"><span class="lbl">Show</span>
+                <select id="refKind" aria-label="Reference to show">
+                  <option value="picture">Original picture</option>
+                  <option value="design">Design as first extracted</option>
+                </select></label>
+              <label class="small refop"><span class="lbl">Opacity <output id="refOpOut">40%</output></span>
+                <input type="range" id="refOpacity" min="5" max="100" step="5" value="40" aria-label="Reference opacity"></label>
+            </div>
+            <div class="editbar hidden" id="editBar" role="toolbar" aria-label="Shape editing tools"></div>
             <div class="checker editable" id="svgBox" aria-label="Prepared design - click a shape to change its stitching, scroll to zoom, drag to move"></div>
             <p class="muted small hint">Click a shape to change how it is stitched · Shift-click for several · scroll to zoom · drag to move <i data-help="shape_select"></i></p>
           </figure>
@@ -142,7 +162,6 @@
         <div id="warnings2" class="warnings"></div>
         <div class="row between">
           <h3>Thread colours <span class="muted small">(sewn from top to bottom)</span></h3>
-          <span><button type="button" class="ghost" id="btnUndo" disabled>&#8630; Undo</button><i data-help="undo"></i></span>
         </div>
         <div class="tableWrap"><table class="layers" id="layers"></table></div>
         <div class="row end">
@@ -164,6 +183,7 @@
         <button class="ghost" id="btnBack">&larr; Back to design</button>
       </aside>
       <div class="card">
+        <div class="preview-zone">
         <div class="toolbar">
           <div class="seg" id="viewMode" role="group" aria-label="Preview style">
             <button data-mode="real" class="on" aria-pressed="true">Realistic</button>
@@ -183,6 +203,7 @@
           <button id="btnPlay" aria-label="Play sewing simulation">&#9654;</button>
           <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Sewing progress">
           <span id="scrubInfo" class="small muted"></span>
+        </div>
         </div>
         <p class="muted small hint">Tip: click a shape in the preview to change its stitch style or direction right here. <i data-help="shape_click3"></i></p>
         <div id="shapePanel3" class="shapepanel" aria-live="polite"></div>

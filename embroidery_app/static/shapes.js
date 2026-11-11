@@ -13,6 +13,17 @@ const Shapes = (() => {
   let drawMode = false;
   let paths3 = []; // step-3 hit-test shapes [{id, order, kind, width, path}]
   let down = null; // pointer state for step-2 preview
+  // shape editing (step 2): paint / erase / lasso the outline of the selected areas
+  const edit = { on: false, tool: "add", size: 1.0, refAuto: true };
+  let refInfo = null; // {picture, box, design, size, version} - see service.reference_info
+  let spaceDown = false;
+  const EDIT_TOOLS = [
+    ["move", "✋", "Move", "Move and select (no drawing)"],
+    ["add", "🖌", "Paint", "Paint area on"],
+    ["erase", "⌫", "Erase", "Erase area"],
+    ["lasso-add", "⬚+", "Lasso +", "Draw an outline to add"],
+    ["lasso-erase", "⬚−", "Lasso −", "Draw an outline to cut away"],
+  ];
 
   const STYLE_OPTIONS = [
     ["inherit", "Same as colour"], ["auto", "Automatic"], ["fill", "Fill (large areas)"],
@@ -40,6 +51,8 @@ const Shapes = (() => {
 
   // ------------------------------------------------------------------ data from the server
   function afterRender(payload) {
+    refInfo = payload.reference || null;
+    syncRefControls();
     objects = payload.objects || [];
     byId = new Map(objects.map((o) => [o.id, o]));
     for (const id of [...sel]) if (!byId.has(id) || !layerOn(byId.get(id))) sel.delete(id);
@@ -54,9 +67,12 @@ const Shapes = (() => {
     sel.clear();
     objects = []; byId = new Map(); vb = null; vbKey = ""; paths3 = [];
     setDrawMode(false);
+    setEdit(false);
+    edit.refAuto = true;
   }
 
   function refresh() {
+    if (edit.on && !editable().length) setEdit(false);
     decorate();
     renderPanel($("shapePanel"), 2);
     renderPanel($("shapePanel3"), 3);
@@ -93,6 +109,10 @@ const Shapes = (() => {
   async function applied(res) {
     const focusKey = document.activeElement?.dataset?.action;
     const panelId = document.activeElement?.closest?.(".shapepanel")?.id;
+    if (Array.isArray(res.selected)) { // the server merged / split the edited areas: keep them selected
+      sel.clear();
+      res.selected.forEach((id) => sel.add(id));
+    }
     renderDesign(res);
     if (onStep3()) {
       const before = state.preview?.stats;
@@ -107,6 +127,64 @@ const Shapes = (() => {
     if (focusKey) (panelId ? $(panelId) : document).querySelector(`[data-action="${focusKey}"]`)?.focus();
   }
 
+  async function recolor(body, label) {
+    const res = await busy(label, () => api(`/api/projects/${state.project.id}/objects/recolor`, json("POST", body)));
+    await applied(res);
+  }
+
+  async function setLayerHex(index, hex) {
+    const layers = state.design.layers.map(({ index: i, hex: h, name, enabled, stitch_type, angle }) =>
+      ({ index: i, hex: i === index ? hex : h, name, enabled, stitch_type, angle }));
+    const res = await busy("Changing thread colour…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers })));
+    await applied(res);
+  }
+
+  async function sendEdit(body, label = "Editing shape…") {
+    const ids = editable().map((o) => o.id);
+    if (!ids.length) return toast("Select a filled shape to edit.");
+    const res = await busy(label, () => api(`/api/projects/${state.project.id}/objects/edit`, json("POST", { ids, ...body })));
+    await applied(res);
+  }
+
+  // ------------------------------------------------------------------ colours: select every area of a thread colour
+  const layerObjects = (idx) => objects.filter((o) => o.layer === idx);
+  const layerById = (idx) => state.design?.layers.find((l) => l.index === idx);
+  const fullySelected = (idx) => { const items = layerObjects(idx); return items.length > 0 && items.every((o) => sel.has(o.id)); };
+
+  function chipsHtml() {
+    const ls = (state.design?.layers || []).filter((l) => l.enabled && layerObjects(l.index).length);
+    if (!ls.length) return "";
+    return `<div class="chips" role="group" aria-label="Select every area of a thread colour">
+      <span class="small muted">Select by colour ${Tip.icon("colour_select")}</span>
+      ${ls.map((l) => {
+        const on = fullySelected(l.index);
+        return `<button type="button" class="chip ${on ? "on" : ""}" data-action="pick-colour" data-layer="${l.index}" aria-pressed="${on}" title="Select every ${esc(l.name)} area (Shift: add to selection)">
+          <i style="background:${l.hex}"></i>${esc(l.name)} <span class="muted">${layerObjects(l.index).length}</span></button>`;
+      }).join("")}</div>`;
+  }
+
+  function colourHtml(perLayer) {
+    const idxs = [...perLayer.keys()];
+    if (idxs.length === 1 && fullySelected(idxs[0])) {
+      const l = layerById(idxs[0]);
+      const n = layerObjects(l.index).length;
+      return `<div class="sp-colour"><span class="lbl">Thread colour ${Tip.icon("shape_colour")}</span>
+        <span class="row"><input type="color" data-action="layer-hex" value="${l.hex}" aria-label="Thread colour for every ${esc(l.name)} area">
+        <span class="small">Changes all <b>${n}</b> ${esc(l.name)} area${n === 1 ? "" : "s"} together</span></span></div>`;
+    }
+    const single = idxs.length === 1 ? layerById(idxs[0]) : null;
+    const others = (state.design?.layers || []).filter((l) => !single || l.index !== single.index);
+    return `<div class="sp-colour"><span class="lbl">Thread colour of the selected areas ${Tip.icon("shape_colour")}</span>
+      <span class="row">
+        <select data-action="move-to" aria-label="Move the selected areas to another thread colour">
+          <option value="">Move to colour…</option>${others.map((l) => `<option value="${l.index}">${esc(l.name)} (${l.hex})</option>`).join("")}
+        </select>
+        <label class="check small">or a new colour <input type="color" data-action="new-hex" value="${single?.hex || "#000000"}" aria-label="New thread colour for the selected areas"></label>
+      </span>
+      ${single ? `<button type="button" class="ghost small" data-action="select-colour" data-layer="${single.index}">Select every ${esc(single.name)} area (${layerObjects(single.index).length})</button>` : ""}
+    </div>`;
+  }
+
   // ------------------------------------------------------------------ selection panel
   function renderPanel(el, step) {
     if (!el) return;
@@ -118,7 +196,7 @@ const Shapes = (() => {
       ? `<button type="button" class="ghost small" data-action="reset-all">Reset all shape settings (${customCount})</button>${Tip.icon("shape_reset")}`
       : "";
     if (!chosen.length) {
-      dyn.innerHTML = `<div class="sp-empty small muted">${step === 2
+      dyn.innerHTML = chipsHtml() + `<div class="sp-empty small muted">${step === 2
         ? "No shape selected. Click a shape in the design above to give it its own stitch style or direction."
         : "No shape selected. Click a shape in the stitch preview to change it."} ${resetAll}</div>`;
       el.classList.toggle("active", false);
@@ -206,13 +284,16 @@ const Shapes = (() => {
         : "Direction does not apply to outlines or shapes that are not stitched."}</p>`
       : "";
 
-    dyn.innerHTML = `
+    const canEdit = step === 2 && chosen.some((o) => o.kind === "area");
+    dyn.innerHTML = `${chipsHtml()}
       <div class="sp-head">
         <b>${chosen.length === 1 ? "1 shape selected" : `${chosen.length} shapes selected`}</b>
         <span class="small">${names}</span>
+        ${canEdit ? `<button type="button" class="small ${edit.on ? "on" : ""}" data-action="edit" aria-pressed="${edit.on}">✎ ${edit.on ? "Editing shape" : "Edit shape"}</button>${Tip.icon("shape_edit")}` : ""}
         <button type="button" class="ghost small" data-action="clear">Clear selection</button>
       </div>
       <p class="small sp-now">${now}</p>
+      ${colourHtml(perLayer)}
       <div class="sp-grid">
         <label><span class="lbl">Stitch style ${Tip.icon("shape_style")}</span>
           <select data-action="style" aria-label="Stitch style for the selected shapes">${styleOpts}</select></label>
@@ -252,8 +333,20 @@ const Shapes = (() => {
     const ids = [...sel];
     if (ev.type === "click") {
       if (action === "clear") return select([]);
+      if (action === "pick-colour" || action === "select-colour") {
+        const idx = Number(t.dataset.layer);
+        const ids2 = layerObjects(idx).filter(layerOn).map((o) => o.id);
+        if (action === "pick-colour" && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
+          const all = ids2.every((id) => sel.has(id));
+          ids2.forEach((id) => (all ? sel.delete(id) : sel.add(id)));
+          return refresh();
+        }
+        if (action === "pick-colour" && fullySelected(idx) && sel.size === ids2.length) return select([]);
+        return select(ids2);
+      }
+      if (action === "edit") return setEdit(!edit.on);
       if (action === "preset") return update({ ids, angle: Number(t.dataset.angle) }, "Changing direction…");
-      if (action === "draw") return setDrawMode(!drawMode);
+      if (action === "draw") { if (!drawMode) setEdit(false); return setDrawMode(!drawMode); }
       if (action === "reset-sel") return resetShapes(ids);
       if (action === "reset-all") {
         if (confirm("Reset every shape to its colour's settings?")) return resetShapes([]);
@@ -287,6 +380,15 @@ const Shapes = (() => {
       return;
     }
     if (ev.type === "change") {
+      if (action === "layer-hex") {
+        const idx = [...new Set([...sel].map((id) => byId.get(id)?.layer))][0];
+        return setLayerHex(idx, t.value);
+      }
+      if (action === "move-to") {
+        if (t.value === "") return;
+        return recolor({ ids, target: Number(t.value) }, "Changing thread colour…");
+      }
+      if (action === "new-hex") return recolor({ ids, hex: t.value }, "Changing thread colour…");
       if (action === "style") {
         const v = t.value;
         if (!v) return;
@@ -369,10 +471,45 @@ const Shapes = (() => {
     return e;
   }
 
+  // ------------------------------------------------------------------ reference (faded original under the shapes)
+  function syncRefControls() {
+    const kind = $("refKind");
+    if (!kind) return;
+    const pic = !!refInfo?.picture, des = !!refInfo?.design;
+    kind.querySelector('option[value="picture"]').disabled = !pic;
+    kind.querySelector('option[value="design"]').disabled = !des;
+    if (kind.value === "picture" && !pic) kind.value = "design";
+    $("showRef").disabled = !pic && !des;
+    $("refBar").classList.toggle("hidden", !$("showRef").checked || $("showRef").disabled);
+  }
+
+  function referenceImage() {
+    if (!$("showRef")?.checked || !refInfo || !state.project) return null;
+    const kind = $("refKind").value;
+    const base = `/api/projects/${state.project.id}/reference/${kind}?v=${refInfo.version || 0}`;
+    const op = (+$("refOpacity").value || 40) / 100;
+    let attrs = null;
+    if (kind === "picture" && refInfo.picture && refInfo.box) {
+      const [x, y, w, h] = refInfo.box;
+      attrs = { x, y, width: w, height: h };
+    } else if (refInfo.design) {
+      const [w, h] = refInfo.size || [state.design.width_mm, state.design.height_mm];
+      attrs = { x: 0, y: 0, width: w, height: h };
+    }
+    if (!attrs) return null;
+    // inside the design's own SVG: it zooms and pans with the shapes, always aligned
+    const img = el("image", { ...attrs, class: "sp-ref", preserveAspectRatio: "none", opacity: op, "pointer-events": "none" });
+    img.setAttribute("href", base);
+    return img;
+  }
+
   function decorate() {
     const svg = svgEl();
     if (!svg) return;
-    svg.querySelectorAll(".sp-defs, .sp-overlay").forEach((n) => n.remove());
+    svg.querySelectorAll(".sp-defs, .sp-overlay, .sp-ref").forEach((n) => n.remove());
+    const ref = referenceImage();
+    $("svgBox").classList.toggle("with-ref", !!ref);
+    if (ref) svg.insertBefore(ref, svg.querySelector("g[id^='layer-']") || svg.firstChild);
     svg.querySelectorAll("[data-oid]").forEach((p) => p.classList.toggle("sel", sel.has(p.dataset.oid)));
     const defs = el("defs", { class: "sp-defs" });
     const overlay = el("g", { class: "sp-overlay", "pointer-events": "none" });
@@ -415,6 +552,97 @@ const Shapes = (() => {
     svg.append(overlay);
   }
 
+  // ------------------------------------------------------------------ shape editing
+  const editable = () => [...sel].map((id) => byId.get(id)).filter((o) => o && o.kind === "area");
+
+  function setEdit(on) {
+    on = !!on && editable().length > 0;
+    edit.on = on;
+    if (on) {
+      setDrawMode(false);
+      if (edit.refAuto && $("showRef") && !$("showRef").disabled) { // first time: show the reference to edit against
+        $("showRef").checked = true;
+        edit.refAuto = false;
+        syncRefControls();
+      }
+    }
+    renderEditBar();
+    document.querySelectorAll('[data-action="edit"]').forEach((b) => { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+    decorate();
+  }
+
+  function renderEditBar() {
+    const bar = $("editBar");
+    if (!bar) return;
+    bar.classList.toggle("hidden", !edit.on);
+    const box = $("svgBox");
+    box.classList.toggle("editing", edit.on);
+    box.dataset.tool = edit.on ? edit.tool : "";
+    if (!edit.on) { bar.innerHTML = ""; return; }
+    bar.innerHTML = `
+      <div class="seg" role="group" aria-label="Editing tool">${EDIT_TOOLS.map(([k, g, label, title]) =>
+        `<button type="button" data-tool="${k}" class="${edit.tool === k ? "on" : ""}" aria-pressed="${edit.tool === k}" title="${title}">${g} <span>${label}</span></button>`).join("")}</div>
+      <label class="small brush"><span class="lbl">Brush <output data-out="size">${edit.size.toFixed(1)} mm</output></span>
+        <input type="range" data-edit="size" min="0.3" max="10" step="0.1" value="${edit.size}" aria-label="Brush size in millimetres"></label>
+      <span class="row nowrap">
+        <button type="button" class="small" data-edit="grow" title="Make the selected areas 0.2 mm bigger all round">Grow</button>
+        <button type="button" class="small" data-edit="shrink" title="Make the selected areas 0.2 mm smaller all round">Shrink</button>
+        <button type="button" class="small" data-edit="smooth" title="Round off jagged edges and tiny notches">Smooth</button>
+        ${Tip.icon("shape_edit_tools")}
+      </span>
+      <button type="button" class="primary small" data-edit="done">Done</button>`;
+  }
+
+  function onEditBar(ev) {
+    const t = ev.target.closest("[data-tool], [data-edit]");
+    if (!t) return;
+    if (ev.type === "input" && t.dataset.edit === "size") {
+      edit.size = Number(t.value);
+      $("editBar").querySelector('[data-out="size"]').textContent = `${edit.size.toFixed(1)} mm`;
+      return;
+    }
+    if (ev.type !== "click") return;
+    if (t.dataset.tool) { edit.tool = t.dataset.tool; return renderEditBar(); }
+    const op = t.dataset.edit;
+    if (op === "done") return setEdit(false);
+    if (op === "grow" || op === "shrink") return sendEdit({ op, size_mm: 0.2 }, op === "grow" ? "Growing…" : "Shrinking…");
+    if (op === "smooth") return sendEdit({ op, size_mm: 0.4 }, "Smoothing…");
+  }
+
+  // live stroke while painting / drawing an outline
+  function strokeColour(op) {
+    if (op === "erase") return "#ff3b30";
+    const l = layerById(editable()[0]?.layer);
+    return l?.hex || "#2d5bd7";
+  }
+
+  function drawStroke(svg, d) {
+    let g = svg.querySelector(".sp-stroke");
+    if (!g) { g = el("path", { class: "sp-stroke", "pointer-events": "none" }); svg.append(g); }
+    const pts = d.stroke;
+    const lasso = edit.tool.startsWith("lasso");
+    const op = edit.tool.endsWith("erase") ? "erase" : "add";
+    const path = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(3)} ${y.toFixed(3)}`).join("") + (lasso ? "Z" : "");
+    g.setAttribute("d", pts.length === 1 && !lasso ? `M${pts[0][0]} ${pts[0][1]}l0.001 0` : path);
+    if (lasso) {
+      Object.entries({ fill: strokeColour(op), "fill-opacity": 0.3, stroke: op === "erase" ? "#ff3b30" : "#2d5bd7", "stroke-width": 1.5,
+        "stroke-dasharray": "5 3", "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }).forEach(([k, v]) => g.setAttribute(k, v));
+    } else {
+      Object.entries({ fill: "none", stroke: strokeColour(op), "stroke-opacity": 0.55, "stroke-width": edit.size,
+        "stroke-linecap": "round", "stroke-linejoin": "round" }).forEach(([k, v]) => g.setAttribute(k, v));
+    }
+  }
+
+  async function finishStroke(svg, d) {
+    svg.querySelector(".sp-stroke")?.remove();
+    const lasso = edit.tool.startsWith("lasso");
+    const op = edit.tool.endsWith("erase") ? "erase" : "add";
+    const pts = d.stroke.map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
+    if (lasso && pts.length < 3) return toast("Draw an outline around the area.");
+    await sendEdit({ op, tool: lasso ? "lasso" : "brush", points: pts.slice(0, 5000), size_mm: edit.size },
+      op === "add" ? "Adding area…" : "Erasing area…");
+  }
+
   function setDrawMode(on) {
     drawMode = on;
     $("svgBox")?.classList.toggle("drawing", on);
@@ -434,19 +662,62 @@ const Shapes = (() => {
       applyViewBox();
     }, { passive: false });
 
+    const fingers = new Map();
+    let pinch = null;
     box.addEventListener("pointerdown", (ev) => {
       const svg = svgEl();
-      if (!svg || ev.button !== 0) return;
-      down = { cx: ev.clientX, cy: ev.clientY, start: svgPoint(svg, ev), oid: ev.target.closest?.("[data-oid]")?.dataset.oid, moved: false };
+      if (!svg) return;
+      fingers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (fingers.size === 2) { // two fingers: zoom + pan, never draw
+        svg.querySelector(".sp-stroke")?.remove();
+        down = null;
+        const [a, b] = [...fingers.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+        return;
+      }
+      const pan = ev.button === 1 || (ev.button === 0 && spaceDown);
+      if (ev.button !== 0 && !pan) return;
+      if (pan) ev.preventDefault();
+      const start = svgPoint(svg, ev);
+      const drawing = !pan && edit.on && edit.tool !== "move" && editable().length > 0;
+      down = { cx: ev.clientX, cy: ev.clientY, start, oid: ev.target.closest?.("[data-oid]")?.dataset.oid, moved: false, pan,
+        stroke: drawing ? [[start.x, start.y]] : null };
       box.setPointerCapture(ev.pointerId);
+      if (drawing) drawStroke(svg, down);
     });
     box.addEventListener("pointermove", (ev) => {
       const svg = svgEl();
+      if (fingers.has(ev.pointerId)) fingers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pinch && fingers.size === 2 && svg && vb) {
+        const [a, b] = [...fingers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const k = 1 / (svg.getScreenCTM()?.a || 1);
+        vb = { ...vb, x: vb.x - (mx - pinch.mx) * k, y: vb.y - (my - pinch.my) * k };
+        applyViewBox();
+        const p = svgPoint(svg, { clientX: mx, clientY: my });
+        const f = pinch.d / d;
+        vb = { x: p.x - (p.x - vb.x) * f, y: p.y - (p.y - vb.y) * f, w: vb.w * f, h: vb.h * f };
+        applyViewBox();
+        pinch = { d, mx, my };
+        return;
+      }
       if (!down || !svg) return;
+      if (down.stroke) {
+        const p = svgPoint(svg, ev);
+        const last = down.stroke[down.stroke.length - 1];
+        const k = 1 / (svg.getScreenCTM()?.a || 1); // mm per screen px
+        const step = edit.tool.startsWith("lasso") ? 2 * k : Math.max(2 * k, edit.size * 0.15);
+        if (Math.hypot(p.x - last[0], p.y - last[1]) >= step && down.stroke.length < 5000) {
+          down.stroke.push([p.x, p.y]);
+          down.moved = true;
+          drawStroke(svg, down);
+        }
+        return;
+      }
       const dx = ev.clientX - down.cx, dy = ev.clientY - down.cy;
       if (!down.moved && Math.hypot(dx, dy) < 4) return;
       down.moved = true;
-      if (drawMode) { // live direction arrow
+      if (drawMode && !down.pan) { // live direction arrow
         const p = svgPoint(svg, ev);
         svg.querySelector(".sp-arrow")?.remove();
         const g = el("g", { class: "sp-arrow", "pointer-events": "none" });
@@ -462,12 +733,19 @@ const Shapes = (() => {
       down.cx = ev.clientX; down.cy = ev.clientY;
       applyViewBox();
     });
+    const lift = (ev) => {
+      fingers.delete(ev.pointerId);
+      if (fingers.size < 2) pinch = null;
+    };
     box.addEventListener("pointerup", async (ev) => {
+      lift(ev);
       const svg = svgEl();
       if (!down || !svg) return;
       const d = down;
       down = null;
       svg.querySelector(".sp-arrow")?.remove();
+      if (d.stroke) return finishStroke(svg, d);
+      if (d.pan) return;
       if (drawMode) {
         const p = svgPoint(svg, ev);
         const dx = p.x - d.start.x, dy = p.y - d.start.y;
@@ -486,7 +764,12 @@ const Shapes = (() => {
       if (d.oid) select([d.oid], additive);
       else if (!additive) select([]);
     });
-    box.addEventListener("pointercancel", () => { down = null; });
+    box.addEventListener("pointercancel", (ev) => {
+      lift(ev);
+      svgEl()?.querySelector(".sp-stroke")?.remove();
+      down = null;
+    });
+    box.addEventListener("auxclick", (ev) => ev.button === 1 && ev.preventDefault());
   }
 
   // ------------------------------------------------------------------ step 3: click shapes in the stitch preview
@@ -540,11 +823,24 @@ const Shapes = (() => {
       panel.addEventListener("change", onPanelEvent);
     }
     $("showDirections").addEventListener("change", decorate);
+    $("showRef").addEventListener("change", () => { edit.refAuto = false; syncRefControls(); decorate(); });
+    $("refKind").addEventListener("change", decorate);
+    $("refOpacity").addEventListener("input", () => {
+      $("refOpOut").textContent = `${$("refOpacity").value}%`;
+      const img = svgEl()?.querySelector(".sp-ref");
+      if (img) img.setAttribute("opacity", $("refOpacity").value / 100);
+    });
+    $("editBar").addEventListener("click", onEditBar);
+    $("editBar").addEventListener("input", onEditBar);
+    document.addEventListener("keydown", (ev) => { if (ev.code === "Space" && !ev.target.matches("input, select, textarea, button")) { spaceDown = true; if (edit.on) ev.preventDefault(); } });
+    document.addEventListener("keyup", (ev) => { if (ev.code === "Space") spaceDown = false; });
     $("btnFitSvg").addEventListener("click", fitSvg);
     bindSvgBox();
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape" || ev.target.matches("input, select, textarea")) return;
-      if (drawMode) setDrawMode(false);
+      if (down?.stroke) { svgEl()?.querySelector(".sp-stroke")?.remove(); down = null; return; }
+      if (edit.on) setEdit(false);
+      else if (drawMode) setDrawMode(false);
       else if (sel.size) select([]);
     });
   }

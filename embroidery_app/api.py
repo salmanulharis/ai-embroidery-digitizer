@@ -90,6 +90,20 @@ class ObjectsBody(BaseModel):
     bold: Optional[Union[bool, str]] = None  # outlines 3x / once, "inherit" = design setting
 
 
+class RecolorBody(BaseModel):
+    ids: list[str] = []
+    target: Optional[int] = None  # existing colour index, or
+    hex: Optional[str] = None  # a thread colour (#rrggbb)
+
+
+class ShapeEditBody(BaseModel):
+    ids: list[str] = []
+    op: str  # add | erase | grow | shrink | smooth
+    tool: str = "brush"  # brush | lasso
+    points: list[list[float]] = []  # mm, design coordinates
+    size_mm: float = 1.0
+
+
 class ResetBody(BaseModel):
     ids: Optional[list[str]] = None  # None / empty = every shape
 
@@ -189,6 +203,27 @@ def reset_objects(pid: str, body: ResetBody):
 @app.post("/api/projects/{pid}/undo")
 def undo(pid: str):
     return service.undo(pid)
+
+
+@app.post("/api/projects/{pid}/redo")
+def redo(pid: str):
+    return service.redo(pid)
+
+
+@app.post("/api/projects/{pid}/objects/recolor")
+def recolor(pid: str, body: RecolorBody):
+    return service.recolor_objects(pid, body.ids, body.target, body.hex)
+
+
+@app.post("/api/projects/{pid}/objects/edit")
+def edit_shapes(pid: str, body: ShapeEditBody):
+    return service.edit_shapes(pid, body.ids, body.op, body.tool, body.points, body.size_mm)
+
+
+@app.get("/api/projects/{pid}/reference/{kind}")
+def reference(pid: str, kind: str):
+    data, mime = service.reference_file(pid, kind)
+    return Response(data, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
 @app.put("/api/projects/{pid}/layers")
