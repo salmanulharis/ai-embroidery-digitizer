@@ -32,7 +32,7 @@ const Shapes = (() => {
   const COLOUR_STYLE = { auto: "Automatic", fill: "Fill", satin: "Satin", running: "Outline only", lettering: "Lettering" };
   const METHOD_LABEL = {
     fill: "fill", satin: "satin", satin_band: "satin that follows the shape", satin_line: "satin that follows the line",
-    stroke: "satin that follows each stroke", dot: "satin dot",
+    column: "satin that follows the shape", stroke: "satin that follows each stroke", dot: "satin dot",
     running: "outline", outline: "outline", mixed: "mixed styles", none: "too small to stitch",
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
@@ -61,6 +61,16 @@ const Shapes = (() => {
     applyViewBox();
     buildList();
     refresh();
+  }
+
+  // shape info recomputed with the stitch settings just used (the stitch method and
+  // direction of a shape depend on them, e.g. on "Smart direction")
+  function setObjects(list) {
+    if (!Array.isArray(list)) return;
+    objects = list;
+    byId = new Map(objects.map((o) => [o.id, o]));
+    for (const id of [...sel]) if (!byId.has(id)) sel.delete(id);
+    buildList();
   }
 
   function reset() {
@@ -279,7 +289,7 @@ const Shapes = (() => {
       : "";
 
     const followNote = !dirApplies
-      ? `<p class="small muted">${chosen.some((o) => ["satin_band", "satin_line", "stroke", "dot"].includes(o.method))
+      ? `<p class="small muted">${chosen.some((o) => ["satin_band", "satin_line", "column", "stroke", "dot"].includes(o.method))
         ? "This satin follows the shape's curve, so its direction is set automatically. Choose <i>Fill</i> as the stitch style to set a direction."
         : "Direction does not apply to outlines or shapes that are not stitched."}</p>`
       : "";
@@ -845,5 +855,5 @@ const Shapes = (() => {
     });
   }
 
-  return { init, afterRender, reset, select, selectLayer, setStitchShapes, click3, drawSelection3, refresh };
+  return { init, afterRender, reset, select, selectLayer, setObjects, setStitchShapes, click3, drawSelection3, refresh };
 })();

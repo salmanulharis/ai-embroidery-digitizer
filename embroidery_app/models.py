@@ -308,6 +308,7 @@ class StitchParams:
     fill_stitch_length_mm: float = 3.5
     fill_angle: float = 45.0
     vary_fill_angle: bool = True  # rotate angle per layer for a richer look
+    smart_direction: bool = False  # best direction for every section of the design (see stitch/smart.py)
     satin_spacing_mm: float = 0.40
     satin_max_width_mm: float = 7.0  # wider columns become fill
     satin_min_width_mm: float = 0.8

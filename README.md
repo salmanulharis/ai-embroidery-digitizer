@@ -151,6 +151,44 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    The UI shows original vs optimized counts and lets you switch the preview between them. Typical savings:
    1–10% on logos, up to ~40% on thin lettering.
 
+### Smart direction (optional)
+
+By default every shape of a colour is filled in that colour's direction, and only thin strokes (< 2 mm),
+clean rings and straight columns get satin. That suits some sections of a design and spoils others: curved
+or medium-sized lettering becomes a flat fill, and a fill angle that is right for one shape runs along the
+edge of the next. **Smart direction** (`smart_direction`, off by default) looks at each section on its own:
+
+* **Columns**: a narrow section of any width up to the satin limit gets satin that follows its centre
+  line: curved and circular text, swooshes, borders with corners, letters with several holes.
+  * Stitches cross the column at right angles all the way along, with a stitch across each end.
+  * The stitch gap is measured on the outer edge of a bend; on the inside of a tight bend every second
+    (or two of three) stitch stops short, so the thread doesn't pile up.
+  * Where strokes meet, the two that continue each other are sewn as one (the upright of an R, the bar
+    of a T) and the others end at its edge with a 0.3 mm overlap. At a corner one stroke runs on to the
+    outline and the other ends against it.
+  * Foundation by width: centre run (from 1.5 mm), a run along both edges (from 2.5 mm), plus a zig-zag
+    (from 4 mm).
+  * Strokes of one shape are sewn in an order that avoids thread cuts: the needle moves along the centre
+    of strokes that are still to be sewn, where their satin hides it.
+* **Sections**: a narrow arm growing out of a wide shape (a tail, a connecting bar) is sewn as its own
+  satin column and overlaps the filled body by 0.5 mm, so no gap opens at the seam. Rounded corners, short
+  stubs and parts nearly as wide as the body stay with the fill.
+* **Fill direction per section**: rows cross the section the short way, don't run along its edges
+  (within 12°) and break into as few pieces as possible. Shapes that sew equally well in any direction
+  (discs, squares at 45°) keep the colour's direction, so "change direction per colour" still shows.
+* **Straight satin** is refined from the 15° search to the degree.
+
+Rules:
+
+* Precedence is unchanged: **shape → colour → smart → design**. A direction or stitch style you set for a
+  shape or a colour always wins, and "same direction for the whole design" in the shape editor still
+  gives one direction everywhere.
+* With the option off, the stitching is byte-identical to before. Small lettering (< 1 mm strokes) keeps
+  its own engine, which widens strokes and protects gaps.
+* It is plain geometry in `stitch/smart.py`: no AI model, deterministic and cached per outline.
+* A shape is only sewn as columns if they cover it (at most 6% left over after corner patches);
+  otherwise it keeps the classic satin or fill.
+
 The web UI explains every option in plain language: hover over, tap or focus the **?** next to it. All help
 text lives in `embroidery_app/static/help.js`.
 
@@ -171,6 +209,7 @@ embroidery_app/
     rows.py           scan lines + chain decomposition
     generators.py     tatami, satin (area / line / band), running, underlay
     planner.py        classification, ordering, travel/jump/trim/lock assembly
+    smart.py          smart direction: columns along centre lines, sections, fill direction per section
   export/
     embroidery.py     pystitch writers + worksheet
     vector.py         clean SVG (mm)
@@ -198,7 +237,7 @@ tests/                pytest suite
 | PUT | `/api/projects/{id}/objects` | per-shape settings `{ids, scope: selected\|colour\|all, stitch_type, angle, enabled, spacing_mm, pull_mm, bold}`. `"inherit"` = same as colour or design |
 | POST | `/api/projects/{id}/objects/reset` | `{ids}` back to colour settings (empty = all shapes) |
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |
-| POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, …}}` → preview data + stats |
+| POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn |
 | GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip` |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
@@ -221,8 +260,9 @@ for the built-in algorithms.
 
 ## Known limitations / roadmap
 
-* Satin on irregular shapes, such as some letters, falls back to fill. Variable-direction satin on free
-  shapes (skeleton-based columns) is the next quality step. SVG strokes and ring borders already get true path satin.
+* Without **Smart direction**, satin on irregular shapes, such as some letters, falls back to fill. With it,
+  narrow shapes up to the satin width get satin along their centre lines; shapes wider than that are still
+  filled in one direction per section (no curved or contour fill yet).
 * No specialty stitches yet (motif, contour/spiral fill, 3D puff, appliqué, sequins).
 * Text inside SVGs must be converted to outlines. EPS and CorelDRAW must be exported to SVG or PDF first.
 * Thread brand catalogs (Madeira, Isacord…) aren't bundled. Colors are free RGB that you can edit per layer.

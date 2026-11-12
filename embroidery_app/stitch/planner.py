@@ -13,12 +13,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan
 from . import generators as gen
+from . import smart
 from . import strokes as st
 from .optimize import optimize_ops
 from .rows import best_satin_angle
@@ -31,7 +33,7 @@ ANGLE_OFFSETS = (0, 90, -30, 60, 30, -60)
 class _Item:
     oid: int
     geom: BaseGeometry  # polygon (areas) or line
-    method: str  # fill | satin | satin_line | satin_band | stroke | dot | running | outline
+    method: str  # fill | satin | satin_line | satin_band | column | stroke | dot | running | outline
     width: float = 0.0
     satin_angle: float | None = None
     centre: LineString | None = None  # centreline for ring-shaped bands
@@ -45,13 +47,15 @@ class _Item:
 # Methods whose stitch direction can be chosen; the others follow the shape's path.
 DIRECTIONAL_METHODS = ("fill", "satin")
 # Methods affected by the per-shape thickness / extra-width settings.
-DENSITY_METHODS = ("fill", "satin", "satin_band", "satin_line", "stroke", "dot")
+DENSITY_METHODS = ("fill", "satin", "satin_band", "satin_line", "column", "stroke", "dot")
 # Small-lettering methods (see stitch/strokes.py): narrow free-form strokes up to this
 # average width get satin that follows each stroke; wider shapes keep the usual methods.
 STROKE_MAX_WIDTH_MM = 2.0
 CLASSIC_MIN_WIDTH_MM = 1.0  # from this width plain satin / fill sew a shape well too
 BAND_MIN_WIDTH_MM = 1.2  # thinner rings go to the stroke engine (widening, gap protection)
 OUTLINE_METHODS = ("running", "outline")
+# Sewn as several short pieces inside one shape: a short hidden run joins them instead of a cut.
+MULTI_PIECE_METHODS = (*st.STROKE_METHODS, "column")
 
 
 def shape_params(obj: DesignObject, params: StitchParams) -> StitchParams:
@@ -113,6 +117,13 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
                 items.append(_Item(-1, poly, "stroke"))
                 continue
             forced = "auto"  # too wide for a satin column (very large letters): usual methods
+        # smart direction: only where nothing was chosen by hand for this shape
+        smart_auto = params.smart_direction and forced == "auto" and satin_angle is None
+        if smart_auto and not narrow:
+            sections = _smart_sections(obj, poly, params)
+            if sections:
+                items.extend(sections)
+                continue
         if forced == "auto" and satin_angle is None:
             limits = st.thread_limits(params.thread_weight, params.satin_min_width_mm)
             if st.is_dot(poly, limits):
@@ -126,6 +137,8 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
                 # compact blobs (e.g. letter counters) are not strokes; thinner than a sewable
                 # column the stroke engine is still the only way to get them sewn cleanly
                 and (width < CLASSIC_MIN_WIDTH_MM or st.analyse_stroke_shape(poly).uncovered_share <= st.MAX_UNCOVERED)
+                # smart direction: strokes wide enough to sew as they are become columns (below)
+                and not (smart_auto and width >= CLASSIC_MIN_WIDTH_MM and _column_shape(poly))
             ):
                 items.append(_Item(-1, poly, "stroke"))
                 continue
@@ -134,6 +147,10 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
             if centre is not None:
                 items.append(_Item(-1, poly, "satin_band", centre=centre))
                 continue
+        if smart_auto and narrow and _column_shape(poly):
+            # satin that follows the section's centre line, whatever its width and curve
+            items.append(_Item(-1, poly, "column"))
+            continue
         if forced == "satin" or narrow:
             angle, p95 = best_satin_angle(poly)
             # average stroke width of a long thin shape ~ 2*area/perimeter; a single-angle
@@ -141,10 +158,44 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
             width_est = 2 * poly.area / max(poly.length, 1e-6)
             straight_column = p95 <= min(params.satin_max_width_mm, 1.6 * width_est + 0.6)
             if forced == "satin" or straight_column:
+                if params.smart_direction and satin_angle is None:
+                    angle = smart.refine_satin_angle(poly, angle)
                 items.append(_Item(-1, poly, "satin", satin_angle=angle if satin_angle is None else satin_angle))
                 continue
         items.append(_Item(-1, poly, "fill"))
     return items
+
+
+def _column_shape(poly: Polygon) -> bool:
+    """Can satin columns along its centre lines sew this (narrow) shape?"""
+    return smart.fits_columns(poly) and smart.analyse_columns(poly).ok
+
+
+def _smart_sections(obj: DesignObject, poly: Polygon, params: StitchParams) -> list[_Item]:
+    """A wide shape with narrow arms, as separately sewn sections: every arm that can
+    be sewn as satin gets it (overlapping the body at the seam), the rest is filled.
+    Empty when the shape has no such arm - it is then sewn in one piece as usual."""
+    arms: list[Polygon] = []
+    items: list[_Item] = []
+    for arm in smart.narrow_arms(poly, params.satin_max_width_mm):
+        sewn = classify(DesignObject(obj.layer, smart.with_seam(arm, poly)), "auto", params)
+        if sewn and all(it.method != "fill" for it in sewn):
+            arms.append(arm)
+            items.extend(sewn)
+    if not arms:
+        return []
+    body = poly.difference(shapely.union_all(arms))
+    bodies = [_Item(-1, part, "fill") for part in iter_polygons(body) if part.area >= params.min_object_area_mm2]
+    return bodies + items  # the body first, the details on top of it
+
+
+def smart_fill_angles(items: list[_Item], obj: DesignObject, layer: ColorLayer, base: float, params: StitchParams) -> None:
+    """Smart direction: every filled section gets its own best direction, unless the
+    shape or its colour has a direction of its own. ``base`` is the colour's direction."""
+    for it in items:
+        it.angle = base
+        if params.smart_direction and it.method == "fill" and obj.angle is None and layer.angle is None:
+            it.angle = smart.fill_angle(it.geom, base)
 
 
 def _layer_angle(position: int, layer_angle: float | None, params: StitchParams) -> float:
@@ -198,6 +249,8 @@ def _stitch_item(item: _Item, angle: float, params: StitchParams, start: Pt) -> 
         add("satin", [gen.satin_line(line, item.width, params.satin_spacing_mm, params.pull_compensation_mm, params.max_stitch_mm)])
     elif item.method in ("stroke", "dot"):
         runs.extend(_stitch_strokes(item, params, start))
+    elif item.method == "column":
+        runs.extend(_stitch_columns(item, params, start))
     elif item.method == "running":
         line = item.geom
         if dist(start, line.coords[-1]) < dist(start, line.coords[0]):
@@ -276,6 +329,16 @@ def _stitch_strokes(item: _Item, params: StitchParams, start: Pt) -> list[Run]:
     return runs
 
 
+def _stitch_columns(item: _Item, params: StitchParams, start: Pt) -> list[Run]:
+    """Smart direction: satin along every column of a narrow section (see stitch/smart.py)."""
+    pieces = smart.sew_shape(
+        smart.analyse_columns(item.geom), item.geom, start,
+        lambda width: _stroke_spacing(params, width), params.satin_spacing_mm,
+        params.pull_compensation_mm, params.max_stitch_mm, _limits(params).min_column_mm, params.underlay,
+    )
+    return [Run(kind, pts, item.oid) for kind, pts in pieces if len(pts) >= 2]
+
+
 def _stroke_entry(stroke: st.Stroke, pos: Pt) -> tuple[float, int]:
     coords = list(stroke.line.coords)
     if stroke.closed:
@@ -310,10 +373,11 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             continue
         forced, fill_angle, satin_angle = resolve_settings(obj, layer, positions.get(obj.layer, 0), params)
         items = classify(obj, forced, params, satin_angle)
+        smart_fill_angles(items, obj, layer, fill_angle, params)
         methods = sorted({it.method for it in items})
         method = methods[0] if len(methods) == 1 else ("mixed" if methods else "none")
         if method == "fill":
-            angle = fill_angle
+            angle = max(items, key=lambda it: it.geom.area).angle  # the largest section's direction
         elif method == "satin":
             angle = items[0].satin_angle
         else:
@@ -375,14 +439,15 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
                 continue
             forced, fill_angle, satin_angle = resolve_settings(obj, layer, position, params)
             own = shape_params(obj, params)
-            for it in classify(obj, forced, params, satin_angle):
+            found = classify(obj, forced, params, satin_angle)
+            smart_fill_angles(found, obj, layer, fill_angle, params)
+            for it in found:
                 it.oid = oid
-                it.angle = fill_angle
                 it.source_id = obj.id
                 it.params = own
                 if it.method == "fill":
                     min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
-                if it.method in st.STROKE_METHODS:
+                if it.method in MULTI_PIECE_METHODS:
                     stroke_oids.add(oid)
                 geoms[oid] = it.geom if it.method not in ("running", "satin_line") else it.geom.buffer(max(0.5, it.width / 2))
                 oid += 1

@@ -729,7 +729,9 @@ def stitch(pid: str, params: dict) -> dict:
             _save_meta(pid, meta)
             plan, comparison = original, {**comparison, "reverted": True}
     preview = plan_preview_json(plan)
-    preview["shapes"] = shape_outlines(load_design(pid))
+    design = load_design(pid)
+    preview["shapes"] = shape_outlines(design)
+    preview["objects"] = describe_objects(design, p)  # stitch style / direction per shape with these settings
     if comparison is not None:
         preview["comparison"] = comparison
         preview["original_ops"] = plan_preview_json(original)["ops"] if original is not plan else preview["ops"]

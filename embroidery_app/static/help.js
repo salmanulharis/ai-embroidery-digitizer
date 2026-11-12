@@ -341,6 +341,12 @@ const HELP = {
     what: "Each colour's fill rows run in a slightly different direction.",
     why: "Neighbouring colours catch the light differently, so the design looks crisper.",
   },
+  smart_direction: {
+    t: "Smart direction",
+    what: "Looks at every section of the design on its own and picks the stitch direction that suits its shape. Letters, curved text, rings and other narrow shapes get satin that follows their curve; narrow parts growing out of a large shape are sewn separately; each filled area gets its own best angle.",
+    why: "One direction for a whole colour suits some shapes and spoils others. Off = one direction per colour, as before. Directions and stitch styles you set yourself for a shape or a colour always win, and “same direction for the whole design” still works.",
+    eg: "Turn on for logos with lettering, curved or circular text. Sew a test piece first: more of the design becomes satin.",
+  },
   tie_stitches: {
     t: "Lock stitches",
     what: "Small back-and-forth stitches wherever the thread is cut (start and end of each section). They follow the stitching path and are never shorter than the thread can take.",

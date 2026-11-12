@@ -445,6 +445,7 @@ const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],
   ["vary_fill_angle", "Change fill direction for each colour"],
+  ["smart_direction", "Smart direction – best angle for each section"],
   ["tie_stitches", "Lock stitches at every thread cut"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
@@ -463,10 +464,10 @@ function buildStitchForm() {
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
     `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
     PARAMS.filter((p) => !p[5]).map(field).join("") +
-    CHECKS.slice(1, 3).map(checkbox).join("") +
+    CHECKS.slice(1, 4).map(checkbox).join("") +
     `<details class="group full"><summary>Advanced stitch settings</summary><div class="params">` +
     PARAMS.filter((p) => p[5]).map(field).join("") +
-    CHECKS.slice(3).map(checkbox).join("") +
+    CHECKS.slice(4).map(checkbox).join("") +
     `</div></details>`;
 }
 function stitchParams() {
@@ -484,6 +485,7 @@ async function generate(opts = {}) {
   const prev = await busy("Creating stitches…", () => api(`/api/projects/${state.project.id}/stitch`, json("POST", { params: stitchParams() })));
   state.preview = prev;
   Shapes.setStitchShapes(prev.shapes);
+  Shapes.setObjects(prev.objects); // stitch style and direction as they were really sewn
   const canCompare = !!(prev.comparison && !prev.comparison.reverted && prev.original_ops);
   $("variant").classList.toggle("hidden", !canCompare);
   $("variantHelp")?.classList.toggle("hidden", !canCompare);
