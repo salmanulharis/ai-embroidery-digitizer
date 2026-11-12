@@ -242,8 +242,9 @@ def stitch(pid: str, body: StitchBody):
 
 
 @app.get("/api/projects/{pid}/export/{fmt}")
-def export(pid: str, fmt: str):
-    data, filename, mime = service.export(pid, fmt)
+def export(pid: str, fmt: str, formats: Optional[str] = None):
+    """``formats`` (comma separated, only with ``zip``): the files to put in the archive."""
+    data, filename, mime = service.export(pid, fmt, service.parse_formats(formats) if fmt.lower() == "zip" else None)
     return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 

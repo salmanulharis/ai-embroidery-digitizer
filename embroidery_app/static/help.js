@@ -427,7 +427,7 @@ const HELP = {
     t: "Download",
     what: "Save the design for your embroidery machine or software.",
     why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom.",
-    eg: "Not sure? Download “Everything (.zip)”.",
+    eg: "Tick the files you need, then press Download. One file downloads as it is; several come together in one .zip. Not sure? Keep DST and add the worksheet.",
   },
 };
 

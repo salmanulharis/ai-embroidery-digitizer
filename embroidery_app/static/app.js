@@ -559,18 +559,59 @@ function renderStats() {
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span></div>`).join("");
 }
 
-function renderExports() {
-  const id = state.project.id;
-  const fmts = state.config.formats;
-  const items = Object.entries(fmts).map(([k, f]) => [k, `${f.label} (.${k})`, f.note, k === "dst"]);
+// Download: tick the files you want, then one button. One file downloads as it is,
+// several come as one .zip (browsers block several downloads at once).
+const exportPick = new Set(["dst"]); // kept while the page is open, across re-stitching
+function exportItems() {
+  const items = Object.entries(state.config.formats).map(([k, f]) => [k, `${f.label} (.${k})`, f.note, k === "dst"]);
   items.push(["svg", "Artwork (SVG)", "The cleaned-up design as a vector file – open in Wilcom, Illustrator or Inkscape", false]);
   items.push(["png", "Preview picture (PNG)", "A realistic picture of the embroidery – handy for customer approval", false]);
   items.push(["txt", "Worksheet (TXT)", "Thread order, stitch count and time for the machine operator", false]);
-  items.push(["zip", "Everything (.zip)", "DST + EXP + PES + artwork + preview + worksheet in one download", false]);
+  return items;
+}
+function renderExports() {
+  const items = exportItems();
+  for (const k of [...exportPick]) if (!items.some(([key]) => key === k)) exportPick.delete(k);
   $("exports").innerHTML = items.map(([k, label, note, rec]) =>
-    `<a href="/api/projects/${id}/export/${k}" class="${rec ? "rec" : ""}"><b>${label}${rec ? " ★ recommended" : ""}</b><span>${esc(note)}</span></a>`).join("");
+    `<label class="${rec ? "rec" : ""}${exportPick.has(k) ? " on" : ""}"><input type="checkbox" value="${k}" ${exportPick.has(k) ? "checked" : ""}>` +
+    `<span><b>${label}${rec ? " ★ recommended" : ""}</b><span>${esc(note)}</span></span></label>`).join("");
+  updateDownload();
   $("exportBox").classList.remove("hidden");
 }
+function updateDownload() {
+  const items = exportItems();
+  const chosen = items.filter(([k]) => exportPick.has(k));
+  const n = chosen.length;
+  const btn = $("btnDownload");
+  btn.disabled = !n;
+  btn.textContent = !n ? "Choose a file to download" : n === 1 ? `Download ${chosen[0][1]}` : `Download ${n} files (.zip)`;
+  $("btnExportAll").textContent = n === items.length ? "Clear all" : "Select all";
+}
+$("exports").addEventListener("change", (ev) => {
+  const box = ev.target.closest("input[type=checkbox]");
+  if (!box) return;
+  if (box.checked) exportPick.add(box.value); else exportPick.delete(box.value);
+  box.closest("label").classList.toggle("on", box.checked);
+  updateDownload();
+});
+$("btnExportAll").onclick = () => {
+  const items = exportItems();
+  const all = items.every(([k]) => exportPick.has(k));
+  exportPick.clear();
+  if (!all) items.forEach(([k]) => exportPick.add(k));
+  renderExports();
+};
+$("btnDownload").onclick = () => {
+  const chosen = exportItems().map(([k]) => k).filter((k) => exportPick.has(k));
+  if (!chosen.length) return;
+  const base = `/api/projects/${state.project.id}/export/`;
+  const a = document.createElement("a"); // the server names the file (Content-Disposition)
+  a.href = chosen.length === 1 ? base + chosen[0] : `${base}zip?formats=${chosen.join(",")}`;
+  a.download = "";
+  document.body.append(a);
+  a.click();
+  a.remove();
+};
 
 // ------------------------------------------------------------------ preview canvas
 const KIND_COLORS = ["#2d6cdf", "#d6336c", "#2f9e44", "#f08c00", "#868e96", "#ae3ec9", "#000"]; // fill satin running underlay travel tie

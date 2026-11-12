@@ -238,7 +238,7 @@ tests/                pytest suite
 | POST | `/api/projects/{id}/objects/reset` | `{ids}` back to colour settings (empty = all shapes) |
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |
 | POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn |
-| GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip` |
+| GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip`. For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet) |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
 | POST | `/api/projects/{id}/ai/clean` | `{ai, mode: redraw\|remove_background\|enhance, colors?}` (needs an image-capable AI) |

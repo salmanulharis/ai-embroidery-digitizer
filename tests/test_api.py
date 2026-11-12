@@ -57,6 +57,20 @@ def test_full_raster_workflow(logo_png):
     r = client.get(f"/api/projects/{pid}/export/zip")
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert any(n.endswith(".dst") for n in names) and any(n.endswith(".svg") for n in names)
+    assert sorted(n.rsplit(".", 1)[1] for n in names) == ["dst", "exp", "pes", "png", "svg", "txt"]  # unchanged bundle
+
+    # only the files ticked in the download panel (order kept, duplicates and case ignored)
+    r = client.get(f"/api/projects/{pid}/export/zip?formats=PES,txt, dst,pes")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    assert [n.rsplit(".", 1)[1] for n in z.namelist()] == ["pes", "txt", "dst"]
+    single = client.get(f"/api/projects/{pid}/export/dst").content
+    assert z.read(next(n for n in z.namelist() if n.endswith(".dst"))) == single  # same file as on its own
+    assert client.get(f"/api/projects/{pid}/export/zip?formats=svg").status_code == 200
+    for bad in ("exe", "dst,zip", "", " , "):
+        r = client.get(f"/api/projects/{pid}/export/zip?formats={bad}")
+        assert r.status_code == 400, bad
+    assert client.get(f"/api/projects/{pid}/export/dst?formats=nonsense").status_code == 200  # only used with zip
 
 
 def test_merge_layers(logo_png):

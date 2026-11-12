@@ -769,29 +769,58 @@ def _dense_on_tiny_shapes(design: Design) -> bool:
     return False
 
 
-def export(pid: str, fmt: str) -> tuple[bytes, str, str]:
-    meta = _meta(pid)
-    base = Path(meta["filename"]).stem or "design"
-    fmt = fmt.lower()
+EXTRA_EXPORTS = ("svg", "png", "txt")  # besides the machine formats in FORMATS
+ZIP_DEFAULT = ("dst", "exp", "pes", "svg", "png", "txt")  # "zip" without a choice of formats
+
+
+def _export_file(pid: str, fmt: str, base: str, plan=None) -> tuple[bytes, str, str]:
+    """One downloadable file: (data, filename, mime type). ``plan`` is built when needed."""
     if fmt == "svg":
         return design_to_svg(load_design(pid), only_enabled=True).encode(), f"{base}.svg", "image/svg+xml"
-    plan = get_plan(pid)
+    plan = plan or get_plan(pid)
     if fmt in FORMATS:
         return export_embroidery(plan, fmt, base), f"{base}.{fmt}", "application/octet-stream"
     if fmt == "png":
         return render_png(plan), f"{base}_preview.png", "image/png"
     if fmt == "txt":
         return worksheet(plan, base).encode(), f"{base}_worksheet.txt", "text/plain"
-    if fmt == "zip":
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in ("dst", "exp", "pes"):
-                z.writestr(f"{base}.{f}", export_embroidery(plan, f, base))
-            z.writestr(f"{base}.svg", design_to_svg(load_design(pid), only_enabled=True))
-            z.writestr(f"{base}_preview.png", render_png(plan))
-            z.writestr(f"{base}_worksheet.txt", worksheet(plan, base))
-        return buf.getvalue(), f"{base}_embroidery.zip", "application/zip"
     raise ValueError(f"Unknown export format '{fmt}'")
+
+
+def parse_formats(value: str | None) -> list[str] | None:
+    """``"dst, PES,dst"`` -> ``["dst", "pes"]`` (order kept, duplicates dropped);
+    None when no choice was made. Unknown formats are an error."""
+    if value is None:
+        return None
+    out: list[str] = []
+    for part in value.split(","):
+        f = part.strip().lower()
+        if not f:
+            continue
+        if f not in FORMATS and f not in EXTRA_EXPORTS:
+            raise ValueError(f"Unknown export format '{f}'")
+        if f not in out:
+            out.append(f)
+    if not out:
+        raise ValueError("Choose at least one file to download.")
+    return out
+
+
+def export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes, str, str]:
+    """A single file, or ``zip``: the chosen ``formats`` (default ``ZIP_DEFAULT``) in one archive."""
+    meta = _meta(pid)
+    base = Path(meta["filename"]).stem or "design"
+    fmt = fmt.lower()
+    if fmt != "zip":
+        return _export_file(pid, fmt, base)
+    chosen = formats or list(ZIP_DEFAULT)
+    plan = get_plan(pid) if any(f != "svg" for f in chosen) else None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in chosen:
+            data, filename, _ = _export_file(pid, f, base, plan)
+            z.writestr(filename, data)
+    return buf.getvalue(), f"{base}_embroidery.zip", "application/zip"
 
 
 # --------------------------------------------------------------------------- AI assistant

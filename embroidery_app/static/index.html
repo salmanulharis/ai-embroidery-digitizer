@@ -220,7 +220,14 @@
 
         <div id="exportBox" class="hidden">
           <h3>Download <i data-help="export"></i></h3>
-          <div class="exports" id="exports"></div>
+          <fieldset class="exports-set">
+            <legend class="visually-hidden">Files to download</legend>
+            <div class="exports" id="exports"></div>
+          </fieldset>
+          <div class="row between export-actions">
+            <button type="button" class="ghost small" id="btnExportAll">Select all</button>
+            <button type="button" class="primary" id="btnDownload">Download</button>
+          </div>
         </div>
       </div>
     </div>
