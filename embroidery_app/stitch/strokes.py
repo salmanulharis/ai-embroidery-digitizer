@@ -25,7 +25,7 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 
-from ..geometry import Pt, dist, iter_polygons, resample_line
+from ..geometry import Pt, dist, iter_polygons, resample_line, subdivide
 from .generators import running
 
 STROKE_METHODS = ("stroke", "dot")
@@ -384,7 +384,11 @@ def satin_stroke(
         q = p + n * hl[i] if i % 2 == 0 else p - n * hr[i]
         out.append((float(q[0]), float(q[1])))
     if stroke.closed and out:
-        out.append(out[0] if len(pts) % 2 == 0 else out[1])
+        close = out[0] if len(pts) % 2 == 0 else out[1]
+        if dist(out[-1], close) > max_stitch:
+            out.extend(subdivide(out[-1], close, max_stitch))
+        else:
+            out.append(close)
     return StrokeResult(out, "satin", _spots(pts, narrow))
 
 

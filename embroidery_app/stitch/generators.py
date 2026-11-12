@@ -212,7 +212,9 @@ def satin_line(
         else:
             out.append(p)
     if closed and out:
-        out.append(out[0] if n % 2 == 0 else out[1])  # close the loop on the matching side
+        # close the loop on the matching side; at a corner of a band this stitch
+        # crosses diagonally, so it is split like any other over-long one
+        out.extend(subdivide(out[-1], out[0] if n % 2 == 0 else out[1], max_stitch))
     return out
 
 

@@ -100,6 +100,25 @@ def test_band_outline_uses_centreline_satin():
     assert sum(r > 19 for r in radii) > len(pts) * 0.4 and sum(r < 18 for r in radii) > len(pts) * 0.4
 
 
+def test_band_closing_stitch_at_a_corner_is_split_like_the_others():
+    # a 10 mm square frame, satin allowed up to 12 mm wide: the stitch that closes the
+    # loop crosses a corner diagonally (14 mm) and must be split like the others
+    frame = box(0, 0, 40, 40).difference(box(10, 10, 30, 30))
+    params = StitchParams(satin_max_width_mm=12.0, pull_compensation_mm=0.8)
+    items = classify(DesignObject(0, frame), "auto", params)
+    assert items[0].method == "satin_band"
+    for start in [(0, 0), (40, 40), (20, 0), (40, 20), (3, 37)]:  # entering at corners and along sides
+        pts = gen.satin_band(frame, items[0].centre, 0.4, 0.8, start, params.max_stitch_mm)
+        assert _max_step(pts) <= params.max_stitch_mm + 1e-6
+    plan = plan_stitches(Design(100, 50, [ColorLayer(0, (0, 0, 0), "Black")], [DesignObject(0, frame)]), params)
+    prev = None
+    for cmd, x, y, _ in plan.ops:
+        if cmd == STITCH and prev is not None:
+            assert math.dist(prev, (x, y)) <= params.max_stitch_mm + 1e-6
+        if cmd in (STITCH, "jump"):
+            prev = (x, y)
+
+
 def test_classification():
     params = StitchParams()
     bar = DesignObject(0, box(0, 0, 40, 3))
