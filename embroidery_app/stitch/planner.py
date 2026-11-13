@@ -19,7 +19,10 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
-from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan
+from ..models import (
+    COLOR_CHANGE, FILL_UNDERLAYS, JUMP, SATIN_UNDERLAYS, STITCH, TRIM,
+    ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan,
+)
 from . import generators as gen
 from . import methods  # noqa: F401  (registers the built-in stitch methods)
 from . import registry
@@ -66,6 +69,11 @@ def shape_params(obj: DesignObject, params: StitchParams) -> StitchParams:
         changes["pull_compensation_mm"] = obj.pull_mm
     if obj.bold is not None:
         changes["running_repeats"] = 3 if obj.bold else 1
+    # one foundation choice per shape: it sets whichever of the two lists it belongs to
+    if obj.underlay_style in FILL_UNDERLAYS:
+        changes["fill_underlay"] = obj.underlay_style
+    if obj.underlay_style in SATIN_UNDERLAYS:
+        changes["satin_underlay"] = obj.underlay_style
     return replace(params, **changes) if changes else params
 
 
@@ -242,6 +250,13 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             angle = None
         area = obj.geometry.area if obj.kind == "area" else 0.0
         sp = shape_params(obj, params)
+        # named foundations apply to fills and single-angle satin (the rest follow their path)
+        if methods == ["fill"]:
+            underlay_applies, effective_underlay = "fill", sp.fill_underlay
+        elif methods == ["satin"]:
+            underlay_applies, effective_underlay = "satin", sp.satin_underlay
+        else:
+            underlay_applies, effective_underlay = None, None
         density = any(registry.is_density(m) for m in methods)
         outline = any(registry.is_outline(m) for m in methods)
         if method == "fill":
@@ -261,6 +276,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "spacing_mm": obj.spacing_mm,
             "pull_mm": obj.pull_mm,
             "bold": obj.bold,
+            "underlay_style": obj.underlay_style,
             "method": method,  # a registered stitch method, or mixed | none
             "effective_angle": None if angle is None else round(angle % 180, 1),
             "effective_spacing_mm": spacing,
@@ -269,6 +285,8 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "direction_applies": obj.kind == "area" and any(registry.is_directional(m) for m in methods),
             "thickness_applies": density,
             "bold_applies": outline,
+            "underlay_applies": underlay_applies if sp.underlay else None,  # fill | satin | None
+            "effective_underlay": effective_underlay if sp.underlay else None,
             "too_small": not items,
         })
     return out

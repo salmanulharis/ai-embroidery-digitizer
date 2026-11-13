@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from shapely.geometry import LineString, Point, Polygon
+from shapely import affinity
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons
@@ -17,6 +18,7 @@ from ..models import Run, StitchParams
 from . import generators as gen
 from . import smart
 from . import strokes as st
+from . import underlay
 from .registry import StitchMethod, register
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -43,6 +45,23 @@ def _compensate(poly: Polygon, params: StitchParams) -> Polygon:
         return poly
     grown = poly.buffer(params.pull_compensation_mm, join_style="mitre", mitre_limit=2.0)
     parts = sorted(iter_polygons(grown), key=lambda p: -p.area)
+    return parts[0] if parts else poly
+
+
+def _push(poly: Polygon, angle: float, push: float) -> Polygon:
+    """Push compensation: shorten the shape by ``push`` at both ends of its stitching.
+
+    Rows run at ``angle`` and are stacked across it; the stitches push the fabric out
+    along that stacking direction, so the first and last rows are moved inwards."""
+    if push <= 0 or poly.is_empty:
+        return poly
+    centre = poly.centroid
+    turned = affinity.rotate(poly, -angle, origin=centre)
+    minx, miny, maxx, maxy = turned.bounds
+    if maxy - miny <= 2 * push + 0.5:  # too short to shorten: keep it
+        return poly
+    kept = turned.intersection(box(minx - 1, miny + push, maxx + 1, maxy - push))
+    parts = sorted(iter_polygons(affinity.rotate(kept, angle, origin=centre)), key=lambda p: -p.area)
     return parts[0] if parts else poly
 
 
@@ -89,8 +108,9 @@ def sew_fill(item: "_Item", angle: float, params: StitchParams, start: Pt) -> li
     """Tatami fill over an edge-run + lattice underlay."""
     runs: list[Run] = []
     if params.underlay:
-        runs += _runs("underlay", gen.fill_underlay(item.geom, angle, params.underlay_spacing_mm, start, smart=params.optimize), item.oid)
-    poly = _compensate(item.geom, params)
+        found = underlay.fill_foundation(params.fill_underlay, item.geom, angle, params.underlay_spacing_mm, start, smart=params.optimize)
+        runs += _runs("underlay", found, item.oid)
+    poly = _push(_compensate(item.geom, params), angle, params.push_compensation_mm)
     cur = _after(runs, start)
     runs += _runs("fill", gen.tatami_fill(poly, angle, params.fill_spacing_mm, params.fill_stitch_length_mm, cur, params.max_stitch_mm), item.oid)
     return runs
@@ -100,8 +120,12 @@ def sew_satin(item: "_Item", angle: float, params: StitchParams, start: Pt) -> l
     """Single-angle satin across a straight-ish column."""
     runs: list[Run] = []
     if params.underlay:
-        runs += _runs("underlay", gen.satin_underlay(item.geom, start), item.oid)
+        found = underlay.satin_foundation(params.satin_underlay, item.geom, item.satin_angle, params.underlay_spacing_mm, start, params.max_stitch_mm)
+        runs += _runs("underlay", found, item.oid)
     poly = _compensate(item.geom, params)
+    if item.satin_angle is not None:
+        # satin rows run across the column: its ends lie along the row direction + 90
+        poly = _push(poly, item.satin_angle, params.push_compensation_mm)
     cur = _after(runs, start)
     runs += _runs("satin", gen.satin_area(poly, params.satin_spacing_mm, cur, params.max_stitch_mm, item.satin_angle), item.oid)
     return runs

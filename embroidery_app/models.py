@@ -74,9 +74,15 @@ def normalize_angle(value: float) -> float:
     return round(float(value) % 180.0, 2)
 
 
+# Named foundation (underlay) types, see stitch/underlay.py.
+FILL_UNDERLAYS = ("none", "edge", "edge_tatami", "double_tatami")
+SATIN_UNDERLAYS = ("none", "center", "edge", "zigzag", "edge_zigzag", "double_zigzag")
+UNDERLAY_STYLES = tuple(dict.fromkeys(FILL_UNDERLAYS + SATIN_UNDERLAYS))
+
 # Allowed ranges for per-shape thickness settings (same limits as the design-wide settings).
 SPACING_RANGE_MM = (0.25, 1.0)  # gap between fill rows / satin stitches
 PULL_RANGE_MM = (0.0, 0.8)  # extra width (shrink compensation)
+PUSH_RANGE_MM = (0.0, 0.5)  # push compensation (columns / fills shortened at each end)
 
 
 def _in_range(value, bounds: tuple[float, float]) -> Optional[float]:
@@ -102,6 +108,7 @@ class DesignObject:
     spacing_mm: Optional[float] = None  # thickness: fill row gap / satin stitch gap
     pull_mm: Optional[float] = None  # extra width (shrink compensation)
     bold: Optional[bool] = None  # outlines sewn 3x (True) / once (False)
+    underlay_style: Optional[str] = None  # foundation type, see UNDERLAY_STYLES / stitch/underlay.py
 
     @property
     def customised(self) -> bool:
@@ -110,10 +117,10 @@ class DesignObject:
     def settings(self) -> tuple:
         """All per-shape settings as one value. Merging, re-extract carry-over, reset
         and undo work on this tuple, so new settings only need adding here."""
-        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold)
+        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style)
 
     def apply_settings(self, settings: tuple) -> None:
-        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold) = settings
+        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style) = settings
 
     def clear_settings(self) -> None:
         self.apply_settings(_DEFAULT_SETTINGS)
@@ -139,6 +146,8 @@ class DesignObject:
             d["pull_mm"] = self.pull_mm
         if self.bold is not None:
             d["bold"] = self.bold
+        if self.underlay_style is not None:
+            d["underlay_style"] = self.underlay_style
         return d
 
     @classmethod
@@ -146,6 +155,7 @@ class DesignObject:
         st = d.get("stitch_type")
         angle = d.get("angle")
         bold = d.get("bold")
+        underlay = d.get("underlay_style")
         return cls(
             layer=int(d["layer"]),
             geometry=wkt.loads(d["wkt"]),
@@ -158,10 +168,11 @@ class DesignObject:
             spacing_mm=_in_range(d.get("spacing_mm"), SPACING_RANGE_MM),
             pull_mm=_in_range(d.get("pull_mm"), PULL_RANGE_MM),
             bold=bold if isinstance(bold, bool) else None,
+            underlay_style=underlay if underlay in UNDERLAY_STYLES else None,
         )
 
 
-_DEFAULT_SETTINGS = (None, None, True, None, None, None)
+_DEFAULT_SETTINGS = (None, None, True, None, None, None, None)
 
 
 _CONFLICT_WARNING = (
@@ -317,7 +328,12 @@ class StitchParams:
     running_repeats: int = 1  # 3 = bean / triple stitch
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
+    fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
+    satin_underlay: str = "edge"  # foundation under single-angle satin
     pull_compensation_mm: float = 0.2
+    # push compensation: fills and satin columns are shortened by this much at each end
+    # (stitches push the fabric outward along the column); 0 = off
+    push_compensation_mm: float = 0.0
     min_object_area_mm2: float = 0.05  # keeps dots/punctuation of lettering (enlarged to a sewable dot); specks are removed in step 2
     trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
     tie_stitches: bool = True
@@ -335,6 +351,11 @@ class StitchParams:
             self.thread_weight = 40
         if self.fabric not in FABRIC_IDS:
             self.fabric = "general"
+        if self.fill_underlay not in FILL_UNDERLAYS:
+            self.fill_underlay = "edge_tatami"
+        if self.satin_underlay not in SATIN_UNDERLAYS:
+            self.satin_underlay = "edge"
+        self.push_compensation_mm = min(max(float(self.push_compensation_mm), PUSH_RANGE_MM[0]), PUSH_RANGE_MM[1])
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "StitchParams":

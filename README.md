@@ -134,7 +134,13 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    * wide or irregular shapes → **tatami fill** (brick-offset penetrations, angle varied per color)
    * SVG strokes: < 1 mm → **running** (optional triple/bean), 1–7 mm → **satin along the path**, wider → fill
 2. **Pull compensation**: shapes grow by 0.2 mm (configurable).
-3. **Underlay**: edge run plus a perpendicular lattice under fills. Edge or center run under satins.
+3. **Underlay (foundation)**, named types (`stitch/underlay.py`), design-wide or per shape:
+   * under fills: none, edge run, edge run + lattice (standard), edge run + double lattice (crossing at +-45 deg)
+   * under single-angle satin: none, centre run, edge run (standard), zigzag, edge run + zigzag, double zigzag;
+     columns under 2.5 mm get a centre run instead of a zigzag
+   * satin that follows a path (bands, lines, columns, lettering) keeps its own foundation along the path
+   * fabric presets pick stronger foundations for knits, fleece and towels
+   * **push compensation** (optional, 0-0.5 mm) shortens fills and columns at their ends
 4. **Rows → chains**: scan lines are grouped into monotone regions, so the needle sews back and forth
    without leaving the shape. Chains are ordered nearest-first.
 5. **Travel**: along the shape edge, or straight only where it doesn't show on finished stitching.

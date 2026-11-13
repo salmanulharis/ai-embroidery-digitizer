@@ -283,6 +283,30 @@ const HELP = {
     why: "Blurry pictures make letters blobby; sharpening keeps their corners and gaps.",
     eg: "Low or Medium for small or blurry pictures. Leave Off for clean artwork.",
   },
+  fill_underlay: {
+    t: "Foundation under fills",
+    what: "Stitches sewn first, under each filled area, to hold the fabric still. Edge run + lattice is a run just inside the outline plus an open grid; the double lattice adds a second, crossing grid.",
+    why: "Without a foundation the fill pulls the fabric in and the edges look ragged; stretchy or fluffy fabric needs more of it.",
+    eg: "Standard for most fabric; double lattice for fleece and towels; edge run only for small or light fills.",
+  },
+  satin_underlay: {
+    t: "Foundation under satin",
+    what: "Stitches sewn first, under each satin column. An edge run sits just inside both edges; a zigzag runs across the column and lifts the satin. Columns narrower than 2.5 mm get a centre run instead of a zigzag.",
+    why: "It keeps satin edges crisp and stops the stitches sinking into soft fabric.",
+    eg: "Edge run for most fabric; edge run + zigzag for T-shirts and polos; double zigzag for fleece or a raised look.",
+  },
+  push_compensation_mm: {
+    t: "Push compensation",
+    what: "Shortens the ends of fills and satin columns by this much. Stitches push the fabric outwards along the column, so shapes come out a little longer than drawn.",
+    why: "Keeps lettering and columns their true length, so they do not run into each other.",
+    eg: "0 (off) for most designs; 0.1–0.3 mm on soft or stretchy fabric if shapes come out too long. Check with a test sew-out.",
+  },
+  shape_underlay: {
+    t: "Foundation",
+    what: "The foundation stitches sewn under the selected shapes before their top stitching. The choices depend on how the shapes are sewn: fills and straight satin columns have their own lists; satin that follows a curve keeps its own foundation.",
+    why: "A heavier foundation helps a shape that sits on soft fabric or must look raised; a lighter one keeps small shapes flat.",
+    eg: "Leave “Same as design” unless one shape needs more or less support than the rest.",
+  },
   fabric: {
     t: "Fabric",
     what: "The fabric you will embroider. Choosing one fills in the shrink compensation, thickness and foundation settings that suit it, and adds the backing and needle to use to the production worksheet.",

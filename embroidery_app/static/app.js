@@ -438,9 +438,28 @@ const PARAMS = [
   ["satin_max_width_mm", "Widest satin shape (mm)", 3, 12, 0.5, true],
   ["running_stitch_length_mm", "Outline stitch length (mm)", 1, 5, 0.1, true],
   ["underlay_spacing_mm", "Foundation spacing (mm)", 1.5, 5, 0.1, true],
+  ["push_compensation_mm", "Push compensation – shorten ends (mm)", 0, 0.5, 0.05, true],
   ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
   ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
+// Named foundation (underlay) types, see stitch/underlay.py. Shared with the shape editor.
+const UNDERLAY_LABELS = {
+  fill: [
+    ["edge_tatami", "Edge run + lattice (standard)"],
+    ["edge", "Edge run only (light)"],
+    ["double_tatami", "Edge run + double lattice (stretchy or fluffy fabric)"],
+    ["none", "None"],
+  ],
+  satin: [
+    ["edge", "Edge run (standard)"],
+    ["center", "Centre run (light, narrow columns)"],
+    ["zigzag", "Zigzag"],
+    ["edge_zigzag", "Edge run + zigzag (stretchy fabric)"],
+    ["double_zigzag", "Double zigzag (fluffy fabric, raised look)"],
+    ["none", "None"],
+  ],
+};
+const UNDERLAY_FIELDS = [["fill_underlay", "fill", "Foundation under fills"], ["satin_underlay", "satin", "Foundation under satin"]];
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],
@@ -473,6 +492,10 @@ function buildStitchForm() {
     PARAMS.filter((p) => !p[5]).map(field).join("") +
     CHECKS.slice(1, 4).map(checkbox).join("") +
     `<details class="group full"><summary>Advanced stitch settings</summary><div class="params">` +
+    UNDERLAY_FIELDS.map(([k, kind, label]) =>
+      `<label><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}">` +
+      UNDERLAY_LABELS[kind].map(([v, l]) => `<option value="${v}" ${v === d[k] ? "selected" : ""}>${l}</option>`).join("") +
+      `</select></label>`).join("") +
     PARAMS.filter((p) => p[5]).map(field).join("") +
     CHECKS.slice(4).map(checkbox).join("") +
     `</div></details>`;
@@ -509,6 +532,7 @@ function stitchParams() {
   CHECKS.forEach(([k]) => (p[k] = f.elements[k].checked));
   p.thread_weight = +f.elements.thread_weight.value;
   if (f.elements.fabric) p.fabric = f.elements.fabric.value;
+  UNDERLAY_FIELDS.forEach(([k]) => (p[k] = f.elements[k].value));
   p.running_repeats = p.triple_run ? 3 : 1;
   delete p.triple_run;
   return p;

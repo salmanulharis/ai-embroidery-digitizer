@@ -43,7 +43,7 @@ const Shapes = (() => {
   const layerOf = (o) => state.design?.layers.find((l) => l.index === o.layer);
   const layerOn = (o) => layerOf(o)?.enabled !== false;
   const isCustom = (o) => o.stitch_type != null || o.angle != null || o.enabled === false
-    || o.spacing_mm != null || o.pull_mm != null || o.bold != null;
+    || o.spacing_mm != null || o.pull_mm != null || o.bold != null || o.underlay_style != null;
   // thickness presets = gap between fill rows / satin stitches (mm)
   const THICKNESS = [["light", 0.5, "Light"], ["normal", 0.4, "Normal"], ["dense", 0.33, "Dense"]];
   const thicknessName = (mm) => THICKNESS.find(([, v]) => Math.abs(v - mm) < 1e-6)?.[2].toLowerCase() || "custom";
@@ -254,6 +254,20 @@ const Shapes = (() => {
     const ownPull = same(chosen.map((o) => o.pull_mm ?? "inherit"));
     const pullShown = (ownPull !== "inherit" && ownPull !== undefined ? ownPull : live.find((o) => o.effective_pull_mm != null)?.effective_pull_mm) ?? "";
     const ownBold = same(chosen.map((o) => (o.bold == null ? "inherit" : o.bold ? "on" : "off")));
+    // foundation: one list for fills, another for single-angle satin (see stitch/underlay.py)
+    const underKinds = new Set(live.map((o) => o.underlay_applies));
+    const underKind = underKinds.size === 1 ? [...underKinds][0] : null;
+    const underList = underKind ? UNDERLAY_LABELS[underKind] : [];
+    const ownUnder = same(chosen.map((o) => o.underlay_style ?? "inherit"));
+    const effUnders = new Set(live.map((o) => o.effective_underlay));
+    const effUnder = effUnders.size === 1 ? underList.find(([v]) => v === [...effUnders][0]) : null;
+    const underHtml = `
+      <label class="sp-bold"><span class="lbl">Foundation ${Tip.icon("shape_underlay")}</span>
+        <select data-action="underlay" ${underKind ? "" : "disabled"} aria-label="Foundation stitches for the selected shapes">
+          ${ownUnder === undefined || (ownUnder !== "inherit" && !underList.some(([v]) => v === ownUnder)) ? `<option value="" selected disabled>– different –</option>` : ""}
+          <option value="inherit" ${ownUnder === "inherit" ? "selected" : ""}>Same as design${effUnder && ownUnder === "inherit" ? ` (${effUnder[1]})` : ""}</option>
+          ${underList.map(([v, l]) => `<option value="${v}" ${ownUnder === v ? "selected" : ""}>${l}</option>`).join("")}
+        </select></label>`;
     let thickNow = "";
     if (chosen.length === 1 && chosen[0].effective_spacing_mm != null) {
       const o = chosen[0];
@@ -283,7 +297,8 @@ const Shapes = (() => {
           <option value="inherit" ${ownBold === "inherit" ? "selected" : ""}>Same as design</option>
           <option value="off" ${ownBold === "off" ? "selected" : ""}>Single line</option>
           <option value="on" ${ownBold === "on" ? "selected" : ""}>Bold (sewn 3 times)</option>
-        </select></label>`;
+        </select></label>
+      ${underHtml}`;
     const thickNote = !thickApplies && boldApplies
       ? `<p class="small muted">Thickness and extra width apply to fill and satin; outlines use “Bold outline” instead.</p>`
       : "";
@@ -426,6 +441,11 @@ const Shapes = (() => {
         const v = t.value;
         if (!v) return;
         return update({ ids, bold: v === "inherit" ? "inherit" : v === "on" }, "Changing outline…");
+      }
+      if (action === "underlay") {
+        const v = t.value;
+        if (!v) return;
+        return update({ ids, underlay_style: v }, "Changing foundation…");
       }
     }
   }

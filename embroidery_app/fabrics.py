@@ -8,8 +8,8 @@ nothing changes nothing.
 Values are starting points to confirm with a test sew-out. Pull compensation follows
 Wilcom's guideline values (drill/cotton 0.20 mm, T-shirt 0.35 mm, fleece 0.40 mm);
 the other adjustments follow the direction of Wilcom's Auto Fabric presets (e.g.
-knits: more compensation, extra foundation, slightly lighter density) and are
-engineering estimates, not published numbers.
+knits: more compensation, extra zigzag foundation, slightly lighter density; fleece:
+heavy foundation) and are engineering estimates, not published numbers.
 """
 
 from __future__ import annotations
@@ -30,13 +30,18 @@ class Fabric:
         return asdict(self)
 
 
-def _settings(pull: float, fill: float, satin: float, foundation: float, satin_max: float = 10.0) -> dict:
+def _settings(
+    pull: float, fill: float, satin: float, foundation: float, satin_max: float = 10.0,
+    fill_under: str = "edge_tatami", satin_under: str = "edge",
+) -> dict:
     return {
         "pull_compensation_mm": pull,
         "fill_spacing_mm": fill,
         "satin_spacing_mm": satin,
         "underlay": True,
         "underlay_spacing_mm": foundation,
+        "fill_underlay": fill_under,
+        "satin_underlay": satin_under,
         "satin_max_width_mm": satin_max,
     }
 
@@ -49,16 +54,16 @@ FABRICS: tuple[Fabric, ...] = (
     Fabric("denim", "Denim / canvas", _settings(0.15, 0.45, 0.40, 3.0),
            "Tearaway (heavy)", "75/11 or 80/12 sharp",
            "Firm fabric: a little lighter fill and less compensation keep it flat."),
-    Fabric("knit", "T-shirt / jersey knit", _settings(0.35, 0.42, 0.40, 2.0),
+    Fabric("knit", "T-shirt / jersey knit", _settings(0.35, 0.42, 0.40, 2.0, satin_under="edge_zigzag"),
            "Cutaway", "75/11 ballpoint",
            "Stretchy: hoop without stretching the fabric."),
-    Fabric("pique", "Polo piqué", _settings(0.30, 0.40, 0.40, 2.0),
+    Fabric("pique", "Polo piqué", _settings(0.30, 0.40, 0.40, 2.0, satin_under="edge_zigzag"),
            "Cutaway + water-soluble topping", "75/11 ballpoint",
            "Topping keeps stitches on top of the textured surface."),
-    Fabric("fleece", "Fleece / sweatshirt", _settings(0.40, 0.45, 0.40, 2.0),
+    Fabric("fleece", "Fleece / sweatshirt", _settings(0.40, 0.45, 0.40, 2.0, fill_under="double_tatami", satin_under="double_zigzag"),
            "Cutaway + water-soluble topping", "75/11 ballpoint",
            "Thick pile: avoid very small text; topping stops stitches sinking in."),
-    Fabric("towel", "Towel / terry", _settings(0.30, 0.40, 0.40, 2.0),
+    Fabric("towel", "Towel / terry", _settings(0.30, 0.40, 0.40, 2.0, fill_under="double_tatami", satin_under="edge_zigzag"),
            "Tearaway or washaway + water-soluble topping", "75/11 sharp",
            "Loops can swallow small text: make lettering larger than on flat fabric."),
     Fabric("cap", "Cap", _settings(0.25, 0.38, 0.38, 2.0, satin_max=7.0),

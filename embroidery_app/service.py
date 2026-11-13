@@ -38,6 +38,7 @@ from .models import (
     PULL_RANGE_MM,
     SPACING_RANGE_MM,
     STITCH_TYPES,
+    UNDERLAY_STYLES,
     ColorLayer,
     Design,
     StitchParams,
@@ -425,6 +426,7 @@ def update_objects(
     spacing_mm=None,
     pull_mm=None,
     bold=None,
+    underlay_style=None,
 ) -> dict:
     """Set per-shape settings. ``None`` = leave unchanged, ``"inherit"`` = use the
     colour's / design's setting again. ``scope``: selected shapes, all shapes of their
@@ -433,6 +435,8 @@ def update_objects(
     pull_mm = _checked_mm(pull_mm, PULL_RANGE_MM, "Extra width")
     if bold is not None and bold != _INHERIT and not isinstance(bold, bool):
         raise ValueError("Bold outline must be on, off or same as design.")
+    if underlay_style is not None and underlay_style != _INHERIT and underlay_style not in UNDERLAY_STYLES:
+        raise ValueError("Unknown foundation type.")
     design = load_design(pid)
     if scope not in ("selected", "colour", "all"):
         raise ValueError("Unknown scope.")
@@ -469,6 +473,8 @@ def update_objects(
             o.pull_mm = None if pull_mm == _INHERIT else pull_mm
         if bold is not None:
             o.bold = None if bold == _INHERIT else bold
+        if underlay_style is not None:
+            o.underlay_style = None if underlay_style == _INHERIT else underlay_style
     _save_design(pid, design)
     return design_payload(design, pid)
 

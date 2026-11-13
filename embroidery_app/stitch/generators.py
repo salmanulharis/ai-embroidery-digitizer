@@ -175,13 +175,16 @@ def satin_area(
     start: Pt,
     max_stitch: float = 7.0,
     angle: float | None = None,
+    phase: float = 0.5,
 ) -> Pieces:
-    """Zig-zag satin across a narrow polygon at its best (shortest-row) angle."""
+    """Zig-zag satin across a narrow polygon at its best (shortest-row) angle.
+    ``phase`` shifts the rows by that share of ``spacing`` (a second zigzag pass at
+    another phase falls between the first one's stitches)."""
     if poly.is_empty:
         return []
     if angle is None:
         angle, _ = best_satin_angle(poly)
-    ys, rows = scan_rows(poly, angle, spacing)
+    ys, rows = scan_rows(poly, angle, spacing, phase)
     chains = build_chains(ys, rows, min_overlap=min(0.1, spacing / 2))
 
     def row_points(chain: Chain, reverse: bool, start_left: bool) -> list[Pt]:
@@ -359,3 +362,7 @@ def _polys(geom) -> list[Polygon]:
     from ..geometry import iter_polygons
 
     return sorted(iter_polygons(geom), key=lambda p: -p.area)
+
+
+lattice = _lattice  # open tatami lattice (rows at angle + 90), for named foundations
+polygons = _polys  # polygon parts, largest first

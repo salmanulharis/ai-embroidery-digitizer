@@ -11,7 +11,7 @@ from embroidery_app.ai.builtin import STITCH_LIMITS
 from embroidery_app.api import app
 from embroidery_app.export import worksheet
 from embroidery_app.fabrics import FABRICS, get_fabric
-from embroidery_app.models import ColorLayer, Design, DesignObject, StitchParams
+from embroidery_app.models import FILL_UNDERLAYS, SATIN_UNDERLAYS, ColorLayer, Design, DesignObject, StitchParams
 from embroidery_app.stitch import plan_stitches
 
 PARAM_NAMES = {f.name for f in fields(StitchParams)}
@@ -36,6 +36,14 @@ def test_presets_only_set_known_settings_within_limits(fabric):
         elif limits:
             assert limits[0] <= value <= limits[1], key
     assert UNDERLAY_SPACING[0] <= fabric.settings["underlay_spacing_mm"] <= UNDERLAY_SPACING[1]
+    assert fabric.settings["fill_underlay"] in FILL_UNDERLAYS
+    assert fabric.settings["satin_underlay"] in SATIN_UNDERLAYS
+
+
+def test_stretchy_and_fluffy_fabrics_get_stronger_foundations():
+    assert get_fabric("knit").settings["satin_underlay"] == "edge_zigzag"
+    assert get_fabric("fleece").settings["fill_underlay"] == "double_tatami"
+    assert get_fabric("woven").settings["fill_underlay"] == "edge_tatami"
 
 
 def test_unknown_fabric_falls_back_to_general():
