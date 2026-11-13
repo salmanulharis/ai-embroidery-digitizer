@@ -349,6 +349,12 @@ const HELP = {
     why: "Rough edges look like fur, grass or feathers instead of a cut-out shape.",
     eg: "1–2 mm for fur; 3 mm or more for grass.",
   },
+  knockdown: {
+    t: "Knockdown",
+    what: "An open, two-layer fill sewn first under small text, satin and outlines, reaching 2 mm beyond them. It is sewn as its own colour: load thread in the fabric's colour.",
+    why: "On towels, fleece and other pile fabric the loops swallow small details; the knockdown flattens the pile so the details stay on top.",
+    eg: "Turned on by the Towel and Fleece fabric presets. Leave it off on flat fabric.",
+  },
   fill_underlay: {
     t: "Foundation under fills",
     what: "Stitches sewn first, under each filled area, to hold the fabric still. Edge run + lattice is a run just inside the outline plus an open grid; the double lattice adds a second, crossing grid.",

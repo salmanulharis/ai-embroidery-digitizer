@@ -337,6 +337,41 @@ def _fill_like(method: str) -> bool:
                                           "pattern_fill", "jagged_fill", "florentine_fill")
 
 
+# Methods that cover an area themselves (fills): a knockdown is not needed under them.
+_AREA_METHODS = ("stipple_fill", "maze_fill", "cross_stitch", "motif_fill", "paired_motif_fill", "applique")
+KNOCKDOWN_OFFSET_MM = 2.0  # the knockdown reaches this far beyond the details (Wilcom laydown offset example)
+KNOCKDOWN_SPACING_MM = 1.2  # an open fill: it only has to flatten the pile
+KNOCKDOWN_NAME = "Knockdown (use the fabric colour)"
+
+
+KNOCKDOWN_WIDE_MM = 8.0  # fills wider than this flatten the pile themselves
+
+
+def _needs_knockdown(method: str, geom: BaseGeometry) -> bool:
+    """Small details sink into pile: satin, outlines, lettering, and fills narrower than
+    KNOCKDOWN_WIDE_MM (filled letters). Wide fills flatten the pile on their own."""
+    if not (_fill_like(method) or method in _AREA_METHODS):
+        return True
+    return geom.buffer(-KNOCKDOWN_WIDE_MM / 2).is_empty
+
+
+def knockdown_block(details: list[BaseGeometry], oid: int) -> ColorBlock:
+    """Knockdown (Wilcom: Laydown): an open, two-layer fill under small details on pile
+    fabric (towels, fleece), reaching KNOCKDOWN_OFFSET_MM beyond them, so text and satin
+    sit on flattened pile instead of sinking in. Its own colour, sewn first: the operator
+    loads thread in the fabric's colour."""
+    region = shapely.union_all(details).buffer(KNOCKDOWN_OFFSET_MM, join_style="round")
+    block = ColorBlock(rgb=(200, 200, 200), name=KNOCKDOWN_NAME)
+    cur: Pt = (0.0, 0.0)
+    for part in iter_polygons(region):
+        for angle in (45.0, 135.0):  # two crossing layers (Wilcom: second layer at 90 deg)
+            for piece in gen.tatami_fill(part, angle, KNOCKDOWN_SPACING_MM, 3.5, cur):
+                if len(piece) >= 2:
+                    block.runs.append(Run("fill", piece, oid))
+                    cur = piece[-1]
+    return block
+
+
 def _entry_distance(item: _Item, pos: Pt) -> float:
     return item.geom.distance(Point(pos))
 
@@ -409,6 +444,7 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
     stroke_oids: set[int] = set()
     narrow_spots: list[Pt] = []
     min_fill_spacing = params.fill_spacing_mm  # smallest fill row gap actually sewn
+    details: list[BaseGeometry] = []  # what a knockdown goes under (small text, satin, outlines)
     enabled = [l for l in design.layers if l.enabled]
     for position, layer in enumerate(enabled):
         items: list[_Item] = []
@@ -429,6 +465,8 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
                     stroke_oids.add(oid)
                 is_line = it.geom.geom_type in ("LineString", "MultiLineString")
                 geoms[oid] = it.geom.buffer(max(0.5, it.width / 2)) if is_line else it.geom
+                if params.knockdown and _needs_knockdown(it.method, geoms[oid]):
+                    details.append(geoms[oid])
                 oid += 1
                 items.append(it)
         if not items:
@@ -454,6 +492,11 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
         if block.runs:
             blocks.append(block)
 
+    if params.knockdown and details:
+        knock = knockdown_block(details, oid)
+        if knock.runs:
+            geoms[oid] = shapely.union_all(details).buffer(KNOCKDOWN_OFFSET_MM)
+            blocks.insert(0, knock)  # sewn first: it flattens the pile the details then sit on
     plan = StitchPlan(width_mm=design.width_mm, height_mm=design.height_mm, blocks=blocks)
     limits = _limits(params)
     plan.thread_weight = limits.weight

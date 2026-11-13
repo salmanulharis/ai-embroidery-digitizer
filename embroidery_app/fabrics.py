@@ -32,7 +32,7 @@ class Fabric:
 
 def _settings(
     pull: float, fill: float, satin: float, foundation: float, satin_max: float = 10.0,
-    fill_under: str = "edge_tatami", satin_under: str = "edge",
+    fill_under: str = "edge_tatami", satin_under: str = "edge", knockdown: bool = False,
 ) -> dict:
     return {
         "pull_compensation_mm": pull,
@@ -43,6 +43,7 @@ def _settings(
         "fill_underlay": fill_under,
         "satin_underlay": satin_under,
         "satin_max_width_mm": satin_max,
+        "knockdown": knockdown,
     }
 
 
@@ -60,10 +61,10 @@ FABRICS: tuple[Fabric, ...] = (
     Fabric("pique", "Polo piqué", _settings(0.30, 0.40, 0.40, 2.0, satin_under="edge_zigzag"),
            "Cutaway + water-soluble topping", "75/11 ballpoint",
            "Topping keeps stitches on top of the textured surface."),
-    Fabric("fleece", "Fleece / sweatshirt", _settings(0.40, 0.45, 0.40, 2.0, fill_under="double_tatami", satin_under="double_zigzag"),
+    Fabric("fleece", "Fleece / sweatshirt", _settings(0.40, 0.45, 0.40, 2.0, fill_under="double_tatami", satin_under="double_zigzag", knockdown=True),
            "Cutaway + water-soluble topping", "75/11 ballpoint",
-           "Thick pile: avoid very small text; topping stops stitches sinking in."),
-    Fabric("towel", "Towel / terry", _settings(0.30, 0.40, 0.40, 2.0, fill_under="double_tatami", satin_under="edge_zigzag"),
+           "Thick pile: avoid very small text; a knockdown and topping stop stitches sinking in."),
+    Fabric("towel", "Towel / terry", _settings(0.30, 0.40, 0.40, 2.0, fill_under="double_tatami", satin_under="edge_zigzag", knockdown=True),
            "Tearaway or washaway + water-soluble topping", "75/11 sharp",
            "Loops can swallow small text: make lettering larger than on flat fabric."),
     Fabric("cap", "Cap", _settings(0.25, 0.38, 0.38, 2.0, satin_max=7.0),

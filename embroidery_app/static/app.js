@@ -481,6 +481,7 @@ const CHECKS = [
   ["smart_direction", "Smart direction – best angle for each section"],
   ["tie_stitches", "Lock stitches at every thread cut"],
   ["optimize_order", "Smart sewing order (fewer, shorter jumps)"],
+  ["knockdown", "Knockdown under small details (towels, fleece)"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
 function buildStitchForm() {

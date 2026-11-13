@@ -401,6 +401,7 @@ class StitchParams:
     pattern: str = "diamonds"  # pattern fill tile: diamonds | squares | bricks | scales
     pattern_size_mm: float = 8.0
     jagged_mm: float = 1.5  # jagged fill: how far the row ends wander
+    knockdown: bool = False  # open fill under small details on pile fabric (towel, fleece)
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
     fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
