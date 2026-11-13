@@ -20,7 +20,7 @@ python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
 python run.py                     # open http://127.0.0.1:8000
-pytest                            # 93 tests: pipeline, exports, API, editing, AI (mocked)
+pytest                            # pipeline, exports, API, editing, AI (mocked), golden output
 ```
 
 **Deploy to AWS EC2 with GitHub Actions** (deploys on version tags only): see [deploy/ec2/README.md](deploy/ec2/README.md).
@@ -67,7 +67,7 @@ refines the result when configured.
 | Stage | Best approach | AI? |
 |---|---|---|
 | Background removal (logos) | Border-color detection, connected to the edge (deterministic, exact edges) | No |
-| Background removal (photos) | `rembg` / BiRefNet (local, free). Optional install | Optional |
+| Background removal (photos) | `rembg` (local, free). Optional install. The model is pinned with `REMBG_MODEL` (default `isnet-general-use`): rembg's own default, BRIA RMBG-2.0, needs a paid licence for commercial use | Optional |
 | Messy input (photo of a shirt, blurry or low-res logo) | Image model redraws, cuts out or enhances the picture (Gemini image models, GPT Image, via OpenRouter…). User must approve: the model can change details or text | Optional, *where AI clearly wins* |
 | Color reduction | k-means in CIELAB + perceptual merge | No |
 | Vectorization | Smoothed label map → contour tracing (shapely). LLM-generated SVG is unreliable | No |
@@ -209,6 +209,11 @@ embroidery_app/
     rows.py           scan lines + chain decomposition
     generators.py     tatami, satin (area / line / band), running, underlay
     planner.py        classification, ordering, travel/jump/trim/lock assembly
+    registry.py       stitch-method registry: name, flags, generator
+    methods.py        the built-in methods (fill, satin, satin band/line, column, stroke, dot, running, outline)
+    strokes.py        small lettering: satin along each letter stroke
+    optimize.py       smart stitch reduction (coverage-checked)
+    safety.py         min/max stitch length, machine check
     smart.py          smart direction: columns along centre lines, sections, fill direction per section
   export/
     embroidery.py     pystitch writers + worksheet
@@ -250,7 +255,12 @@ for the built-in algorithms.
 
 ## Extending
 
-* **New stitch type**: add a generator in `stitch/generators.py` and a branch in `planner._stitch_item`.
+* **New stitch type**: write a generator `(item, angle, params, start) -> list[Run]` and register it with
+  `registry.register(StitchMethod(name, generator, ...flags))` (see `stitch/methods.py`); then let
+  `planner.classify` choose it. The planner dispatches through the registry, and `cap_stitch_length`
+  guarantees no stitch exceeds the maximum whatever the generator does. Golden tests
+  (`tests/test_golden.py`) catch unintended changes to existing stitching; regenerate them with
+  `UPDATE_GOLDEN=1` only for deliberate changes.
 * **New input format**: convert it to SVG or RGBA in `service.create_project`.
 * **New AI provider**: add `ai/providers/<name>.py` with a `Provider` subclass decorated with `@register`
   (implement `list_models`, plus `edit_image` and/or `vision_json`), then import it in `ai/providers/__init__.py`.

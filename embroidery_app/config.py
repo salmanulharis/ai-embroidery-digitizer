@@ -34,6 +34,9 @@ class Settings:
     # Working resolution for raster tracing (pixels per mm of final design)
     raster_px_per_mm: float = float(_env("RASTER_PX_PER_MM", "12"))
     raster_max_side_px: int = int(_env("RASTER_MAX_SIDE_PX", "2000"))
+    # Model for the optional rembg photo cut-out. Pinned on purpose: rembg's own default
+    # (bria-rmbg / RMBG-2.0) needs a paid BRIA agreement for commercial use.
+    rembg_model: str = _env("REMBG_MODEL", "isnet-general-use")
 
     # --- Optional AI (the app works fully without it) ---
     # Each provider reads its own variables (e.g. OPENAI_API_KEY, GEMINI_VISION_MODEL) via

@@ -29,6 +29,11 @@ FORMATS: dict[str, dict[str, str]] = {
 
 UNITS_PER_MM = 10  # pystitch works in 0.1 mm
 
+# Writer settings per format. JEF has no trim code: pystitch writes a trim as three
+# zero-length jumps (what Janome machines read as a trim), but only when asked to -
+# without this a JEF file carries no trims at all.
+WRITE_SETTINGS: dict[str, dict] = {"jef": {"trims": True}}
+
 
 def plan_to_pattern(plan: StitchPlan, name: str = "design") -> pe.EmbPattern:
     pattern = pe.EmbPattern()
@@ -68,7 +73,7 @@ def export_embroidery(plan: StitchPlan, fmt: str, name: str = "design") -> bytes
     fd, path = tempfile.mkstemp(suffix="." + fmt)
     os.close(fd)
     try:
-        pe.write(pattern, path)
+        pe.write(pattern, path, WRITE_SETTINGS.get(fmt))
         with open(path, "rb") as f:
             return f.read()
     finally:

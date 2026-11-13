@@ -20,11 +20,14 @@ from shapely.geometry.base import BaseGeometry
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan
 from . import generators as gen
+from . import methods  # noqa: F401  (registers the built-in stitch methods)
+from . import registry
 from . import smart
 from . import strokes as st
+from .methods import thread_limits as _limits
 from .optimize import optimize_ops
 from .rows import best_satin_angle
-from .safety import machine_check, make_safe
+from .safety import cap_stitch_length, machine_check, make_safe
 
 ANGLE_OFFSETS = (0, 90, -30, 60, 30, -60)
 
@@ -33,7 +36,7 @@ ANGLE_OFFSETS = (0, 90, -30, 60, 30, -60)
 class _Item:
     oid: int
     geom: BaseGeometry  # polygon (areas) or line
-    method: str  # fill | satin | satin_line | satin_band | column | stroke | dot | running | outline
+    method: str  # a registered stitch method (see stitch/registry.py, stitch/methods.py)
     width: float = 0.0
     satin_angle: float | None = None
     centre: LineString | None = None  # centreline for ring-shaped bands
@@ -44,18 +47,11 @@ class _Item:
     narrow_spots: list | None = None  # stroke spots that could not reach a sewable width
 
 
-# Methods whose stitch direction can be chosen; the others follow the shape's path.
-DIRECTIONAL_METHODS = ("fill", "satin")
-# Methods affected by the per-shape thickness / extra-width settings.
-DENSITY_METHODS = ("fill", "satin", "satin_band", "satin_line", "column", "stroke", "dot")
 # Small-lettering methods (see stitch/strokes.py): narrow free-form strokes up to this
 # average width get satin that follows each stroke; wider shapes keep the usual methods.
 STROKE_MAX_WIDTH_MM = 2.0
 CLASSIC_MIN_WIDTH_MM = 1.0  # from this width plain satin / fill sew a shape well too
 BAND_MIN_WIDTH_MM = 1.2  # thinner rings go to the stroke engine (widening, gap protection)
-OUTLINE_METHODS = ("running", "outline")
-# Sewn as several short pieces inside one shape: a short hidden run joins them instead of a cut.
-MULTI_PIECE_METHODS = (*st.STROKE_METHODS, "column")
 
 
 def shape_params(obj: DesignObject, params: StitchParams) -> StitchParams:
@@ -206,159 +202,9 @@ def _layer_angle(position: int, layer_angle: float | None, params: StitchParams)
     return params.fill_angle + ANGLE_OFFSETS[position % len(ANGLE_OFFSETS)]
 
 
-def _compensate(poly: Polygon, params: StitchParams) -> Polygon:
-    if params.pull_compensation_mm <= 0:
-        return poly
-    grown = poly.buffer(params.pull_compensation_mm, join_style="mitre", mitre_limit=2.0)
-    parts = sorted(iter_polygons(grown), key=lambda p: -p.area)
-    return parts[0] if parts else poly
-
-
 def _stitch_item(item: _Item, angle: float, params: StitchParams, start: Pt) -> list[Run]:
-    runs: list[Run] = []
-
-    def add(kind: str, pieces: list[list[Pt]]) -> None:
-        for p in pieces:
-            if len(p) >= 2:
-                runs.append(Run(kind, p, item.oid))
-
-    if item.method == "fill":
-        poly = _compensate(item.geom, params)
-        if params.underlay:
-            add("underlay", gen.fill_underlay(item.geom, angle, params.underlay_spacing_mm, start, smart=params.optimize))
-        cur = runs[-1].points[-1] if runs else start
-        add("fill", gen.tatami_fill(poly, angle, params.fill_spacing_mm, params.fill_stitch_length_mm, cur, params.max_stitch_mm))
-    elif item.method == "satin":
-        poly = _compensate(item.geom, params)
-        if params.underlay:
-            add("underlay", gen.satin_underlay(item.geom, start))
-        cur = runs[-1].points[-1] if runs else start
-        add("satin", gen.satin_area(poly, params.satin_spacing_mm, cur, params.max_stitch_mm, item.satin_angle))
-    elif item.method == "satin_band":
-        if params.underlay:
-            add("underlay", [gen.running(item.centre, 2.0)])
-        cur = runs[-1].points[-1] if runs else start
-        add("satin", [gen.satin_band(item.geom, item.centre, params.satin_spacing_mm, params.pull_compensation_mm, cur, params.max_stitch_mm)])
-    elif item.method == "satin_line":
-        line: LineString = item.geom
-        if dist(start, line.coords[-1]) < dist(start, line.coords[0]):
-            line = LineString(list(line.coords)[::-1])
-        if params.underlay and item.width >= 1.5:
-            add("underlay", [gen.running(line, 2.0)])
-            line = LineString(list(line.coords)[::-1])  # satin comes back over the underlay
-        add("satin", [gen.satin_line(line, item.width, params.satin_spacing_mm, params.pull_compensation_mm, params.max_stitch_mm)])
-    elif item.method in ("stroke", "dot"):
-        runs.extend(_stitch_strokes(item, params, start))
-    elif item.method == "column":
-        runs.extend(_stitch_columns(item, params, start))
-    elif item.method == "running":
-        line = item.geom
-        if dist(start, line.coords[-1]) < dist(start, line.coords[0]):
-            line = LineString(list(line.coords)[::-1])
-        add("running", [gen.running(line, params.running_stitch_length_mm, params.running_repeats)])
-    elif item.method == "outline":
-        pieces = gen.ring_from(item.geom, start, params.running_stitch_length_mm, holes=True)
-        if params.running_repeats >= 3:
-            pieces = [gen.running(LineString(p), params.running_stitch_length_mm, 3) for p in pieces]
-        add("running", pieces)
-    return runs
-
-
-def _limits(params: StitchParams) -> st.ThreadLimits:
-    return st.thread_limits(params.thread_weight, params.satin_min_width_mm)
-
-
-def _stroke_spacing(params: StitchParams, width: float) -> float:
-    """Narrow columns get slightly lighter density: on a 0.6-1 mm column the needle
-    drops are already close together and a dense setting piles up thread."""
-    if width < 1.2:
-        return max(params.satin_spacing_mm, 0.45)
-    return params.satin_spacing_mm
-
-
-def _stitch_strokes(item: _Item, params: StitchParams, start: Pt) -> list[Run]:
-    poly: Polygon = item.geom
-    limits = _limits(params)
-    ink = item.ink or st.InkMap([poly], *_extent(poly))
-    runs: list[Run] = []
-    if item.method == "dot":
-        res = st.satin_dot(poly, ink, limits, 0.3)
-        item.narrow_spots = res.narrow_spots
-        if len(res.points) >= 2:
-            runs.append(Run("satin", res.points, item.oid))
-        return runs
-    shape = st.analyse_stroke_shape(poly)
-    strokes = list(shape.strokes)
-    if not strokes:  # nothing left after thinning (a speck): sew it as a dot
-        res = st.satin_dot(poly, ink, limits, 0.3)
-        item.narrow_spots = res.narrow_spots
-        return [Run("satin", res.points, item.oid)] if len(res.points) >= 2 else []
-    width = st.small_stroke_width(poly)
-    spacing = _stroke_spacing(params, width)
-    spots: list[Pt] = []
-    cur = start
-    todo = list(strokes)
-    while todo:  # nearest stroke next, entered from its nearer end
-        k = min(range(len(todo)), key=lambda i: _stroke_entry(todo[i], cur)[0])
-        stroke = todo.pop(k)
-        # the satin is computed on the stroke as found and reversed when entered from
-        # the other end, so the stitching does not depend on the sewing order
-        backwards = False
-        if stroke.closed:
-            stroke = st.Stroke(_rotate_ring(stroke.line, cur), True)
-        else:
-            backwards = dist(cur, stroke.line.coords[-1]) < dist(cur, stroke.line.coords[0])
-        under = st.stroke_underlay(stroke, poly) if params.underlay else []
-        if len(under) >= 2:
-            runs.append(Run("underlay", under[::-1] if backwards else under, item.oid))
-            if not stroke.closed:  # the satin comes back over its centre run
-                backwards = not backwards
-        res = st.satin_stroke(stroke, poly, ink, limits, spacing, params.pull_compensation_mm, params.max_stitch_mm)
-        spots.extend(res.narrow_spots)
-        if len(res.points) >= 2:
-            pts = res.points[::-1] if backwards else res.points
-            runs.append(Run(res.kind, pts, item.oid))
-            cur = pts[-1]
-    for patch in shape.patches:  # square corners the stroke columns cut off
-        pieces = gen.satin_area(patch, spacing, cur, params.max_stitch_mm)
-        for piece in pieces:
-            if len(piece) >= 2:
-                runs.append(Run("satin", piece, item.oid))
-                cur = piece[-1]
-    item.narrow_spots = spots
-    return runs
-
-
-def _stitch_columns(item: _Item, params: StitchParams, start: Pt) -> list[Run]:
-    """Smart direction: satin along every column of a narrow section (see stitch/smart.py)."""
-    pieces = smart.sew_shape(
-        smart.analyse_columns(item.geom), item.geom, start,
-        lambda width: _stroke_spacing(params, width), params.satin_spacing_mm,
-        params.pull_compensation_mm, params.max_stitch_mm, _limits(params).min_column_mm, params.underlay,
-    )
-    return [Run(kind, pts, item.oid) for kind, pts in pieces if len(pts) >= 2]
-
-
-def _stroke_entry(stroke: st.Stroke, pos: Pt) -> tuple[float, int]:
-    coords = list(stroke.line.coords)
-    if stroke.closed:
-        return stroke.line.distance(Point(pos)), 0
-    a, b = dist(pos, coords[0]), dist(pos, coords[-1])
-    return (a, 0) if a <= b else (b, 1)
-
-
-def _rotate_ring(line: LineString, pos: Pt) -> LineString:
-    coords = list(line.coords)
-    if dist(coords[0], coords[-1]) < 1e-6:
-        coords = coords[:-1]
-    k = min(range(len(coords)), key=lambda i: dist(coords[i], pos))
-    ring = coords[k:] + coords[:k]
-    return LineString(ring + [ring[0]])
-
-
-def _extent(geom: BaseGeometry) -> tuple[float, float]:
-    minx, miny, maxx, maxy = geom.bounds
-    return max(maxx, 1.0), max(maxy, 1.0)
+    """Sew one classified piece with its registered stitch method."""
+    return registry.get(item.method).generate(item, angle, params, start)
 
 
 def describe_objects(design: Design, params: StitchParams) -> list[dict]:
@@ -384,11 +230,11 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             angle = None
         area = obj.geometry.area if obj.kind == "area" else 0.0
         sp = shape_params(obj, params)
-        density = any(m in DENSITY_METHODS for m in methods)
-        outline = any(m in OUTLINE_METHODS for m in methods)
+        density = any(registry.is_density(m) for m in methods)
+        outline = any(registry.is_outline(m) for m in methods)
         if method == "fill":
             spacing = sp.fill_spacing_mm
-        elif method in DENSITY_METHODS:
+        elif method in methods and registry.is_density(method):  # one method (not mixed / none)
             spacing = sp.satin_spacing_mm
         else:
             spacing = None
@@ -403,12 +249,12 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "spacing_mm": obj.spacing_mm,
             "pull_mm": obj.pull_mm,
             "bold": obj.bold,
-            "method": method,  # fill | satin | satin_band | satin_line | stroke | dot | running | outline | mixed | none
+            "method": method,  # a registered stitch method, or mixed | none
             "effective_angle": None if angle is None else round(angle % 180, 1),
             "effective_spacing_mm": spacing,
             "effective_pull_mm": sp.pull_compensation_mm if density else None,
             "effective_bold": sp.running_repeats >= 3 if outline else None,
-            "direction_applies": obj.kind == "area" and any(m in DIRECTIONAL_METHODS for m in methods),
+            "direction_applies": obj.kind == "area" and any(registry.is_directional(m) for m in methods),
             "thickness_applies": density,
             "bold_applies": outline,
             "too_small": not items,
@@ -447,7 +293,7 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
                 it.params = own
                 if it.method == "fill":
                     min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
-                if it.method in MULTI_PIECE_METHODS:
+                if registry.is_multi_piece(it.method):
                     stroke_oids.add(oid)
                 geoms[oid] = it.geom if it.method not in ("running", "satin_line") else it.geom.buffer(max(0.5, it.width / 2))
                 oid += 1
@@ -482,6 +328,7 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
         # threshold below the *smallest* row gap in use, so turn-around stitches of a
         # shape set to "dense" are never mistaken for stacked stitches
         plan.ops, plan.optimization = optimize_ops(plan.ops, min_fill_spacing, params.max_stitch_mm)
+    plan.ops = cap_stitch_length(plan.ops, params.max_stitch_mm)  # last guarantee, whatever sewed it
     plan.risks = machine_check(plan.ops, limits, narrow_spots)
     return plan
 
