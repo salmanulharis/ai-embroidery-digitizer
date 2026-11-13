@@ -11,6 +11,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 
 import shapely
@@ -335,43 +336,52 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
 
 # --------------------------------------------------------------------------- assembly
 
-TIE_STEP_MM = 0.6  # lock stitch length: long enough to hold, never a sub-0.4 mm stitch
+TIE_STEP_MM = 0.6  # lock stitch length: long enough to hold, never below the 0.5 mm minimum stitch
 STROKE_TRAVEL_MM = 4.0  # max hidden run between strokes of one letter instead of a cut
 
 
-def _along(points: list[Pt], d: float) -> Pt | None:
-    """Point ``d`` mm along a polyline (None if it is shorter)."""
-    for a, b in zip(points, points[1:]):
-        seg = dist(a, b)
-        if seg >= d and seg > 1e-9:
-            t = d / seg
-            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-        d -= seg
+def _reach(points: list[Pt], origin: Pt, d: float) -> tuple[Pt, int] | None:
+    """First point along a polyline whose straight-line distance from ``origin`` is
+    ``d``, with the index of the segment it lies on (None if the line never gets that
+    far). Straight-line, not along the path: on a zigzag satin path 0.6 mm *along* the
+    path can be a 0.3 mm stitch."""
+    for i, (a, b) in enumerate(zip(points, points[1:])):
+        if dist(origin, b) < d:
+            continue
+        fx, fy = a[0] - origin[0], a[1] - origin[1]
+        vx, vy = b[0] - a[0], b[1] - a[1]
+        qa = vx * vx + vy * vy
+        qc = fx * fx + fy * fy - d * d
+        if qa < 1e-12 or qc >= 0:
+            return (b if qa < 1e-12 else a), i
+        qb = 2 * (fx * vx + fy * vy)
+        t = (-qb + math.sqrt(max(qb * qb - 4 * qa * qc, 0.0))) / (2 * qa)
+        return (a[0] + vx * t, a[1] + vy * t), i
     return None
 
 
-def _tie(points: list[Pt], at_start: bool, length: float = TIE_STEP_MM, min_stitch: float = 0.4) -> list[Pt]:
+def _tie(points: list[Pt], at_start: bool, length: float = TIE_STEP_MM, min_stitch: float = 0.5) -> list[Pt]:
     """Lock stitches along the run's own path (they are sewn over / sit under the
     last stitches): two steps forward and one back at the start, the mirror at the
-    end. Every lock stitch is at least ``min_stitch`` long; short pieces get a single
-    step, pieces too short for even that get none rather than stacked drops."""
+    end. Every lock stitch is at least ``min_stitch`` long as sewn (straight line);
+    short pieces get a single step, pieces too short for even that get none rather
+    than stacked drops."""
     path = points if at_start else points[::-1]
     if len(path) < 2:
         return []
-    total = sum(dist(a, b) for a, b in zip(path, path[1:]))
-    step = min(length, total / 2)
-    if step < min_stitch:
-        step = min(length, total)
-        if step < min_stitch:
-            return []
-        p1 = _along(path, step)
-        return [p1] if at_start else [p1, path[0]]
-    p1, p2 = _along(path, step), _along(path, 2 * step)
-    if p1 is None or p2 is None:
+    step = max(length, min_stitch)
+    first = _reach(path, path[0], step)
+    second = _reach([first[0], *path[first[1] + 1 :]], first[0], step) if first else None
+    if first and second:
+        p1, p2 = first[0], second[0]
+        # start: (landed at path[0]) -> p1 -> p2 -> p1 -> caller stitches path[0] and runs over them
+        # end:   (at path end)       -> p1 -> p2 -> p1 -> end
+        return [p1, p2, p1] if at_start else [p1, p2, p1, path[0]]
+    single = first or _reach(path, path[0], min_stitch)
+    if single is None:
         return []
-    # start: (landed at path[0]) -> p1 -> p2 -> p1 -> caller stitches path[0] and runs over them
-    # end:   (at path end)       -> p1 -> p2 -> p1 -> end
-    return [p1, p2, p1] if at_start else [p1, p2, p1, path[0]]
+    p1 = single[0]
+    return [p1] if at_start else [p1, path[0]]
 
 
 def assemble(

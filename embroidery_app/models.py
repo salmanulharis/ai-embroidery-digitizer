@@ -311,7 +311,7 @@ class StitchParams:
     smart_direction: bool = False  # best direction for every section of the design (see stitch/smart.py)
     satin_spacing_mm: float = 0.40
     satin_max_width_mm: float = 7.0  # wider columns become fill
-    satin_min_width_mm: float = 0.8
+    satin_min_width_mm: float = 1.0  # 40 wt: narrower than ~1 mm breaks thread (Melco, ZSK)
     running_stitch_length_mm: float = 2.5
     running_repeats: int = 1  # 3 = bean / triple stitch
     underlay: bool = True

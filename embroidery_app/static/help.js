@@ -286,7 +286,7 @@ const HELP = {
   thread_weight: {
     t: "Thread",
     what: "The thread you will load on the machine. Small lettering is sewn as a smooth satin that follows each stroke of a letter; thin strokes are widened to the narrowest column the thread can sew, only as far as the gaps between letters allow.",
-    why: "Fine 60 wt thread lies thinner, so letter strokes can stay narrower (0.6 mm instead of 0.8 mm) and letters stay open and readable. Use it with a 65/9 or 70/10 needle.",
+    why: "Fine 60 wt thread lies thinner, so letter strokes can stay narrower (0.6 mm instead of 1.0 mm) and letters stay open and readable. Use it with a 65/9 or 70/10 needle.",
     eg: "Standard 40 wt for normal designs. Fine 60 wt for lettering under about 5 mm tall or fine script.",
   },
   stitch_lettering: {

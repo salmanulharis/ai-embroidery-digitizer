@@ -62,8 +62,9 @@ def test_thin_strokes_are_widened_to_a_sewable_column():
     plan = plan_stitches(design(bar), StitchParams())
     widths = satin_widths(plan, box(8, 8, 32, 12))
     assert len(widths) > 30
-    assert np.median(widths) >= 0.8 * 0.95  # widened to the minimum column
-    assert np.median(widths) <= 1.0  # ...but not more than needed
+    min_column = st.thread_limits(40).min_column_mm  # 1.0 mm for 40 wt
+    assert np.median(widths) >= min_column * 0.95  # widened to the minimum column
+    assert np.median(widths) <= min_column * 1.2  # ...but not more than needed
 
 
 def test_widening_never_closes_the_gap_between_letters():
@@ -196,6 +197,16 @@ def test_lock_stitches_follow_the_path_and_are_never_tiny():
         assert all(abs(p[1]) < 1e-9 for p in tie)  # on the path
         assert all(math.dist(a, b) >= 0.4 - 1e-9 for a, b in zip(seq, seq[1:]))
     assert _tie([(0, 0), (0.2, 0)], True, min_stitch=0.4) == []  # too short for a lock: none, not stacked
+
+
+def test_lock_stitches_on_a_zigzag_path_are_long_enough_as_sewn():
+    # a satin column 0.4 mm wide: 0.6 mm *along* this path is only ~0.3 mm as the crow flies
+    path = [(0.1 * i, 0.4 * (i % 2)) for i in range(40)]
+    for at_start in (True, False):
+        tie = _tie(path, at_start, min_stitch=0.5)
+        assert tie
+        seq = ([path[0]] + tie) if at_start else ([path[-1]] + tie)
+        assert all(math.dist(a, b) >= 0.5 - 1e-9 for a, b in zip(seq, seq[1:]))
 
 
 def test_make_safe_keeps_sequence_ends_and_max_length():

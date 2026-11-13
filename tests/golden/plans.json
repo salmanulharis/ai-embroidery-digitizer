@@ -9,42 +9,42 @@
   "shapes-default": {
     "color_change": 8,
     "jump": 19,
-    "sha256": "632ca4aa8b36d09a6368e91049ed5a16219ca2c20464b9a9c008e05ae6524a80",
-    "stitch": 3161,
+    "sha256": "a78ea4166618365e77b9b7527d0bf65560288e6ceb9d4a530272461a0bb4d846",
+    "stitch": 3173,
     "trim": 17
   },
   "shapes-fine": {
     "color_change": 8,
     "jump": 19,
-    "sha256": "162a75088df61f4cc2aabaaa9afc54ef0177045ba14a60182bf9d125f85501f7",
-    "stitch": 3632,
+    "sha256": "fa816443e0afb6b6bde1f9c4c5f8ec301e78f63e4c67de1c55281abfd0cfdad7",
+    "stitch": 3635,
     "trim": 17
   },
   "shapes-plain": {
     "color_change": 8,
     "jump": 13,
-    "sha256": "f0ab10a4fd1aaf9f55a92083d3181b224dbf8d1be2c7f6cef03ab19ce9843583",
+    "sha256": "ee0218fbc6a26955eaa4d4d6fa2b98308fc4d0f28f441afe12c2114468eac5d6",
     "stitch": 2597,
     "trim": 13
   },
   "shapes-smart": {
     "color_change": 8,
     "jump": 19,
-    "sha256": "86b90cffe69c228ab28746567d3b3a4f2090f96b81fc975f4879bc0ebfc60a22",
-    "stitch": 3068,
+    "sha256": "fa1ce5a7e2a899d66fb178a45502f76c5c4c183e4d53578e7ae71d3c2a7d79bf",
+    "stitch": 3082,
     "trim": 17
   },
   "svg-default": {
     "color_change": 3,
     "jump": 8,
-    "sha256": "1f03320c2e832f26781a0ce78cb23e28eaa0f0045c16cbf531c0db821e508d35",
-    "stitch": 3930,
+    "sha256": "aa411a01118beda5be969c2ba96f715550b3c0f37cc20b7aad073c5f7dadce66",
+    "stitch": 3934,
     "trim": 8
   },
   "svg-smart": {
     "color_change": 3,
     "jump": 8,
-    "sha256": "3236bb02b5c0696ecb14d79f0d76f8cf036068d5a2e85df89c92315f9e30f839",
+    "sha256": "dfc5fe24b728501b9e8af152dae1615e1f9a9b56b58ef94d1743b984d9c8b9b5",
     "stitch": 3943,
     "trim": 8
   }
