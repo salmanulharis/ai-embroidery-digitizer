@@ -355,6 +355,18 @@ const HELP = {
     why: "On towels, fleece and other pile fabric the loops swallow small details; the knockdown flattens the pile so the details stay on top.",
     eg: "Turned on by the Towel and Fleece fabric presets. Leave it off on flat fabric.",
   },
+  photo_stitch: {
+    t: "Photo stitch",
+    what: "Sews the whole picture in one dark thread as rows: each row zigzags as wide as the picture is dark at that spot, so dark areas fill in and light areas stay open. The shading comes from the colours of the shapes, so extract a photo with several shades (for example 8 colours) first.",
+    why: "Photos have soft shading that separate colour areas cannot show; rows of varying width reproduce it with one thread.",
+    eg: "Portraits and pets in one colour on a light fabric. Remove the background in step 2 so only the subject is sewn.",
+  },
+  photo_row_mm: {
+    t: "Photo stitch row gap",
+    what: "The distance between the rows of the photo stitch.",
+    why: "Closer rows show finer detail but take more stitches; wider rows give a bolder, graphic look.",
+    eg: "1 mm for most photos; 0.8 mm for small, detailed ones; 1.5 mm for a bold look.",
+  },
   fill_underlay: {
     t: "Foundation under fills",
     what: "Stitches sewn first, under each filled area, to hold the fabric still. Edge run + lattice is a run just inside the outline plus an open grid; the double lattice adds a second, crossing grid.",

@@ -402,6 +402,8 @@ class StitchParams:
     pattern_size_mm: float = 8.0
     jagged_mm: float = 1.5  # jagged fill: how far the row ends wander
     knockdown: bool = False  # open fill under small details on pile fabric (towel, fleece)
+    photo_stitch: bool = False  # sew the whole picture as photo rows in one thread (stitch/photo.py)
+    photo_row_mm: float = 1.0  # gap between photo stitch rows
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
     fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
@@ -437,6 +439,7 @@ class StitchParams:
         self.motif_size_mm = min(max(float(self.motif_size_mm), 3.0), 20.0)
         self.pattern_size_mm = min(max(float(self.pattern_size_mm), 3.0), 30.0)
         self.jagged_mm = min(max(float(self.jagged_mm), 0.3), 5.0)
+        self.photo_row_mm = min(max(float(self.photo_row_mm), 0.6), 3.0)
         if self.satin_underlay not in SATIN_UNDERLAYS:
             self.satin_underlay = "edge"
         self.push_compensation_mm = min(max(float(self.push_compensation_mm), PUSH_RANGE_MM[0]), PUSH_RANGE_MM[1])

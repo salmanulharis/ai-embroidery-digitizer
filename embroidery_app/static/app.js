@@ -447,6 +447,7 @@ const PARAMS = [
   ["motif_size_mm", "Motif size (mm)", 3, 20, 0.5, true],
   ["pattern_size_mm", "Pattern fill tile size (mm)", 3, 30, 0.5, true],
   ["jagged_mm", "Jagged fill roughness (mm)", 0.3, 5, 0.1, true],
+  ["photo_row_mm", "Photo stitch row gap (mm)", 0.6, 3, 0.1, true],
   ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
   ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
@@ -482,6 +483,7 @@ const CHECKS = [
   ["tie_stitches", "Lock stitches at every thread cut"],
   ["optimize_order", "Smart sewing order (fewer, shorter jumps)"],
   ["knockdown", "Knockdown under small details (towels, fleece)"],
+  ["photo_stitch", "Photo stitch: the whole picture in one thread, as rows"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
 function buildStitchForm() {

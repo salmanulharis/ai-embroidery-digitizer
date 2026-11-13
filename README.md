@@ -105,6 +105,11 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Photo stitch** (step 3, off by default; Wilcom: Photo Flash): the whole picture in one dark thread, as rows
+   that zigzag as wide as the picture is dark (auto contrast: the lightest shade thin, the darkest full). The shading
+   comes from the shapes' colours, so extract a photo with several shades (e.g. 8 colours) and remove its background.
+0. **Knockdown** (towel / fleece presets): an open two-layer fill sewn first under small details and narrow fills,
+   2 mm beyond them, in its own colour for the operator to load in the fabric's colour.
 0. **Guide lines** (shape editor, step 2: "Draw guide line"): drag a line across a shape. *Guided satin* sews
    satin whose stitches cross that line at right angles from edge to edge (you decide how a curved satin turns -
    the practical form of Wilcom's column input / Ink/Stitch rails); *Florentine fill* makes every fill row a copy
@@ -250,6 +255,7 @@ embroidery_app/
     decorative.py     motif outline/fill, paired motif fill, pattern fill, jagged fill, hand stitch, raised satin, applique
     library/motifs.json  built-in motifs (designed for this project)
     guided.py         guide-line styles: guided satin, Florentine fill
+    photo.py          photo stitch: the whole picture in one thread, rows zigzag wider where darker
     optimize.py       smart stitch reduction (coverage-checked)
     safety.py         min/max stitch length, machine check
     smart.py          smart direction: columns along centre lines, sections, fill direction per section
