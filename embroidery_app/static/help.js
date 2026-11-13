@@ -166,7 +166,7 @@ const HELP = {
   shape_style: {
     t: "Stitch style for the selected shapes",
     what: "How the selected shapes are sewn. “Same as colour” follows the colour list below; “Don't stitch” leaves the shape out so the fabric shows.",
-    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge. The decorative outlines (double run, backstitch, stemstitch, sculpture run) and borders (zigzag, E-stitch) are sewn along a line, or around the edge of a filled shape instead of filling it.",
+    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge. The advanced fills (offset, spiral, contour, radial, shaded, stipple, maze, cross stitch) fill the shape with another texture. The decorative outlines (double run, backstitch, stemstitch, sculpture run) and borders (zigzag, E-stitch) are sewn along a line, or around the edge of a filled shape instead of filling it.",
     eg: "Remove a stray speck with “Don't stitch”. Use an E-stitch border around an appliqué piece, or stemstitch for a hand-embroidered look.",
   },
   shape_direction: {
@@ -300,6 +300,24 @@ const HELP = {
     what: "Within each colour, sews the shapes in the order that keeps the jumps between them shortest (nearest-neighbour, then improved by swapping stretches of the order).",
     why: "Shorter jumps mean fewer thread cuts and less machine time; the stitches themselves do not change.",
     eg: "Leave it on. Turn it off only to compare with the plain nearest-shape-next order.",
+  },
+  fill_pattern: {
+    t: "Fill texture",
+    what: "How the needle points of tatami fill rows shift from row to row. Standard spreads them in a brick pattern; diagonal lines them up into visible twill lines; random hides every line.",
+    why: "The pattern of needle points is visible on the finished fill: it can be hidden, or used as a texture.",
+    eg: "Standard for most designs; Diagonal for a woven look; Random for a smooth, even surface.",
+  },
+  stipple_spacing_mm: {
+    t: "Stipple / maze line gap",
+    what: "The distance between neighbouring lines of the stipple and maze fills.",
+    why: "A larger gap makes a lighter, quilted look; a smaller gap covers more of the fabric.",
+    eg: "2 mm for a light background texture; 1–1.5 mm to cover more.",
+  },
+  cross_cell_mm: {
+    t: "Cross stitch size",
+    what: "The size of each cross in the cross stitch fill.",
+    why: "Larger crosses look like coarse hand cross stitch; smaller ones show more detail.",
+    eg: "3 mm (the usual size); 2 mm for small designs.",
   },
   fill_underlay: {
     t: "Foundation under fills",

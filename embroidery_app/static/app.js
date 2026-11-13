@@ -442,6 +442,8 @@ const PARAMS = [
   ["push_compensation_mm", "Push compensation – shorten ends (mm)", 0, 0.5, 0.05, true],
   ["border_width_mm", "Zigzag / E-stitch border width (mm)", 1, 6, 0.1, true],
   ["border_spacing_mm", "Zigzag / E-stitch border gap (mm)", 0.5, 4, 0.1, true],
+  ["stipple_spacing_mm", "Stipple / maze line gap (mm)", 1, 6, 0.1, true],
+  ["cross_cell_mm", "Cross stitch size (mm)", 1.5, 6, 0.1, true],
   ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
   ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
@@ -463,6 +465,9 @@ const UNDERLAY_LABELS = {
   ],
 };
 const UNDERLAY_FIELDS = [["fill_underlay", "fill", "Foundation under fills"], ["satin_underlay", "satin", "Foundation under satin"]];
+// tatami textures (models.FILL_PATTERNS)
+UNDERLAY_LABELS.pattern = [["standard", "Standard (brick)"], ["brick", "Half-step brick"], ["diagonal", "Diagonal twill lines"], ["random", "Random (no lines)"]];
+UNDERLAY_FIELDS.push(["fill_pattern", "pattern", "Fill texture"]);
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],

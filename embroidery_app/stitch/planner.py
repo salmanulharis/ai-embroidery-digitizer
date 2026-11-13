@@ -21,12 +21,13 @@ from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import (
-    COLOR_CHANGE, FILL_UNDERLAYS, JUMP, OUTLINE_STYLES, SATIN_UNDERLAYS, STITCH, TRIM,
+    COLOR_CHANGE, FILL_STYLE_NAMES, FILL_UNDERLAYS, JUMP, OUTLINE_STYLES, SATIN_UNDERLAYS, STITCH, TRIM,
     ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan,
 )
 from . import generators as gen
 from . import methods  # noqa: F401  (registers the built-in stitch methods)
 from . import outlines  # noqa: F401  (registers the decorative outlines and borders)
+from . import fills  # noqa: F401  (registers the advanced fills)
 from . import registry
 from . import smart
 from . import strokes as st
@@ -94,6 +95,10 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
     """Decide the stitch method for an object. ``satin_angle`` forces the direction
     of single-angle satin (otherwise the shortest-row angle is used)."""
     items: list[_Item] = []
+    if forced in FILL_STYLE_NAMES and obj.kind == "area":
+        return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
+    if forced in FILL_STYLE_NAMES:
+        forced = "auto"  # a line has no area to fill: sewn along its path as usual
     if forced in OUTLINE_STYLES:
         # decorative outline / border: along a line's path, or around a shape's outline
         if obj.kind == "line":
@@ -266,7 +271,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             underlay_applies, effective_underlay = None, None
         density = any(registry.is_density(m) for m in methods)
         outline = any(registry.is_outline(m) for m in methods)
-        if method == "fill":
+        if _fill_like(method):
             spacing = sp.fill_spacing_mm
         elif method in methods and registry.is_density(method):  # one method (not mixed / none)
             spacing = sp.satin_spacing_mm
@@ -297,6 +302,11 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "too_small": not items,
         })
     return out
+
+
+def _fill_like(method: str) -> bool:
+    """Methods whose thickness is the fill row gap (tatami and the advanced dense fills)."""
+    return method == "fill" or method in ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill")
 
 
 def _entry_distance(item: _Item, pos: Pt) -> float:
@@ -385,7 +395,7 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
                 it.oid = oid
                 it.source_id = obj.id
                 it.params = own
-                if it.method == "fill":
+                if _fill_like(it.method):
                     min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
                 if registry.is_multi_piece(it.method):
                     stroke_oids.add(oid)

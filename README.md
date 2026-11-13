@@ -105,6 +105,12 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Advanced fills** (stitch style for a colour or a shape, `stitch/fills.py`): offset (rings that follow the
+   outline), spiral (one continuous line), contour (rows along a curved column), radial (rays from the centre, thinned
+   towards it), shaded (accordion spacing: dense to light in one colour), stipple (meander that never crosses itself),
+   maze (right-angled meander) and cross stitch (crosses on a grid, each diagonal line sewn there and back). Tatami
+   fills get a texture choice: standard, half-step brick, diagonal twill or random. All use fixed seeds: the same shape
+   always gets the same stitches.
 0. **Decorative outlines and borders** (stitch style for a colour or a shape): double run, backstitch,
    stemstitch, sculpture run, zigzag border and E-stitch border. They are sewn along a line, or around a filled
    shape's outline and holes instead of filling it. Sharp corners stay needle points; spacing stays even on
@@ -228,6 +234,7 @@ embroidery_app/
     strokes.py        small lettering: satin along each letter stroke
     outlines.py       decorative outlines/borders: double run, backstitch, stemstitch, sculpture run, zigzag, E-stitch
     underlay.py       named foundation types
+    fills.py          advanced fills: offset, spiral, contour, radial, shaded, stipple, maze, cross stitch
     optimize.py       smart stitch reduction (coverage-checked)
     safety.py         min/max stitch length, machine check
     smart.py          smart direction: columns along centre lines, sections, fill direction per section

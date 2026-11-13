@@ -112,10 +112,15 @@ def tatami_fill(
     stitch_len: float,
     start: Pt,
     max_stitch: float = 7.0,
+    offsets: tuple[float, ...] = TATAMI_OFFSETS,
+    row_ys=None,
 ) -> Pieces:
+    """Tatami: rows of running stitches. ``offsets`` is the row-by-row shift of the
+    needle points (a share of the stitch length): it sets the fill's texture.
+    ``row_ys`` optionally places the rows (see rows.scan_rows)."""
     if poly.is_empty:
         return []
-    ys, rows = scan_rows(poly, angle, spacing)
+    ys, rows = scan_rows(poly, angle, spacing, row_ys=row_ys)
     chains = build_chains(ys, rows, min_overlap=min(0.2, spacing / 2))
     edge_margin = min(0.6, stitch_len * 0.3)
 
@@ -124,7 +129,7 @@ def tatami_fill(
         left_to_right = start_left
         for y, (x0, x1) in zip(*_oriented_rows(chain, reverse)):
             idx = int(round(y / spacing))
-            off = TATAMI_OFFSETS[idx % len(TATAMI_OFFSETS)] * stitch_len
+            off = offsets[idx % len(offsets)] * stitch_len
             k0 = math.ceil((x0 + edge_margin - off) / stitch_len)
             grid = []
             x = off + k0 * stitch_len

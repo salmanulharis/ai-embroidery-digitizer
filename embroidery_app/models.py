@@ -77,9 +77,19 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("sculpture_run", "Sculpture run outline (beaded look)"),
     ("zigzag", "Zigzag border (open)"),
     ("estitch", "E-stitch border (blanket edge)"),
+    ("offset_fill", "Offset fill (rings that follow the outline)"),
+    ("spiral_fill", "Spiral fill (one continuous spiral)"),
+    ("contour_fill", "Contour fill (rows follow a curved column)"),
+    ("radial_fill", "Radial fill (rays from the centre)"),
+    ("shaded_fill", "Shaded fill (dense to light, one colour)"),
+    ("stipple_fill", "Stipple fill (light meandering line)"),
+    ("maze_fill", "Maze fill (right-angled meander)"),
+    ("cross_stitch", "Cross stitch (hand cross-stitch look)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
+FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
+                    "stipple_fill", "maze_fill", "cross_stitch")
 
 
 def new_object_id() -> str:
@@ -90,6 +100,9 @@ def normalize_angle(value: float) -> float:
     """Stitch rows have no front/back: 225° is the same direction as 45°."""
     return round(float(value) % 180.0, 2)
 
+
+# Tatami textures: how the needle points shift from row to row (see stitch/methods.py).
+FILL_PATTERNS = ("standard", "brick", "diagonal", "random")
 
 # Named foundation (underlay) types, see stitch/underlay.py.
 FILL_UNDERLAYS = ("none", "edge", "edge_tatami", "double_tatami")
@@ -345,6 +358,9 @@ class StitchParams:
     running_repeats: int = 1  # 3 = bean / triple stitch
     border_width_mm: float = 2.0  # zigzag / E-stitch borders (a stroked line keeps its own width)
     border_spacing_mm: float = 1.2  # gap between zigzag / E-stitch border stitches
+    stipple_spacing_mm: float = 2.0  # gap between the lines of stipple and maze fills
+    cross_cell_mm: float = 3.0  # cross stitch grid size (Ink/Stitch default)
+    fill_pattern: str = "standard"  # tatami texture: standard | brick | diagonal | random
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
     fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
@@ -373,6 +389,8 @@ class StitchParams:
             self.fabric = "general"
         if self.fill_underlay not in FILL_UNDERLAYS:
             self.fill_underlay = "edge_tatami"
+        if self.fill_pattern not in FILL_PATTERNS:
+            self.fill_pattern = "standard"
         if self.satin_underlay not in SATIN_UNDERLAYS:
             self.satin_underlay = "edge"
         self.push_compensation_mm = min(max(float(self.push_compensation_mm), PUSH_RANGE_MM[0]), PUSH_RANGE_MM[1])

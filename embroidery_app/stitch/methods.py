@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 from shapely import affinity
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.geometry.base import BaseGeometry
@@ -102,6 +103,19 @@ def _extent(geom: BaseGeometry) -> tuple[float, float]:
     return max(maxx, 1.0), max(maxy, 1.0)
 
 
+# Tatami textures (StitchParams.fill_pattern): the shift of the needle points from row
+# to row, as a share of the stitch length. "standard" is the brick pattern the fill
+# always had; "diagonal" lines the points up into a visible twill; "random" (fixed
+# seed) hides them completely.
+_RNG = np.random.default_rng(97)
+FILL_PATTERN_OFFSETS = {
+    "standard": gen.TATAMI_OFFSETS,
+    "brick": (0.0, 0.5),
+    "diagonal": (0.0, 0.2, 0.4, 0.6, 0.8),
+    "random": tuple(float(x) for x in _RNG.uniform(0, 1, 97)),
+}
+
+
 # --------------------------------------------------------------------------- generators
 
 def sew_fill(item: "_Item", angle: float, params: StitchParams, start: Pt) -> list[Run]:
@@ -112,7 +126,9 @@ def sew_fill(item: "_Item", angle: float, params: StitchParams, start: Pt) -> li
         runs += _runs("underlay", found, item.oid)
     poly = _push(_compensate(item.geom, params), angle, params.push_compensation_mm)
     cur = _after(runs, start)
-    runs += _runs("fill", gen.tatami_fill(poly, angle, params.fill_spacing_mm, params.fill_stitch_length_mm, cur, params.max_stitch_mm), item.oid)
+    offsets = FILL_PATTERN_OFFSETS.get(params.fill_pattern, gen.TATAMI_OFFSETS)
+    runs += _runs("fill", gen.tatami_fill(poly, angle, params.fill_spacing_mm, params.fill_stitch_length_mm, cur,
+                                          params.max_stitch_mm, offsets=offsets), item.oid)
     return runs
 
 
