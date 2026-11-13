@@ -444,6 +444,9 @@ const PARAMS = [
   ["border_spacing_mm", "Zigzag / E-stitch border gap (mm)", 0.5, 4, 0.1, true],
   ["stipple_spacing_mm", "Stipple / maze line gap (mm)", 1, 6, 0.1, true],
   ["cross_cell_mm", "Cross stitch size (mm)", 1.5, 6, 0.1, true],
+  ["motif_size_mm", "Motif size (mm)", 3, 20, 0.5, true],
+  ["pattern_size_mm", "Pattern fill tile size (mm)", 3, 30, 0.5, true],
+  ["jagged_mm", "Jagged fill roughness (mm)", 0.3, 5, 0.1, true],
   ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
   ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
@@ -468,6 +471,9 @@ const UNDERLAY_FIELDS = [["fill_underlay", "fill", "Foundation under fills"], ["
 // tatami textures (models.FILL_PATTERNS)
 UNDERLAY_LABELS.pattern = [["standard", "Standard (brick)"], ["brick", "Half-step brick"], ["diagonal", "Diagonal twill lines"], ["random", "Random (no lines)"]];
 UNDERLAY_FIELDS.push(["fill_pattern", "pattern", "Fill texture"]);
+UNDERLAY_LABELS.tile = [["diamonds", "Diamonds"], ["squares", "Squares"], ["bricks", "Bricks"], ["scales", "Scales"]];
+UNDERLAY_FIELDS.push(["pattern", "tile", "Pattern fill pattern"]);
+UNDERLAY_FIELDS.push(["motif", "motif", "Motif"]);
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],
@@ -479,6 +485,7 @@ const CHECKS = [
 ];
 function buildStitchForm() {
   const d = state.config.stitch_defaults;
+  UNDERLAY_LABELS.motif = state.config.motifs || [["wave", "Wave"]];
   const checkbox = ([k, label]) => {
     const on = k === "triple_run" ? d.running_repeats >= 3 : !!d[k];
     return `<label class="check"><input type="checkbox" name="${k}" ${on ? "checked" : ""}> ${label} ${Tip.icon(k)}</label>`;
@@ -810,6 +817,7 @@ function draw() {
   for (let i = 0; i < upto * 4; i += 4) {
     const cmd = ops[i], x = ops[i + 1], y = ops[i + 2], kind = ops[i + 3];
     if (cmd === 3) { color++; continue; }
+    if (cmd === 4) continue; // machine stop (applique)
     if (cmd === 2) { if (px !== null) trims.push([px, py]); continue; }
     if (cmd === 1) { if (px !== null) jumps.push([px, py, x, y]); px = x; py = y; continue; }
     if (px === null) { px = x; py = y; continue; }

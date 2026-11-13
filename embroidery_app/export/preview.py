@@ -5,9 +5,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, StitchPlan, rgb_to_hex
+from ..models import COLOR_CHANGE, JUMP, STITCH, STOP, TRIM, StitchPlan, rgb_to_hex
 
-CMD_CODES = {STITCH: 0, JUMP: 1, TRIM: 2, COLOR_CHANGE: 3}
+CMD_CODES = {STITCH: 0, JUMP: 1, TRIM: 2, COLOR_CHANGE: 3, STOP: 4}
 KIND_CODES = {"fill": 0, "satin": 1, "running": 2, "underlay": 3, "travel": 4, "tie": 5, "": 6}
 
 
@@ -50,7 +50,7 @@ def render_png(plan: StitchPlan, px_per_mm: float = 10.0, background=(250, 250, 
         if cmd == COLOR_CHANGE:
             color_idx = min(color_idx + 1, len(colors) - 1)
             continue
-        if cmd == TRIM:
+        if cmd in (TRIM, STOP):
             continue
         if cmd == JUMP:
             prev = (x, y)

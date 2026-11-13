@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from shapely.geometry import LineString, LinearRing, Polygon
 
-from ..geometry import Pt, dist, iter_polygons
+from ..geometry import Pt, dist, iter_polygons, subdivide
 from ..models import Run, StitchParams
 from . import generators as gen
 from .registry import StitchMethod, register
@@ -207,9 +207,29 @@ def _sculpture_piece(path: _Path, a_len: float, b_len: float, a_repeats: int) ->
 def zigzag(path: _Path, width: float, spacing: float, pull: float, max_stitch: float) -> list[Pt]:
     # piece by piece: across a corner the zigzag would splay out past the outline
     # (evenly resampled first: satin_line keeps every vertex of the line it is given)
-    if len(_corner_pieces(path)) == 1:
+    pieces = _corner_pieces(path)
+    if len(pieces) == 1:
         return gen.satin_line(LineString(_resampled(path, spacing)), width, spacing, pull, max_stitch, closed=path.closed)
-    return _piecewise(path, lambda piece: gen.satin_line(LineString(_resampled(piece, spacing)), width, spacing, pull, max_stitch))
+    # each piece runs on past its corners by half the width, so the pieces overlap there
+    # and the corner is covered (an open corner would show the fabric, or an applique's edge)
+    out: list[Pt] = []
+    reach = width / 2 + pull
+    for i, piece in enumerate(pieces):
+        pts = _resampled(piece, spacing)
+        if path.closed or i > 0:
+            pts = [_beyond(pts[0], pts[1], reach), *pts]
+        if path.closed or i < len(pieces) - 1:
+            pts = [*pts, _beyond(pts[-1], pts[-2], reach)]
+        sewn = gen.satin_line(LineString(pts), width, spacing, pull, max_stitch)
+        out.extend(sewn if not out else [*subdivide(out[-1], sewn[0], max_stitch)[:-1], *sewn])
+    return out
+
+
+def _beyond(end: Pt, inner: Pt, d: float) -> Pt:
+    """The point ``d`` past ``end``, continuing the direction from ``inner`` to ``end``."""
+    dx, dy = end[0] - inner[0], end[1] - inner[1]
+    n = math.hypot(dx, dy) or 1.0
+    return (end[0] + dx / n * d, end[1] + dy / n * d)
 
 
 def estitch(path: _Path, width: float, spacing: float) -> list[Pt]:

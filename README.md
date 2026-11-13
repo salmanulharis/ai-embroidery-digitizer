@@ -105,6 +105,13 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Decorative styles** (`stitch/decorative.py`): motif outline (a chain of motifs along a line or outline),
+   hand stitch (uneven long stitches with tiny ones between), motif fill and paired motif fill (rows of motifs,
+   alternate rows mirrored), pattern fill (Wilcom's program split: the fill's needle points sit on a tiled
+   pattern - diamonds, squares, bricks, scales - which shows embossed), jagged fill (rough edges for fur and grass),
+   raised satin (two padding layers under a 0.30 mm satin, up to 7 mm wide) and applique (placement line, machine
+   stop to lay the fabric, tack-down zigzag, satin cover with overlapping corners). Stops are written as STOP
+   commands; DST machines read them as a colour-change stop, and the worksheet lists them.
 0. **Advanced fills** (stitch style for a colour or a shape, `stitch/fills.py`): offset (rings that follow the
    outline), spiral (one continuous line), contour (rows along a curved column), radial (rays from the centre, thinned
    towards it), shaded (accordion spacing: dense to light in one colour), stipple (meander that never crosses itself),
@@ -235,6 +242,8 @@ embroidery_app/
     outlines.py       decorative outlines/borders: double run, backstitch, stemstitch, sculpture run, zigzag, E-stitch
     underlay.py       named foundation types
     fills.py          advanced fills: offset, spiral, contour, radial, shaded, stipple, maze, cross stitch
+    decorative.py     motif outline/fill, paired motif fill, pattern fill, jagged fill, hand stitch, raised satin, applique
+    library/motifs.json  built-in motifs (designed for this project)
     optimize.py       smart stitch reduction (coverage-checked)
     safety.py         min/max stitch length, machine check
     smart.py          smart direction: columns along centre lines, sections, fill direction per section

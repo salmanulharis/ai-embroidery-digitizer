@@ -16,7 +16,7 @@ import tempfile
 import pystitch as pe
 
 from ..fabrics import get_fabric
-from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, StitchPlan, rgb_to_hex
+from ..models import COLOR_CHANGE, JUMP, STITCH, STOP, TRIM, StitchPlan, rgb_to_hex
 from ..stitch.safety import RISK_TEXT, summarize_risks
 
 FORMATS: dict[str, dict[str, str]] = {
@@ -62,6 +62,8 @@ def plan_to_pattern(plan: StitchPlan, name: str = "design") -> pe.EmbPattern:
             pattern.add_command(pe.TRIM)
         elif cmd == COLOR_CHANGE:
             pattern.add_command(pe.COLOR_CHANGE)
+        elif cmd == STOP:
+            pattern.add_command(pe.STOP)
     pattern.add_command(pe.END)
     return pattern
 
@@ -86,7 +88,8 @@ def worksheet(plan: StitchPlan, name: str) -> str:
     lines = [
         f"Design: {name}",
         f"Size: {s['width_mm']} x {s['height_mm']} mm",
-        f"Stitches: {s['stitches']:,}   Trims: {s['trims']}   Colour changes: {s['color_changes']}",
+        f"Stitches: {s['stitches']:,}   Trims: {s['trims']}   Colour changes: {s['color_changes']}"
+        + (f"   Stops: {s['stops']} (applique: lay the fabric piece, then continue)" if s.get("stops") else ""),
         f"Estimated run time: {s['est_minutes']} min   Thread (top): ~{s['thread_m']} m",
         "",
         "Colour sequence (assign needles on the machine; DST files carry no colours):",

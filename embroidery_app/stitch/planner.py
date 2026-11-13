@@ -21,13 +21,15 @@ from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import (
-    COLOR_CHANGE, FILL_STYLE_NAMES, FILL_UNDERLAYS, JUMP, OUTLINE_STYLES, SATIN_UNDERLAYS, STITCH, TRIM,
+    COLOR_CHANGE, DECOR_AREA_STYLES, DECOR_PATH_STYLES, FILL_STYLE_NAMES, FILL_UNDERLAYS, JUMP, OUTLINE_STYLES,
+    SATIN_UNDERLAYS, STITCH, STOP, TRIM,
     ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan,
 )
 from . import generators as gen
 from . import methods  # noqa: F401  (registers the built-in stitch methods)
 from . import outlines  # noqa: F401  (registers the decorative outlines and borders)
 from . import fills  # noqa: F401  (registers the advanced fills)
+from . import decorative  # noqa: F401  (registers the decorative styles)
 from . import registry
 from . import smart
 from . import strokes as st
@@ -95,11 +97,25 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
     """Decide the stitch method for an object. ``satin_angle`` forces the direction
     of single-angle satin (otherwise the shortest-row angle is used)."""
     items: list[_Item] = []
+    if forced == "raised_satin" and obj.kind == "area":
+        found = []
+        for poly in iter_polygons(obj.geometry):
+            if poly.area < params.min_object_area_mm2:
+                continue
+            if poly.buffer(-decorative.RAISED_MAX_WIDTH_MM / 2).is_empty:  # narrow enough to pad
+                found.append(_Item(-1, poly, "raised_satin", satin_angle=satin_angle))
+            else:  # too wide for raised satin: sewn the usual way
+                found.extend(classify(DesignObject(obj.layer, poly), "auto", params, satin_angle))
+        return found
+    if forced in DECOR_AREA_STYLES and obj.kind == "area":
+        return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
+    if forced in DECOR_AREA_STYLES:
+        forced = "auto"  # a line has no area: sewn along its path as usual
     if forced in FILL_STYLE_NAMES and obj.kind == "area":
         return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
     if forced in FILL_STYLE_NAMES:
         forced = "auto"  # a line has no area to fill: sewn along its path as usual
-    if forced in OUTLINE_STYLES:
+    if forced in OUTLINE_STYLES or forced in DECOR_PATH_STYLES:
         # decorative outline / border: along a line's path, or around a shape's outline
         if obj.kind == "line":
             return [_Item(-1, obj.geometry, forced, obj.stroke_width_mm)]
@@ -306,7 +322,8 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
 
 def _fill_like(method: str) -> bool:
     """Methods whose thickness is the fill row gap (tatami and the advanced dense fills)."""
-    return method == "fill" or method in ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill")
+    return method == "fill" or method in ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
+                                          "pattern_fill", "jagged_fill")
 
 
 def _entry_distance(item: _Item, pos: Pt) -> float:
@@ -521,6 +538,10 @@ def assemble(
             last_run = None
             cut = True
         for run in block.runs:
+            if run.kind == "stop":  # machine stop where the needle is (thread not cut)
+                at = cur if cur is not None else run.points[0]
+                ops.append((STOP, at[0], at[1], ""))
+                continue
             pts = run.points
             start = pts[0]
             needs_jump = cur is None or last_run is None

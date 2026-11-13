@@ -114,10 +114,15 @@ def tatami_fill(
     max_stitch: float = 7.0,
     offsets: tuple[float, ...] = TATAMI_OFFSETS,
     row_ys=None,
+    row_ends=None,
+    row_xs=None,
 ) -> Pieces:
     """Tatami: rows of running stitches. ``offsets`` is the row-by-row shift of the
     needle points (a share of the stitch length): it sets the fill's texture.
-    ``row_ys`` optionally places the rows (see rows.scan_rows)."""
+    Optional hooks, all in the rotated frame where rows run along x:
+    ``row_ys(miny, maxy)`` places the rows (see rows.scan_rows);
+    ``row_ends(y, x0, x1) -> (x0, x1)`` moves a row's ends (jagged edges);
+    ``row_xs(y, x0, x1) -> [x, ...]`` gives a row's inner needle points (pattern fills)."""
     if poly.is_empty:
         return []
     ys, rows = scan_rows(poly, angle, spacing, row_ys=row_ys)
@@ -128,14 +133,19 @@ def tatami_fill(
         out: list[Pt] = []
         left_to_right = start_left
         for y, (x0, x1) in zip(*_oriented_rows(chain, reverse)):
-            idx = int(round(y / spacing))
-            off = offsets[idx % len(offsets)] * stitch_len
-            k0 = math.ceil((x0 + edge_margin - off) / stitch_len)
-            grid = []
-            x = off + k0 * stitch_len
-            while x < x1 - edge_margin:
-                grid.append(x)
-                x += stitch_len
+            if row_ends is not None:
+                x0, x1 = row_ends(y, x0, x1)
+            if row_xs is not None:
+                grid = [x for x in row_xs(y, x0, x1) if x0 + edge_margin <= x <= x1 - edge_margin]
+            else:
+                idx = int(round(y / spacing))
+                off = offsets[idx % len(offsets)] * stitch_len
+                k0 = math.ceil((x0 + edge_margin - off) / stitch_len)
+                grid = []
+                x = off + k0 * stitch_len
+                while x < x1 - edge_margin:
+                    grid.append(x)
+                    x += stitch_len
             xs = [x0, *grid, x1] if left_to_right else [x1, *grid[::-1], x0]
             row = [(xx, y) for xx in xs]
             if out:

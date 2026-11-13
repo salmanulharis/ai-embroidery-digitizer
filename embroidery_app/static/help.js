@@ -166,7 +166,7 @@ const HELP = {
   shape_style: {
     t: "Stitch style for the selected shapes",
     what: "How the selected shapes are sewn. “Same as colour” follows the colour list below; “Don't stitch” leaves the shape out so the fabric shows.",
-    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge. The advanced fills (offset, spiral, contour, radial, shaded, stipple, maze, cross stitch) fill the shape with another texture. The decorative outlines (double run, backstitch, stemstitch, sculpture run) and borders (zigzag, E-stitch) are sewn along a line, or around the edge of a filled shape instead of filling it.",
+    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge. The advanced fills (offset, spiral, contour, radial, shaded, stipple, maze, cross stitch) and decorative fills (motif, pattern, jagged) fill the shape with another texture; raised satin pads a narrow shape; appliqué sews a fabric piece on (the machine stops so you can lay it). The decorative outlines (double run, backstitch, stemstitch, sculpture run) and borders (zigzag, E-stitch) are sewn along a line, or around the edge of a filled shape instead of filling it.",
     eg: "Remove a stray speck with “Don't stitch”. Use an E-stitch border around an appliqué piece, or stemstitch for a hand-embroidered look.",
   },
   shape_direction: {
@@ -318,6 +318,36 @@ const HELP = {
     what: "The size of each cross in the cross stitch fill.",
     why: "Larger crosses look like coarse hand cross stitch; smaller ones show more detail.",
     eg: "3 mm (the usual size); 2 mm for small designs.",
+  },
+  motif: {
+    t: "Motif",
+    what: "The small figure that motif outlines and motif fills repeat: wave, scallop, loop, leaf, diamond or saw tooth.",
+    why: "Motifs turn a plain outline or fill into a decorative border or texture.",
+    eg: "Wave or scallop for soft borders; leaf for a vine; saw tooth for a bold edge.",
+  },
+  motif_size_mm: {
+    t: "Motif size",
+    what: "How long each motif is along the line (and how far apart the rows of a motif fill are).",
+    why: "Small motifs look fine and dense; large ones read from a distance.",
+    eg: "5–8 mm for most designs; 3–4 mm only with simple motifs such as the wave.",
+  },
+  pattern: {
+    t: "Pattern fill pattern",
+    what: "The pattern pressed into a pattern fill: the needle points of the fill rows are placed on its lines, so it shows as an embossed texture.",
+    why: "Adds texture to a large area in one colour, like woven or quilted fabric.",
+    eg: "Diamonds or scales for badges and backgrounds; bricks or squares for a tiled look.",
+  },
+  pattern_size_mm: {
+    t: "Pattern fill tile size",
+    what: "The size of one tile of the pattern fill (one diamond, square, brick or scale).",
+    why: "The pattern must be large enough to see: at least a few rows of stitches per tile.",
+    eg: "6–10 mm for most designs.",
+  },
+  jagged_mm: {
+    t: "Jagged fill roughness",
+    what: "How far the row ends of a jagged fill wander in and out of the shape's edge.",
+    why: "Rough edges look like fur, grass or feathers instead of a cut-out shape.",
+    eg: "1–2 mm for fur; 3 mm or more for grass.",
   },
   fill_underlay: {
     t: "Foundation under fills",

@@ -85,11 +85,22 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("stipple_fill", "Stipple fill (light meandering line)"),
     ("maze_fill", "Maze fill (right-angled meander)"),
     ("cross_stitch", "Cross stitch (hand cross-stitch look)"),
+    ("motif_run", "Motif outline (chain of small motifs)"),
+    ("hand_stitch", "Hand stitch outline (hand-sewn look)"),
+    ("motif_fill", "Motif fill (rows of motifs)"),
+    ("paired_motif_fill", "Paired motif fill (interlocking rows)"),
+    ("pattern_fill", "Pattern fill (embossed pattern)"),
+    ("jagged_fill", "Jagged fill (rough edges: fur, grass)"),
+    ("raised_satin", "Raised satin (padded, up to 7 mm)"),
+    ("applique", "Applique (placement, stop, tack, cover)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
 FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
                     "stipple_fill", "maze_fill", "cross_stitch")
+DECOR_PATH_STYLES = ("motif_run", "hand_stitch")  # sewn along a line or a shape's outline
+DECOR_AREA_STYLES = ("motif_fill", "paired_motif_fill", "pattern_fill", "jagged_fill", "raised_satin", "applique")
+FILL_PATTERN_TILES = ("diamonds", "squares", "bricks", "scales")  # pattern fill (stitch/decorative.py)
 
 
 def new_object_id() -> str:
@@ -361,6 +372,11 @@ class StitchParams:
     stipple_spacing_mm: float = 2.0  # gap between the lines of stipple and maze fills
     cross_cell_mm: float = 3.0  # cross stitch grid size (Ink/Stitch default)
     fill_pattern: str = "standard"  # tatami texture: standard | brick | diagonal | random
+    motif: str = "wave"  # motif outline / motif fill (stitch/library/motifs.json)
+    motif_size_mm: float = 6.0
+    pattern: str = "diamonds"  # pattern fill tile: diamonds | squares | bricks | scales
+    pattern_size_mm: float = 8.0
+    jagged_mm: float = 1.5  # jagged fill: how far the row ends wander
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
     fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
@@ -391,6 +407,11 @@ class StitchParams:
             self.fill_underlay = "edge_tatami"
         if self.fill_pattern not in FILL_PATTERNS:
             self.fill_pattern = "standard"
+        if self.pattern not in FILL_PATTERN_TILES:
+            self.pattern = "diamonds"
+        self.motif_size_mm = min(max(float(self.motif_size_mm), 3.0), 20.0)
+        self.pattern_size_mm = min(max(float(self.pattern_size_mm), 3.0), 30.0)
+        self.jagged_mm = min(max(float(self.jagged_mm), 0.3), 5.0)
         if self.satin_underlay not in SATIN_UNDERLAYS:
             self.satin_underlay = "edge"
         self.push_compensation_mm = min(max(float(self.push_compensation_mm), PUSH_RANGE_MM[0]), PUSH_RANGE_MM[1])
@@ -411,6 +432,7 @@ class StitchParams:
 
 # Stitch commands
 STITCH, JUMP, TRIM, COLOR_CHANGE = "stitch", "jump", "trim", "color_change"
+STOP = "stop"  # the machine stops (thread not cut), e.g. to lay an applique piece
 
 
 @dataclass
@@ -448,6 +470,7 @@ class StitchPlan:
         jumps = sum(1 for op in self.ops if op[0] == JUMP)
         trims = sum(1 for op in self.ops if op[0] == TRIM)
         changes = sum(1 for op in self.ops if op[0] == COLOR_CHANGE)
+        stops = sum(1 for op in self.ops if op[0] == STOP)
         thread_mm = 0.0
         prev = None
         for cmd, x, y, _ in self.ops:
@@ -458,12 +481,13 @@ class StitchPlan:
         xs = [op[1] for op in self.ops if op[0] == STITCH] or [0]
         ys = [op[2] for op in self.ops if op[0] == STITCH] or [0]
         # ~750 stitches/min average incl. slowdowns, ~10 s per trim, ~15 s per colour change
-        minutes = stitches / 750 + trims * 10 / 60 + changes * 15 / 60
+        minutes = stitches / 750 + trims * 10 / 60 + (changes + stops) * 15 / 60
         return {
             "stitches": stitches,
             "jumps": jumps,
             "trims": trims,
             "color_changes": changes,
+            "stops": stops,
             "colors": len(self.blocks),
             "width_mm": round(max(xs) - min(xs), 1),
             "height_mm": round(max(ys) - min(ys), 1),
