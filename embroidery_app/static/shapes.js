@@ -39,6 +39,8 @@ const Shapes = (() => {
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
   const GUIDED = ["guided_satin", "florentine_fill", "carved_fill"]; // styles that use a drawn guide line
+  // how a shape is sewn, in words: the known methods above, else the style's menu name
+  const methodLabel = (m) => METHOD_LABEL[m] || styleName(m).toLowerCase();
   const PRESETS = [[0, "—", "Horizontal"], [45, "╲", "Diagonal, top-left to bottom-right"], [90, "│", "Vertical"], [135, "╱", "Diagonal, bottom-left to top-right"]];
 
   const svgEl = () => $("svgBox").querySelector("svg");
@@ -244,7 +246,7 @@ const Shapes = (() => {
     if (chosen.length === 1) {
       const o = chosen[0];
       now = o.enabled === false ? "This shape will not be stitched."
-        : `Stitched as <b>${METHOD_LABEL[o.method] || o.method}</b>${o.effective_angle != null ? ` at <b>${o.effective_angle}°</b>` : ""} · ${o.area_mm2} mm²`;
+        : `Stitched as <b>${methodLabel(o.method)}</b>${o.effective_angle != null ? ` at <b>${o.effective_angle}°</b>` : ""} · ${o.area_mm2} mm²`;
     } else {
       now = `${chosen.length} shapes · ${chosen.reduce((s, o) => s + o.area_mm2, 0).toFixed(1)} mm²`;
     }
@@ -480,7 +482,7 @@ const Shapes = (() => {
       const items = objects.filter((o) => o.layer === l.index).sort((a, b) => b.area_mm2 - a.area_mm2);
       if (!items.length) return "";
       return `<optgroup label="${esc(l.name)}">${items.map((o, i) =>
-        `<option value="${o.id}">${esc(l.name)} ${i + 1} · ${o.kind === "line" ? "line" : `${o.area_mm2} mm²`} · ${o.enabled === false ? "not stitched" : METHOD_LABEL[o.method] || o.method}${o.effective_angle != null ? ` ${o.effective_angle}°` : ""}${o.spacing_mm != null ? ` · ${thicknessName(o.spacing_mm)}` : ""}${o.effective_bold ? " · bold" : ""}${isCustom(o) ? " · own settings" : ""}</option>`).join("")}</optgroup>`;
+        `<option value="${o.id}">${esc(l.name)} ${i + 1} · ${o.kind === "line" ? "line" : `${o.area_mm2} mm²`} · ${o.enabled === false ? "not stitched" : methodLabel(o.method)}${o.effective_angle != null ? ` ${o.effective_angle}°` : ""}${o.spacing_mm != null ? ` · ${thicknessName(o.spacing_mm)}` : ""}${o.effective_bold ? " · bold" : ""}${isCustom(o) ? " · own settings" : ""}</option>`).join("")}</optgroup>`;
     }).join("");
     sl.innerHTML = groups;
     sl.size = Math.min(8, Math.max(3, objects.length));
