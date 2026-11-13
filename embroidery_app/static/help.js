@@ -132,7 +132,7 @@ const HELP = {
   layers_stitch: {
     t: "Stitch style",
     what: "How this colour is sewn. Automatic chooses the best style for each shape.",
-    why: "Fill: textured rows for large areas. Satin: smooth, shiny zig-zag for narrow shapes like lettering and borders. Outline: a single thin line.",
+    why: "Fill: textured rows for large areas. Satin: smooth, shiny zig-zag for narrow shapes like lettering and borders. Outline: a single thin line. Decorative outlines and borders (backstitch, stemstitch, zigzag, E-stitch…) sew only the edge, in a decorative way. Border width and gap are in Advanced stitch settings.",
     eg: "Keep Automatic unless a shape looks wrong in the preview. To change just one shape, click it in the design.",
   },
   layers_angle: {
@@ -166,8 +166,8 @@ const HELP = {
   shape_style: {
     t: "Stitch style for the selected shapes",
     what: "How the selected shapes are sewn. “Same as colour” follows the colour list below; “Don't stitch” leaves the shape out so the fabric shows.",
-    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge.",
-    eg: "Remove a stray speck with “Don't stitch”.",
+    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge. The decorative outlines (double run, backstitch, stemstitch, sculpture run) and borders (zigzag, E-stitch) are sewn along a line, or around the edge of a filled shape instead of filling it.",
+    eg: "Remove a stray speck with “Don't stitch”. Use an E-stitch border around an appliqué piece, or stemstitch for a hand-embroidered look.",
   },
   shape_direction: {
     t: "Direction for the selected shapes",
@@ -282,6 +282,18 @@ const HELP = {
     what: "Crisps up soft, blurry edges before the shapes are traced.",
     why: "Blurry pictures make letters blobby; sharpening keeps their corners and gaps.",
     eg: "Low or Medium for small or blurry pictures. Leave Off for clean artwork.",
+  },
+  border_width_mm: {
+    t: "Border width",
+    what: "How wide zigzag and E-stitch borders are sewn. A stroked line from vector artwork keeps its own width when it is 1 mm or wider.",
+    why: "A wider border covers a raw edge (for example around appliqué) better; a narrow one looks finer.",
+    eg: "2 mm for most borders; 3–4 mm to cover the edge of an appliqué piece.",
+  },
+  border_spacing_mm: {
+    t: "Border gap",
+    what: "The gap between the stitches of zigzag and E-stitch borders.",
+    why: "These are open borders: a larger gap looks lighter and lets the fabric show; a small gap gets close to a satin border.",
+    eg: "1.2 mm for an open look; 0.6–0.8 mm for a denser border.",
   },
   fill_underlay: {
     t: "Foundation under fills",

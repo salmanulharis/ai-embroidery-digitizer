@@ -20,11 +20,12 @@ from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import (
-    COLOR_CHANGE, FILL_UNDERLAYS, JUMP, SATIN_UNDERLAYS, STITCH, TRIM,
+    COLOR_CHANGE, FILL_UNDERLAYS, JUMP, OUTLINE_STYLES, SATIN_UNDERLAYS, STITCH, TRIM,
     ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan,
 )
 from . import generators as gen
 from . import methods  # noqa: F401  (registers the built-in stitch methods)
+from . import outlines  # noqa: F401  (registers the decorative outlines and borders)
 from . import registry
 from . import smart
 from . import strokes as st
@@ -92,6 +93,11 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
     """Decide the stitch method for an object. ``satin_angle`` forces the direction
     of single-angle satin (otherwise the shortest-row angle is used)."""
     items: list[_Item] = []
+    if forced in OUTLINE_STYLES:
+        # decorative outline / border: along a line's path, or around a shape's outline
+        if obj.kind == "line":
+            return [_Item(-1, obj.geometry, forced, obj.stroke_width_mm)]
+        return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
     if obj.kind == "line":
         w = obj.stroke_width_mm
         forced = "auto" if forced == "lettering" else forced  # a line already follows its path
@@ -325,7 +331,8 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
                     min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
                 if registry.is_multi_piece(it.method):
                     stroke_oids.add(oid)
-                geoms[oid] = it.geom if it.method not in ("running", "satin_line") else it.geom.buffer(max(0.5, it.width / 2))
+                is_line = it.geom.geom_type in ("LineString", "MultiLineString")
+                geoms[oid] = it.geom.buffer(max(0.5, it.width / 2)) if is_line else it.geom
                 oid += 1
                 items.append(it)
         if not items:

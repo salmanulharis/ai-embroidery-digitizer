@@ -21,7 +21,7 @@ from .export import FORMATS
 from .fabrics import FABRICS
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
-from .models import StitchParams
+from .models import STITCH_STYLES, StitchParams
 
 log = logging.getLogger("embroidery")
 STATIC = Path(__file__).parent / "static"
@@ -145,6 +145,7 @@ def get_config():
         "vector_defaults": asdict(VectorOptions()),
         "stitch_defaults": StitchParams().to_dict(),
         "fabrics": [f.to_dict() for f in FABRICS],
+        "stitch_styles": [list(s) for s in STITCH_STYLES],
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,

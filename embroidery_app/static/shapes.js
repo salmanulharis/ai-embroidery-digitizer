@@ -25,15 +25,15 @@ const Shapes = (() => {
     ["lasso-erase", "⬚−", "Lasso −", "Draw an outline to cut away"],
   ];
 
-  const STYLE_OPTIONS = [
-    ["inherit", "Same as colour"], ["auto", "Automatic"], ["fill", "Fill (large areas)"],
-    ["satin", "Satin (smooth, narrow)"], ["lettering", "Lettering (follows each stroke)"], ["running", "Outline only"], ["skip", "Don't stitch"],
-  ];
-  const COLOUR_STYLE = { auto: "Automatic", fill: "Fill", satin: "Satin", running: "Outline only", lettering: "Lettering" };
+  // stitch styles come from the server (models.STITCH_STYLES), shared with the colour table
+  const styleOptions = () => [["inherit", "Same as colour"], ...stitchStyles(), ["skip", "Don't stitch"]];
+  const styleName = (v) => (stitchStyles().find(([k]) => k === v)?.[1] || v).replace(/ \(.*\)$/, "");
   const METHOD_LABEL = {
     fill: "fill", satin: "satin", satin_band: "satin that follows the shape", satin_line: "satin that follows the line",
     column: "satin that follows the shape", stroke: "satin that follows each stroke", dot: "satin dot",
     running: "outline", outline: "outline", mixed: "mixed styles", none: "too small to stitch",
+    double_run: "double run outline", backstitch: "backstitch outline", stemstitch: "stemstitch outline",
+    sculpture_run: "sculpture run outline", zigzag: "zigzag border", estitch: "E-stitch border",
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
   const PRESETS = [[0, "—", "Horizontal"], [45, "╲", "Diagonal, top-left to bottom-right"], [90, "│", "Vertical"], [135, "╱", "Diagonal, bottom-left to top-right"]];
@@ -226,9 +226,9 @@ const Shapes = (() => {
     const styles = new Set(chosen.map((o) => (o.enabled === false ? "skip" : o.stitch_type || "inherit")));
     const style = styles.size === 1 ? [...styles][0] : "";
     const colourStyles = new Set(chosen.map((o) => layerOf(o)?.stitch_type || "auto"));
-    const inheritLabel = colourStyles.size === 1 ? `Same as colour (${COLOUR_STYLE[[...colourStyles][0]]})` : "Same as each shape's colour";
+    const inheritLabel = colourStyles.size === 1 ? `Same as colour (${styleName([...colourStyles][0])})` : "Same as each shape's colour";
     const styleOpts = (style ? "" : `<option value="" selected disabled>– different styles –</option>`) +
-      STYLE_OPTIONS.map(([v, label]) => `<option value="${v}" ${v === style ? "selected" : ""}>${v === "inherit" ? inheritLabel : label}</option>`).join("");
+      styleOptions().map(([v, label]) => `<option value="${v}" ${v === style ? "selected" : ""}>${v === "inherit" ? inheritLabel : label}</option>`).join("");
 
     // direction
     const dirApplies = chosen.some((o) => o.direction_applies && o.enabled !== false);

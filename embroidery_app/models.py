@@ -14,7 +14,7 @@ from typing import Iterable, Literal, Optional
 from shapely import wkt
 from shapely.geometry.base import BaseGeometry
 
-StitchType = Literal["auto", "fill", "satin", "running", "lettering"]
+StitchType = str  # one of STITCH_TYPES
 ObjectKind = Literal["area", "line"]
 
 RGB = tuple[int, int, int]
@@ -61,8 +61,25 @@ class ColorLayer:
         )
 
 
-# "lettering": satin that follows each stroke (small text, script, fine line art)
-STITCH_TYPES = ("auto", "fill", "satin", "running", "lettering")
+# Stitch styles a colour or a shape can be given: (id, label for the menus).
+# "lettering": satin that follows each stroke (small text, script, fine line art).
+# The decorative outlines and borders are sewn along a line, or around a filled
+# shape's outline (see stitch/outlines.py).
+STITCH_STYLES: tuple[tuple[str, str], ...] = (
+    ("auto", "Automatic"),
+    ("fill", "Fill (large areas)"),
+    ("satin", "Satin (smooth, narrow)"),
+    ("lettering", "Lettering (follows each stroke)"),
+    ("running", "Outline only"),
+    ("double_run", "Double run outline (there and back)"),
+    ("backstitch", "Backstitch outline (hand-sewn look)"),
+    ("stemstitch", "Stemstitch outline (rope look)"),
+    ("sculpture_run", "Sculpture run outline (beaded look)"),
+    ("zigzag", "Zigzag border (open)"),
+    ("estitch", "E-stitch border (blanket edge)"),
+)
+STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
+OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
 
 
 def new_object_id() -> str:
@@ -326,6 +343,8 @@ class StitchParams:
     satin_min_width_mm: float = 1.0  # 40 wt: narrower than ~1 mm breaks thread (Melco, ZSK)
     running_stitch_length_mm: float = 2.5
     running_repeats: int = 1  # 3 = bean / triple stitch
+    border_width_mm: float = 2.0  # zigzag / E-stitch borders (a stroked line keeps its own width)
+    border_spacing_mm: float = 1.2  # gap between zigzag / E-stitch border stitches
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
     fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)

@@ -105,6 +105,10 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Decorative outlines and borders** (stitch style for a colour or a shape): double run, backstitch,
+   stemstitch, sculpture run, zigzag border and E-stitch border. They are sewn along a line, or around a filled
+   shape's outline and holes instead of filling it. Sharp corners stay needle points; spacing stays even on
+   curves. Border width and gap are in the advanced settings (a stroked line of 1 mm or more keeps its width).
 0. **Fabric preset** (step 3, default "General" = the standard settings): choosing a fabric (woven, denim,
    T-shirt, piqué, fleece, towel, cap) fills in shrink compensation, thickness and foundation for it; every value
    stays editable. The worksheet names the backing and needle. Values are starting points: sew a test piece.
@@ -222,6 +226,8 @@ embroidery_app/
     registry.py       stitch-method registry: name, flags, generator
     methods.py        the built-in methods (fill, satin, satin band/line, column, stroke, dot, running, outline)
     strokes.py        small lettering: satin along each letter stroke
+    outlines.py       decorative outlines/borders: double run, backstitch, stemstitch, sculpture run, zigzag, E-stitch
+    underlay.py       named foundation types
     optimize.py       smart stitch reduction (coverage-checked)
     safety.py         min/max stitch length, machine check
     smart.py          smart direction: columns along centre lines, sections, fill direction per section

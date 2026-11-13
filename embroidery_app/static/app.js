@@ -232,7 +232,8 @@ function renderDesign(res) {
   Shapes.afterRender(res);
 }
 
-const STITCH_STYLES = [["auto", "Automatic"], ["fill", "Fill (large areas)"], ["satin", "Satin (smooth, narrow)"], ["lettering", "Lettering (follows strokes)"], ["running", "Outline only"]];
+// stitch styles for colours and shapes come from the server (models.STITCH_STYLES)
+const stitchStyles = () => state.config?.stitch_styles || [["auto", "Automatic"]];
 
 function renderLayers() {
   const L = state.design.layers;
@@ -249,7 +250,7 @@ function renderLayers() {
         <td><input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}"></td>
         <td><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
         <td class="small muted">${l.area_mm2} mm²</td>
-        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${STITCH_STYLES.map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${label}</option>`).join("")}</select></td>
+        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${label}</option>`).join("")}</select></td>
         <td><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></td>
         <td class="small nowrap">${l.objects}${l.customised ? ` <span class="muted">(${l.customised} own)</span>` : ""}
           <button type="button" class="ghost small" data-select-layer="${l.index}" ${l.enabled ? "" : "disabled"} aria-label="Select all shapes of ${n}">Select</button></td>
@@ -439,6 +440,8 @@ const PARAMS = [
   ["running_stitch_length_mm", "Outline stitch length (mm)", 1, 5, 0.1, true],
   ["underlay_spacing_mm", "Foundation spacing (mm)", 1.5, 5, 0.1, true],
   ["push_compensation_mm", "Push compensation – shorten ends (mm)", 0, 0.5, 0.05, true],
+  ["border_width_mm", "Zigzag / E-stitch border width (mm)", 1, 6, 0.1, true],
+  ["border_spacing_mm", "Zigzag / E-stitch border gap (mm)", 0.5, 4, 0.1, true],
   ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
   ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
