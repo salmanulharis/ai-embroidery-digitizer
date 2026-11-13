@@ -15,6 +15,7 @@ import tempfile
 
 import pystitch as pe
 
+from ..fabrics import get_fabric
 from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, StitchPlan, rgb_to_hex
 from ..stitch.safety import RISK_TEXT, summarize_risks
 
@@ -99,8 +100,15 @@ def worksheet(plan: StitchPlan, name: str) -> str:
             per_color[color] += 1
     for i, block in enumerate(plan.blocks, 1):
         lines.append(f"  {i:>2}. {block.name:<12} {rgb_to_hex(block.rgb)}   {per_color[i - 1]:,} stitches")
+    fabric = get_fabric(plan.fabric)
+    if fabric.id != "general":
+        lines += ["", f"Fabric: {fabric.label}. Backing: {fabric.backing}."]
+        if fabric.notes:
+            lines.append(f"  {fabric.notes}")
     if plan.thread_weight == 60:
         lines += ["", "Thread: fine 60 wt (small lettering). Needle: 65/9 or 70/10 sharp; lower top tension slightly."]
+    elif fabric.id != "general":
+        lines += ["", f"Thread: standard 40 wt. Needle: {fabric.needle}."]
     else:
         lines += ["", "Thread: standard 40 wt. Needle: 75/11 (ballpoint for knits, sharp for woven fabric)."]
     risk = summarize_risks(plan.risks)

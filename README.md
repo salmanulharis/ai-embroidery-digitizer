@@ -105,6 +105,9 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Fabric preset** (step 3, default "General" = the standard settings): choosing a fabric (woven, denim,
+   T-shirt, piqué, fleece, towel, cap) fills in shrink compensation, thickness and foundation for it; every value
+   stays editable. The worksheet names the backing and needle. Values are starting points: sew a test piece.
 0. **Per-shape settings**: click shapes in the design (or in the stitch preview) to give them their
    own stitch style (automatic / fill / satin / outline / don't stitch) and direction. You can type the
    angle, use a preset, or drag to draw it. You can also apply one direction to the whole design.
@@ -200,6 +203,7 @@ embroidery_app/
   service.py          workflow orchestration, on-disk projects (data/projects/<id>)
   models.py           Design (vector, mm) · StitchParams · StitchPlan
   config.py           settings from env / .env
+  fabrics.py          fabric presets (step 3): fill in compensation, density, foundation; backing + needle on the worksheet
   colors.py, geometry.py
   ingest/
     __init__.py       file-type detection

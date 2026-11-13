@@ -18,6 +18,7 @@ from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
 from .export import FORMATS
+from .fabrics import FABRICS
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
 from .models import StitchParams
@@ -142,6 +143,7 @@ def get_config():
         "raster_defaults": asdict(RasterOptions()),
         "vector_defaults": asdict(VectorOptions()),
         "stitch_defaults": StitchParams().to_dict(),
+        "fabrics": [f.to_dict() for f in FABRICS],
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,

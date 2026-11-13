@@ -456,9 +456,16 @@ function buildStitchForm() {
     return `<label class="check"><input type="checkbox" name="${k}" ${on ? "checked" : ""}> ${label} ${Tip.icon(k)}</label>`;
   };
   const tw = d.thread_weight === 60 ? 60 : 40;
+  const fabrics = state.config.fabrics || [];
+  const fabricField = fabrics.length
+    ? `<label class="full"><span class="lbl">Fabric ${Tip.icon("fabric")}</span><select name="fabric">` +
+      fabrics.map((fb) => `<option value="${fb.id}" ${fb.id === d.fabric ? "selected" : ""}>${fb.label}</option>`).join("") +
+      `</select><span class="muted small hint" id="fabricNote"></span></label>`
+    : "";
   const field = ([k, label, min, max, step]) =>
     `<label><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
   $("stitchForm").innerHTML =
+    fabricField +
     CHECKS.slice(0, 1).map(checkbox).join("") +
     `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight">` +
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
@@ -469,12 +476,39 @@ function buildStitchForm() {
     PARAMS.filter((p) => p[5]).map(field).join("") +
     CHECKS.slice(4).map(checkbox).join("") +
     `</div></details>`;
+  const sel = $("stitchForm").elements.fabric;
+  if (sel) {
+    sel.onchange = () => applyFabric(sel.value);
+    showFabricNote(sel.value);
+  }
+}
+// A fabric preset fills in the stitch settings it is about; every value stays editable.
+function applyFabric(id) {
+  const fb = (state.config.fabrics || []).find((x) => x.id === id);
+  if (!fb) return;
+  const f = $("stitchForm");
+  Object.entries(fb.settings).forEach(([k, v]) => {
+    const el = f.elements[k];
+    if (!el) return;
+    if (el.type === "checkbox") el.checked = !!v;
+    else el.value = v;
+  });
+  showFabricNote(id);
+}
+function showFabricNote(id) {
+  const fb = (state.config.fabrics || []).find((x) => x.id === id);
+  const note = $("fabricNote");
+  if (!note) return;
+  note.textContent = fb && fb.id !== "general"
+    ? `Backing: ${fb.backing}. Needle: ${fb.needle}.${fb.notes ? " " + fb.notes : ""}`
+    : "";
 }
 function stitchParams() {
   const f = $("stitchForm"), p = {};
   PARAMS.forEach(([k]) => (p[k] = +f.elements[k].value));
   CHECKS.forEach(([k]) => (p[k] = f.elements[k].checked));
   p.thread_weight = +f.elements.thread_weight.value;
+  if (f.elements.fabric) p.fabric = f.elements.fabric.value;
   p.running_repeats = p.triple_run ? 3 : 1;
   delete p.triple_run;
   return p;

@@ -283,6 +283,12 @@ const HELP = {
     why: "Blurry pictures make letters blobby; sharpening keeps their corners and gaps.",
     eg: "Low or Medium for small or blurry pictures. Leave Off for clean artwork.",
   },
+  fabric: {
+    t: "Fabric",
+    what: "The fabric you will embroider. Choosing one fills in the shrink compensation, thickness and foundation settings that suit it, and adds the backing and needle to use to the production worksheet.",
+    why: "Stretchy and fluffy fabrics pull stitches in and swallow them more than firm cotton, so they need more compensation and a stronger foundation.",
+    eg: "General keeps the standard settings. Pick T-shirt for jersey, Fleece for sweatshirts. Every value can still be changed afterwards; sew a test piece on new fabrics.",
+  },
   thread_weight: {
     t: "Thread",
     what: "The thread you will load on the machine. Small lettering is sewn as a smooth satin that follows each stroke of a letter; thin strokes are widened to the narrowest column the thread can sew, only as far as the gaps between letters allow.",

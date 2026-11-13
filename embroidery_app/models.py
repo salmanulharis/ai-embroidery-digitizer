@@ -324,10 +324,17 @@ class StitchParams:
     max_stitch_mm: float = 7.0
     optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
     thread_weight: int = 40  # 40 = standard thread; 60 = fine thread for small lettering
+    # fabric preset chosen in the UI (see fabrics.py); the UI applies its values to the
+    # settings above, the plan keeps the name for the worksheet's backing/needle advice
+    fabric: str = "general"
 
     def __post_init__(self) -> None:
+        from .fabrics import FABRIC_IDS
+
         if self.thread_weight not in THREAD_WEIGHTS:
             self.thread_weight = 40
+        if self.fabric not in FABRIC_IDS:
+            self.fabric = "general"
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "StitchParams":
@@ -372,6 +379,7 @@ class StitchPlan:
     ops: list[tuple[str, float, float, str]] = field(default_factory=list)
     optimization: dict = field(default_factory=dict)  # smart reduction report (empty when off)
     thread_weight: int = 40
+    fabric: str = "general"  # fabric preset id (worksheet advice), see fabrics.py
     # machine check: spots where the thread may break or detail may not show
     # [{"x", "y", "type", "count"}], see stitch/safety.py
     risks: list[dict] = field(default_factory=list)
