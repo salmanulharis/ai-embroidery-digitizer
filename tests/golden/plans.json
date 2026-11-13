@@ -7,32 +7,32 @@
     "trim": 7
   },
   "shapes-default": {
-    "color_change": 8,
-    "jump": 19,
-    "sha256": "a78ea4166618365e77b9b7527d0bf65560288e6ceb9d4a530272461a0bb4d846",
-    "stitch": 3173,
-    "trim": 17
+    "color_change": 9,
+    "jump": 21,
+    "sha256": "6f04ea2ba61380416c3a534f684585b25899af8a28222ab7ae290ca2d78c1b43",
+    "stitch": 3466,
+    "trim": 19
   },
   "shapes-fine": {
-    "color_change": 8,
-    "jump": 19,
-    "sha256": "fa816443e0afb6b6bde1f9c4c5f8ec301e78f63e4c67de1c55281abfd0cfdad7",
-    "stitch": 3635,
-    "trim": 17
+    "color_change": 9,
+    "jump": 21,
+    "sha256": "5ab38c6771eefe14c3ffeb9a5e5af733187e4eb11b3787b4181b4890d6d40fc9",
+    "stitch": 3930,
+    "trim": 19
   },
   "shapes-plain": {
-    "color_change": 8,
-    "jump": 13,
-    "sha256": "ee0218fbc6a26955eaa4d4d6fa2b98308fc4d0f28f441afe12c2114468eac5d6",
-    "stitch": 2597,
-    "trim": 13
+    "color_change": 9,
+    "jump": 14,
+    "sha256": "b02b7a0cce7e65f742e4d46f20edb07a40dd8ffbf7f70518bf98af5aacee46b7",
+    "stitch": 2822,
+    "trim": 14
   },
   "shapes-smart": {
-    "color_change": 8,
-    "jump": 19,
-    "sha256": "fa1ce5a7e2a899d66fb178a45502f76c5c4c183e4d53578e7ae71d3c2a7d79bf",
-    "stitch": 3082,
-    "trim": 17
+    "color_change": 9,
+    "jump": 20,
+    "sha256": "6eeedd3ec9f8d60b771fa2ab62cd16a7b579736eb562465494daa91fa9a59966",
+    "stitch": 3456,
+    "trim": 18
   },
   "svg-default": {
     "color_change": 3,

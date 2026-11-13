@@ -309,9 +309,10 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
             f"{risk['dense']} small area(s) get more stitches than the fabric can take (hard spots, needle holes). "
             "A slightly thinner fill helps.", fill_spacing_mm=params.fill_spacing_mm + 0.05)
 
-    if params.satin_max_width_mm > 8:
-        add("low", "Long satin stitches allowed",
-            "Satin wider than 8 mm can snag on clothing; 7 mm is safer.", satin_max_width_mm=7.0)
+    if params.satin_max_width_mm > 10:
+        add("low", "Very wide satin allowed",
+            "Satin wider than 10 mm is split into shorter stitches but still snags easily on clothing; "
+            "10 mm or less is safer.", satin_max_width_mm=10.0)
 
     if not params.optimize:
         add("low", "Smart stitch reduction is off", "Turning it on removes stacked stitches without changing the design.",

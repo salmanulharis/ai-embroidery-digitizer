@@ -31,7 +31,7 @@ GOLDEN = Path(__file__).parent / "golden" / "plans.json"
 def _shapes_design() -> Design:
     """One colour per stitch method, so every branch of the planner is sewn."""
     arc = Point(70, 80).buffer(16).difference(Point(70, 80).buffer(13)).intersection(box(50, 60, 90, 80))
-    layers = [ColorLayer(i, (20 * i, 100, 200 - 20 * i), f"c{i}") for i in range(9)]
+    layers = [ColorLayer(i, (20 * i, 100, 200 - 20 * i), f"c{i}") for i in range(10)]
     objects = [
         DesignObject(0, box(5, 5, 45, 35).difference(box(15, 12, 30, 25))),  # fill with a hole
         DesignObject(1, box(50, 5, 53, 35)),  # straight narrow column: satin
@@ -44,6 +44,7 @@ def _shapes_design() -> Design:
         DesignObject(6, Point(100, 75).buffer(8), stitch_type="running", bold=True),  # bold outline
         DesignObject(7, box(95, 5, 103, 25), stitch_type="satin", angle=30.0, spacing_mm=0.5, pull_mm=0.3),
         DesignObject(8, box(60, 40, 85, 58).union(box(84, 47, 112, 50))),  # wide body + narrow arm: smart sections
+        DesignObject(9, box(30, 84, 75, 93)),  # 9 mm column: auto-split satin
     ]
     return Design(width_mm=115, height_mm=95, layers=layers, objects=objects, source_kind="vector")
 

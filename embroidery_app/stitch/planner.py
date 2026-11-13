@@ -153,7 +153,7 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
             # average stroke width of a long thin shape ~ 2*area/perimeter; a single-angle
             # satin is only good when its rows stay close to that width (straight-ish columns)
             width_est = 2 * poly.area / max(poly.length, 1e-6)
-            straight_column = p95 <= min(params.satin_max_width_mm, 1.6 * width_est + 0.6)
+            straight_column = p95 <= min(params.satin_max_width_mm, _row_tolerance(width_est))
             if forced == "satin" or straight_column:
                 if params.smart_direction and satin_angle is None:
                     angle = smart.refine_satin_angle(poly, angle)
@@ -161,6 +161,17 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
                 continue
         items.append(_Item(-1, poly, "fill"))
     return items
+
+
+SPLIT_SATIN_FROM_MM = 7.0  # satin rows longer than this are auto-split (Wilcom: 7 mm)
+
+
+def _row_tolerance(width: float) -> float:
+    """Longest single-angle satin row still accepted for a column of this average
+    width. Narrow columns may slant a little (1.6 x width + 0.6 mm, never past the
+    7 mm split length); a wide, auto-split column must be nearly straight (rows at most
+    15% longer than its width), so a curved stroke is never sewn with long slanted rows."""
+    return min(1.6 * width + 0.6, max(SPLIT_SATIN_FROM_MM, 1.15 * width + 0.6))
 
 
 def _column_shape(poly: Polygon) -> bool:

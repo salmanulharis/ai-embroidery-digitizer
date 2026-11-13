@@ -296,9 +296,9 @@ const HELP = {
   },
   satin_max_width_mm: {
     t: "Widest satin shape",
-    what: "Shapes narrower than this are sewn in smooth satin; wider shapes switch to fill.",
-    why: "Very long satin stitches look loose and can catch on things.",
-    eg: "7 mm is safe for clothing; lower it to 5 mm for caps or bags that get rubbed.",
+    what: "Shapes narrower than this are sewn in smooth satin; wider shapes switch to fill. Satin stitches longer than 7 mm are split into shorter ones, with the split points staggered from row to row so no seam line shows.",
+    why: "Long satin stitches look loose and can catch on things; splitting keeps the satin shine on wider shapes, but very wide satin still snags more easily than fill.",
+    eg: "10 mm for most designs; 7 mm or less for caps, bags and workwear that get rubbed.",
   },
   pull_compensation_mm: {
     t: "Shrink compensation",

@@ -145,6 +145,30 @@ def tatami_fill(
 
 # --------------------------------------------------------------------------- satin
 
+SPLIT_SHIFT = 0.35  # split points move up to this share of a piece, row by row
+_GOLDEN = 0.6180339887498949  # golden-ratio steps spread the shifts evenly, never repeating
+
+
+def split_stitch(a: Pt, b: Pt, max_stitch: float, row: int) -> list[Pt]:
+    """Needle points from ``a`` to ``b`` (excluding ``a``, including ``b``).
+
+    A satin stitch longer than ``max_stitch`` is split into equal pieces whose split
+    points shift from row to row (auto split): split evenly, the points of a straight
+    column would line up into a visible seam across the satin. As few pieces as the
+    shift allows (a 9 mm stitch becomes two), each at most ``max_stitch`` and at least
+    about a quarter of it long."""
+    d = dist(a, b)
+    if d <= max_stitch:
+        return [b]
+    n = math.ceil(d * (1 + SPLIT_SHIFT) / max_stitch)  # a shifted end piece still fits
+    u = ((row * _GOLDEN) % 1.0 - 0.5) * 2 * SPLIT_SHIFT
+    pts = []
+    for k in range(1, n):
+        t = (k + u) / n
+        pts.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+    return [*pts, b]
+
+
 def satin_area(
     poly: Polygon,
     spacing: float,
@@ -165,8 +189,8 @@ def satin_area(
         left = start_left
         for y, (x0, x1) in zip(*_oriented_rows(chain, reverse)):
             p = (x0 if left else x1, y)
-            if out and dist(out[-1], p) > max_stitch:
-                out.extend(subdivide(out[-1], p, max_stitch))  # split satin
+            if out:
+                out.extend(split_stitch(out[-1], p, max_stitch, int(round(y / spacing))))  # auto split
             else:
                 out.append(p)
             left = not left
@@ -207,14 +231,14 @@ def satin_line(
         nx, ny = -ty / norm, tx / norm
         side = 1 if i % 2 == 0 else -1
         p = (x + nx * half * side, y + ny * half * side)
-        if out and dist(out[-1], p) > max_stitch:
-            out.extend(subdivide(out[-1], p, max_stitch))
+        if out:
+            out.extend(split_stitch(out[-1], p, max_stitch, i))  # auto split
         else:
             out.append(p)
     if closed and out:
         # close the loop on the matching side; at a corner of a band this stitch
         # crosses diagonally, so it is split like any other over-long one
-        out.extend(subdivide(out[-1], out[0] if n % 2 == 0 else out[1], max_stitch))
+        out.extend(split_stitch(out[-1], out[0] if n % 2 == 0 else out[1], max_stitch, n))
     return out
 
 

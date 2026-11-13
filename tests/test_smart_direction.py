@@ -201,8 +201,9 @@ def test_shapes_without_a_real_arm_stay_in_one_piece():
     assert smart.narrow_arms(stub, 7.0) == []
     thick = unary_union([box(0, 0, 30, 30), box(30, 12, 60, 18.5)])  # nearly as wide as the satin limit
     assert smart.narrow_arms(thick, 7.0) == []
+    smart_7mm = StitchParams(smart_direction=True, satin_max_width_mm=7.0)  # the limit the arms above use
     for geom in (box(0, 0, 40, 30), leaf, stub, thick):
-        assert methods(geom) == ["fill"]
+        assert methods(geom, smart_7mm) == ["fill"]
 
 
 # ---------------------------------------------------------------- bodies: a fill direction per section
