@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 
+import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
@@ -302,6 +303,63 @@ def _entry_distance(item: _Item, pos: Pt) -> float:
     return item.geom.distance(Point(pos))
 
 
+TWO_OPT_MAX_ITEMS = 250  # beyond this the order stays nearest-neighbour (2-opt is O(n^2) per pass)
+
+
+def sewing_order(items: list[_Item], pos: Pt) -> list[_Item]:
+    """Order of the pieces of one colour: nearest-neighbour from the needle position,
+    improved by 2-opt (reversing a stretch of the order whenever that shortens the
+    total distance between consecutive pieces). Shorter gaps mean fewer and shorter
+    jumps, so fewer thread cuts. Distances are between the pieces' outlines - the
+    needle leaves and enters each piece where they are closest."""
+    n = len(items)
+    if n <= 2:
+        out, rest, cur = [], list(items), pos
+        while rest:
+            k = min(range(len(rest)), key=lambda i: _entry_distance(rest[i], cur))
+            out.append(rest.pop(k))
+        return out
+    geoms = [it.geom for it in items]
+    start = shapely.distance(Point(pos), np.array(geoms))  # needle -> each piece
+    D = shapely.distance(np.array(geoms)[:, None], np.array(geoms)[None, :])
+    order = [int(np.argmin(start))]
+    left = set(range(n)) - set(order)
+    while left:
+        cur = order[-1]
+        nxt = min(left, key=lambda j: D[cur, j])
+        order.append(nxt)
+        left.remove(nxt)
+    if n <= TWO_OPT_MAX_ITEMS:
+        order = _two_opt(order, D, start)
+    return [items[i] for i in order]
+
+
+def _two_opt(order: list[int], D: np.ndarray, start: np.ndarray, passes: int = 30) -> list[int]:
+    """Open-path 2-opt with a fixed starting position (``start`` = distance from the
+    needle to each piece). Keeps reversing stretches while that shortens the path."""
+    n = len(order)
+
+    def before(i: int) -> float:  # cost of reaching order[i] from what precedes it
+        return start[order[i]] if i == 0 else D[order[i - 1], order[i]]
+
+    for _ in range(passes):
+        improved = False
+        for i in range(n - 1):
+            for j in range(i + 1, n):
+                a_in = before(i)
+                new_in = start[order[j]] if i == 0 else D[order[i - 1], order[j]]
+                if j < n - 1:
+                    old_out, new_out = D[order[j], order[j + 1]], D[order[i], order[j + 1]]
+                else:
+                    old_out = new_out = 0.0
+                if new_in + new_out < a_in + old_out - 1e-9:
+                    order[i:j + 1] = order[i:j + 1][::-1]
+                    improved = True
+        if not improved:
+            break
+    return order
+
+
 def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
     # Each colour is stitched as continuous regions, never along internal seams of
     # merged shades. Also covers designs saved before normalisation existed.
@@ -343,9 +401,13 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
             for it in items:
                 it.ink = ink
         block = ColorBlock(rgb=layer.rgb, name=layer.name)
+        ordered = sewing_order(items, pos) if params.optimize_order else None
         while items:
-            idx = min(range(len(items)), key=lambda i: _entry_distance(items[i], pos))
-            item = items.pop(idx)
+            if ordered is not None:
+                item = ordered.pop(0)
+                items.remove(item)
+            else:  # nearest-neighbour from the actual needle position
+                item = items.pop(min(range(len(items)), key=lambda i: _entry_distance(items[i], pos)))
             runs = _stitch_item(item, item.angle, item.params or params, pos)
             narrow_spots.extend(item.narrow_spots or [])
             if runs:

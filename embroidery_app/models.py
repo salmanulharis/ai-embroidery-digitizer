@@ -358,6 +358,7 @@ class StitchParams:
     tie_stitches: bool = True
     max_stitch_mm: float = 7.0
     optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
+    optimize_order: bool = True  # 2-opt sewing order within each colour (fewer, shorter jumps)
     thread_weight: int = 40  # 40 = standard thread; 60 = fine thread for small lettering
     # fabric preset chosen in the UI (see fabrics.py); the UI applies its values to the
     # settings above, the plan keeps the name for the worksheet's backing/needle advice

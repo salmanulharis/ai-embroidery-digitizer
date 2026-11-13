@@ -469,6 +469,7 @@ const CHECKS = [
   ["vary_fill_angle", "Change fill direction for each colour"],
   ["smart_direction", "Smart direction – best angle for each section"],
   ["tie_stitches", "Lock stitches at every thread cut"],
+  ["optimize_order", "Smart sewing order (fewer, shorter jumps)"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
 function buildStitchForm() {

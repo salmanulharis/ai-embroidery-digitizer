@@ -295,6 +295,12 @@ const HELP = {
     why: "These are open borders: a larger gap looks lighter and lets the fabric show; a small gap gets close to a satin border.",
     eg: "1.2 mm for an open look; 0.6–0.8 mm for a denser border.",
   },
+  optimize_order: {
+    t: "Smart sewing order",
+    what: "Within each colour, sews the shapes in the order that keeps the jumps between them shortest (nearest-neighbour, then improved by swapping stretches of the order).",
+    why: "Shorter jumps mean fewer thread cuts and less machine time; the stitches themselves do not change.",
+    eg: "Leave it on. Turn it off only to compare with the plain nearest-shape-next order.",
+  },
   fill_underlay: {
     t: "Foundation under fills",
     what: "Stitches sewn first, under each filled area, to hold the fabric still. Edge run + lattice is a run just inside the outline plus an open grid; the double lattice adds a second, crossing grid.",
