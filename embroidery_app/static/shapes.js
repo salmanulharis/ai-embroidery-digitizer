@@ -11,6 +11,7 @@ const Shapes = (() => {
   let vb = null; // step-2 viewBox {x, y, w, h}
   let vbKey = "";
   let drawMode = false;
+  let guideMode = false; // drawing a guide line for the selected shapes
   let paths3 = []; // step-3 hit-test shapes [{id, order, kind, width, path}]
   let down = null; // pointer state for step-2 preview
   // shape editing (step 2): paint / erase / lasso the outline of the selected areas
@@ -34,8 +35,10 @@ const Shapes = (() => {
     running: "outline", outline: "outline", mixed: "mixed styles", none: "too small to stitch",
     double_run: "double run outline", backstitch: "backstitch outline", stemstitch: "stemstitch outline",
     sculpture_run: "sculpture run outline", zigzag: "zigzag border", estitch: "E-stitch border",
+    guided_satin: "satin along the guide line", florentine_fill: "fill along the guide line",
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
+  const GUIDED = ["guided_satin", "florentine_fill"]; // styles that follow a drawn guide line
   const PRESETS = [[0, "—", "Horizontal"], [45, "╲", "Diagonal, top-left to bottom-right"], [90, "│", "Vertical"], [135, "╱", "Diagonal, bottom-left to top-right"]];
 
   const svgEl = () => $("svgBox").querySelector("svg");
@@ -43,7 +46,7 @@ const Shapes = (() => {
   const layerOf = (o) => state.design?.layers.find((l) => l.index === o.layer);
   const layerOn = (o) => layerOf(o)?.enabled !== false;
   const isCustom = (o) => o.stitch_type != null || o.angle != null || o.enabled === false
-    || o.spacing_mm != null || o.pull_mm != null || o.bold != null || o.underlay_style != null;
+    || o.spacing_mm != null || o.pull_mm != null || o.bold != null || o.underlay_style != null || o.guide != null;
   // thickness presets = gap between fill rows / satin stitches (mm)
   const THICKNESS = [["light", 0.5, "Light"], ["normal", 0.4, "Normal"], ["dense", 0.33, "Dense"]];
   const thicknessName = (mm) => THICKNESS.find(([, v]) => Math.abs(v - mm) < 1e-6)?.[2].toLowerCase() || "custom";
@@ -310,6 +313,15 @@ const Shapes = (() => {
       : "";
 
     const canEdit = step === 2 && chosen.some((o) => o.kind === "area");
+    const guided = chosen.some((o) => GUIDED.includes(o.stitch_type || layerOf(o)?.stitch_type));
+    const hasGuide = chosen.some((o) => o.guide);
+    const guideHtml = guided || hasGuide ? `
+      <div class="row sp-guide">
+        ${step === 2 ? `<button type="button" class="small ${guideMode ? "on" : ""}" data-action="guide" aria-pressed="${guideMode}">✎ ${hasGuide ? "Redraw guide line" : "Draw guide line"}</button>` : ""}
+        ${hasGuide ? `<button type="button" class="ghost small" data-action="guide-clear">Clear guide line</button>` : ""}
+        ${Tip.icon("shape_guide")}
+      </div>
+      ${guided && !chosen.every((o) => o.guide) ? `<p class="small muted">${step === 2 ? "Draw a guide line across the shape: the satin or the fill rows follow it." : "Draw a guide line in step 2 (Edit design): until then the shape is sewn the usual way."}</p>` : ""}` : "";
     dyn.innerHTML = `${chipsHtml()}
       <div class="sp-head">
         <b>${chosen.length === 1 ? "1 shape selected" : `${chosen.length} shapes selected`}</b>
@@ -337,6 +349,7 @@ const Shapes = (() => {
         </fieldset>
       </div>
       ${followNote}
+      ${guideHtml}
       <div class="sp-grid sp-thickgrid">${thicknessHtml}</div>
       ${thickNote}
       <div class="row">
@@ -372,6 +385,8 @@ const Shapes = (() => {
       if (action === "edit") return setEdit(!edit.on);
       if (action === "preset") return update({ ids, angle: Number(t.dataset.angle) }, "Changing direction…");
       if (action === "draw") { if (!drawMode) setEdit(false); return setDrawMode(!drawMode); }
+      if (action === "guide") { if (!guideMode) { setEdit(false); setDrawMode(false); } return setGuideMode(!guideMode); }
+      if (action === "guide-clear") return update({ ids, guide: "inherit" }, "Removing guide line…");
       if (action === "reset-sel") return resetShapes(ids);
       if (action === "reset-all") {
         if (confirm("Reset every shape to its colour's settings?")) return resetShapes([]);
@@ -578,6 +593,13 @@ const Shapes = (() => {
       overlay.append(el("path", { d: p.getAttribute("d"), fill: "none", stroke: "#fff", "stroke-width": 5, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
       overlay.append(el("path", { d: p.getAttribute("d"), fill: "none", stroke: "#2d5bd7", "stroke-width": 2.5, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
     }
+    for (const id of sel) { // guide lines (guided satin / Florentine fill)
+      const g = byId.get(id)?.guide;
+      if (!g || g.length < 2) continue;
+      const d = g.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join("");
+      overlay.append(el("path", { d, fill: "none", stroke: "#fff", "stroke-width": 5, "vector-effect": "non-scaling-stroke", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+      overlay.append(el("path", { d, fill: "none", stroke: "#e8590c", "stroke-width": 2.5, "stroke-dasharray": "6 4", "vector-effect": "non-scaling-stroke", "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    }
     svg.prepend(defs);
     svg.append(overlay);
   }
@@ -673,6 +695,19 @@ const Shapes = (() => {
       op === "add" ? "Adding area…" : "Erasing area…");
   }
 
+  function setGuideMode(on) {
+    guideMode = on;
+    $("svgBox")?.classList.toggle("drawing", on || drawMode);
+    document.querySelectorAll('[data-action="guide"]').forEach((b) => { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+    if (on) toast("Drag a line across the selected shape: the satin or the fill rows will follow it. Press Esc to cancel.", true);
+  }
+
+  function drawGuide(svg, pts) {
+    let g = svg.querySelector(".sp-guide-live");
+    if (!g) { g = el("path", { class: "sp-guide-live", "pointer-events": "none", fill: "none", stroke: "#e8590c", "stroke-width": 3, "vector-effect": "non-scaling-stroke", "stroke-linecap": "round", "stroke-linejoin": "round" }); svg.append(g); }
+    g.setAttribute("d", pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(3)} ${y.toFixed(3)}`).join(""));
+  }
+
   function setDrawMode(on) {
     drawMode = on;
     $("svgBox")?.classList.toggle("drawing", on);
@@ -711,7 +746,7 @@ const Shapes = (() => {
       const start = svgPoint(svg, ev);
       const drawing = !pan && edit.on && edit.tool !== "move" && editable().length > 0;
       down = { cx: ev.clientX, cy: ev.clientY, start, oid: ev.target.closest?.("[data-oid]")?.dataset.oid, moved: false, pan,
-        stroke: drawing ? [[start.x, start.y]] : null };
+        stroke: drawing ? [[start.x, start.y]] : null, guide: !pan && guideMode && sel.size ? [[start.x, start.y]] : null };
       box.setPointerCapture(ev.pointerId);
       if (drawing) drawStroke(svg, down);
     });
@@ -732,6 +767,16 @@ const Shapes = (() => {
         return;
       }
       if (!down || !svg) return;
+      if (down.guide) {
+        const p = svgPoint(svg, ev);
+        const last = down.guide[down.guide.length - 1];
+        const k = 1 / (svg.getScreenCTM()?.a || 1);
+        if (Math.hypot(p.x - last[0], p.y - last[1]) >= Math.max(3 * k, 0.3) && down.guide.length < 2000) {
+          down.guide.push([p.x, p.y]);
+          drawGuide(svg, down.guide);
+        }
+        return;
+      }
       if (down.stroke) {
         const p = svgPoint(svg, ev);
         const last = down.stroke[down.stroke.length - 1];
@@ -774,6 +819,14 @@ const Shapes = (() => {
       const d = down;
       down = null;
       svg.querySelector(".sp-arrow")?.remove();
+      svg.querySelector(".sp-guide-live")?.remove();
+      if (d.guide) {
+        let len = 0;
+        for (let i = 1; i < d.guide.length; i++) len += Math.hypot(d.guide[i][0] - d.guide[i - 1][0], d.guide[i][1] - d.guide[i - 1][1]);
+        if (len < 2) return toast("Drag a longer line across the shape.");
+        setGuideMode(false);
+        return update({ ids: [...sel], guide: d.guide }, "Setting guide line…");
+      }
       if (d.stroke) return finishStroke(svg, d);
       if (d.pan) return;
       if (drawMode) {
@@ -869,6 +922,8 @@ const Shapes = (() => {
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape" || ev.target.matches("input, select, textarea")) return;
       if (down?.stroke) { svgEl()?.querySelector(".sp-stroke")?.remove(); down = null; return; }
+      if (down?.guide) { svgEl()?.querySelector(".sp-guide-live")?.remove(); down = null; return; }
+      if (guideMode) { setGuideMode(false); return; }
       if (edit.on) setEdit(false);
       else if (drawMode) setDrawMode(false);
       else if (sel.size) select([]);

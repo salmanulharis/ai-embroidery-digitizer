@@ -367,6 +367,12 @@ const HELP = {
     why: "Keeps lettering and columns their true length, so they do not run into each other.",
     eg: "0 (off) for most designs; 0.1–0.3 mm on soft or stretchy fabric if shapes come out too long. Check with a test sew-out.",
   },
+  shape_guide: {
+    t: "Guide line",
+    what: "A line you draw across the shape. With “Guided satin” the satin stitches cross it at right angles all along it, from edge to edge; with “Florentine fill” every fill row is a copy of it, so the whole fill bends with it.",
+    why: "You decide exactly how a curved satin turns or how a fill flows, where the automatic direction is not what you want.",
+    eg: "Choose the stitch style first, then press “Draw guide line” and drag along the middle of a curved band (satin) or in the direction the rows should flow (fill).",
+  },
   shape_underlay: {
     t: "Foundation",
     what: "The foundation stitches sewn under the selected shapes before their top stitching. The choices depend on how the shapes are sewn: fills and straight satin columns have their own lists; satin that follows a curve keeps its own foundation.",

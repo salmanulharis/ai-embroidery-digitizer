@@ -7,6 +7,7 @@ thread-colour layers). A ``StitchPlan`` is the machine-ready result.
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import asdict, dataclass, field, replace
 from typing import Iterable, Literal, Optional
@@ -93,6 +94,8 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("jagged_fill", "Jagged fill (rough edges: fur, grass)"),
     ("raised_satin", "Raised satin (padded, up to 7 mm)"),
     ("applique", "Applique (placement, stop, tack, cover)"),
+    ("guided_satin", "Guided satin (follows a line you draw)"),
+    ("florentine_fill", "Florentine fill (rows bend with a line you draw)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
@@ -101,6 +104,21 @@ FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill",
 DECOR_PATH_STYLES = ("motif_run", "hand_stitch")  # sewn along a line or a shape's outline
 DECOR_AREA_STYLES = ("motif_fill", "paired_motif_fill", "pattern_fill", "jagged_fill", "raised_satin", "applique")
 FILL_PATTERN_TILES = ("diamonds", "squares", "bricks", "scales")  # pattern fill (stitch/decorative.py)
+GUIDED_STYLES = ("guided_satin", "florentine_fill")  # need a guide line on the shape (stitch/guided.py)
+GUIDE_MAX_POINTS = 400
+
+
+def clean_guide(value) -> Optional[tuple]:
+    """A guide line as a tuple of (x, y) mm points, or None when it is not a usable line."""
+    if not value:
+        return None
+    try:
+        pts = tuple((round(float(x), 3), round(float(y), 3)) for x, y in value)
+    except (TypeError, ValueError):
+        return None
+    if len(pts) < 2 or len(pts) > GUIDE_MAX_POINTS or not all(map(lambda p: all(map(math.isfinite, p)), pts)):
+        return None
+    return pts
 
 
 def new_object_id() -> str:
@@ -150,6 +168,7 @@ class DesignObject:
     pull_mm: Optional[float] = None  # extra width (shrink compensation)
     bold: Optional[bool] = None  # outlines sewn 3x (True) / once (False)
     underlay_style: Optional[str] = None  # foundation type, see UNDERLAY_STYLES / stitch/underlay.py
+    guide: Optional[tuple] = None  # guide line ((x, y), ...) in mm for the guided styles
 
     @property
     def customised(self) -> bool:
@@ -158,10 +177,12 @@ class DesignObject:
     def settings(self) -> tuple:
         """All per-shape settings as one value. Merging, re-extract carry-over, reset
         and undo work on this tuple, so new settings only need adding here."""
-        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style)
+        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style,
+                self.guide)
 
     def apply_settings(self, settings: tuple) -> None:
-        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style) = settings
+        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style,
+         self.guide) = settings
 
     def clear_settings(self) -> None:
         self.apply_settings(_DEFAULT_SETTINGS)
@@ -189,6 +210,8 @@ class DesignObject:
             d["bold"] = self.bold
         if self.underlay_style is not None:
             d["underlay_style"] = self.underlay_style
+        if self.guide is not None:
+            d["guide"] = [list(p) for p in self.guide]
         return d
 
     @classmethod
@@ -210,10 +233,11 @@ class DesignObject:
             pull_mm=_in_range(d.get("pull_mm"), PULL_RANGE_MM),
             bold=bold if isinstance(bold, bool) else None,
             underlay_style=underlay if underlay in UNDERLAY_STYLES else None,
+            guide=clean_guide(d.get("guide")),
         )
 
 
-_DEFAULT_SETTINGS = (None, None, True, None, None, None, None)
+_DEFAULT_SETTINGS = (None, None, True, None, None, None, None, None)
 
 
 _CONFLICT_WARNING = (

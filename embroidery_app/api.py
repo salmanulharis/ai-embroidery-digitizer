@@ -91,6 +91,7 @@ class ObjectsBody(BaseModel):
     pull_mm: Optional[Union[float, str]] = None  # extra width, "inherit" = design setting
     bold: Optional[Union[bool, str]] = None  # outlines 3x / once, "inherit" = design setting
     underlay_style: Optional[str] = None  # foundation type (see stitch/underlay.py), "inherit" = design setting
+    guide: Optional[Union[list[list[float]], str]] = None  # guide line (mm), "inherit" = remove it
 
 
 class RecolorBody(BaseModel):
@@ -198,6 +199,7 @@ def update_objects(pid: str, body: ObjectsBody):
     return service.update_objects(
         pid, body.ids, body.scope, body.stitch_type, body.angle, body.enabled,
         spacing_mm=body.spacing_mm, pull_mm=body.pull_mm, bold=body.bold, underlay_style=body.underlay_style,
+        guide=body.guide,
     )
 
 

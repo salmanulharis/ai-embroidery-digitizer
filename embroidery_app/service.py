@@ -40,6 +40,7 @@ from .models import (
     STITCH_TYPES,
     UNDERLAY_STYLES,
     ColorLayer,
+    clean_guide,
     Design,
     StitchParams,
     StitchPlan,
@@ -416,6 +417,22 @@ def merge_layers(pid: str, source: int, target: int) -> dict:
 _INHERIT = "inherit"
 
 
+def _simplified_guide(points) -> list:
+    """A drawn guide line, thinned to the points that matter (0.2 mm tolerance)."""
+    from shapely.geometry import LineString  # noqa: PLC0415
+
+    try:
+        pts = [(float(x), float(y)) for x, y in points]
+    except (TypeError, ValueError):
+        return []
+    if len(pts) < 2:
+        return []
+    line = LineString(pts)
+    if line.length < 1.0:
+        return []
+    return [list(c) for c in line.simplify(0.2).coords]
+
+
 def update_objects(
     pid: str,
     ids: list[str],
@@ -427,6 +444,7 @@ def update_objects(
     pull_mm=None,
     bold=None,
     underlay_style=None,
+    guide=None,
 ) -> dict:
     """Set per-shape settings. ``None`` = leave unchanged, ``"inherit"`` = use the
     colour's / design's setting again. ``scope``: selected shapes, all shapes of their
@@ -437,6 +455,11 @@ def update_objects(
         raise ValueError("Bold outline must be on, off or same as design.")
     if underlay_style is not None and underlay_style != _INHERIT and underlay_style not in UNDERLAY_STYLES:
         raise ValueError("Unknown foundation type.")
+    guide_line = None
+    if guide is not None and guide != _INHERIT:
+        guide_line = clean_guide(_simplified_guide(guide))
+        if guide_line is None:
+            raise ValueError("A guide line needs at least two points.")
     design = load_design(pid)
     if scope not in ("selected", "colour", "all"):
         raise ValueError("Unknown scope.")
@@ -475,6 +498,8 @@ def update_objects(
             o.bold = None if bold == _INHERIT else bold
         if underlay_style is not None:
             o.underlay_style = None if underlay_style == _INHERIT else underlay_style
+        if guide is not None and o.kind == "area":  # lines follow their own path
+            o.guide = None if guide == _INHERIT else guide_line
     _save_design(pid, design)
     return design_payload(design, pid)
 

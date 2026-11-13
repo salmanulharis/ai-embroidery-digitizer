@@ -21,7 +21,7 @@ from shapely.geometry.base import BaseGeometry
 
 from ..geometry import Pt, dist, iter_polygons, segment_inside, subdivide
 from ..models import (
-    COLOR_CHANGE, DECOR_AREA_STYLES, DECOR_PATH_STYLES, FILL_STYLE_NAMES, FILL_UNDERLAYS, JUMP, OUTLINE_STYLES,
+    COLOR_CHANGE, DECOR_AREA_STYLES, DECOR_PATH_STYLES, FILL_STYLE_NAMES, FILL_UNDERLAYS, GUIDED_STYLES, JUMP, OUTLINE_STYLES,
     SATIN_UNDERLAYS, STITCH, STOP, TRIM,
     ColorBlock, ColorLayer, Design, DesignObject, Run, StitchParams, StitchPlan,
 )
@@ -30,6 +30,7 @@ from . import methods  # noqa: F401  (registers the built-in stitch methods)
 from . import outlines  # noqa: F401  (registers the decorative outlines and borders)
 from . import fills  # noqa: F401  (registers the advanced fills)
 from . import decorative  # noqa: F401  (registers the decorative styles)
+from . import guided  # noqa: F401  (registers the guide-line styles)
 from . import registry
 from . import smart
 from . import strokes as st
@@ -54,6 +55,7 @@ class _Item:
     params: StitchParams | None = None  # design params with this shape's overrides
     ink: st.InkMap | None = None  # same-colour ink, so widened strokes keep gaps open
     narrow_spots: list | None = None  # stroke spots that could not reach a sewable width
+    guide: tuple | None = None  # the shape's guide line (guided styles)
 
 
 # Small-lettering methods (see stitch/strokes.py): narrow free-form strokes up to this
@@ -97,6 +99,14 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
     """Decide the stitch method for an object. ``satin_angle`` forces the direction
     of single-angle satin (otherwise the shortest-row angle is used)."""
     items: list[_Item] = []
+    if forced in GUIDED_STYLES and obj.kind == "area":
+        if obj.guide is None:  # no line drawn yet: sewn the usual way
+            forced = "fill" if forced == "florentine_fill" else "auto"
+        else:
+            return [_Item(-1, poly, forced, guide=obj.guide) for poly in iter_polygons(obj.geometry)
+                    if poly.area >= params.min_object_area_mm2]
+    elif forced in GUIDED_STYLES:
+        forced = "auto"
     if forced == "raised_satin" and obj.kind == "area":
         found = []
         for poly in iter_polygons(obj.geometry):
@@ -305,6 +315,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "pull_mm": obj.pull_mm,
             "bold": obj.bold,
             "underlay_style": obj.underlay_style,
+            "guide": [list(p) for p in obj.guide] if obj.guide else None,
             "method": method,  # a registered stitch method, or mixed | none
             "effective_angle": None if angle is None else round(angle % 180, 1),
             "effective_spacing_mm": spacing,
@@ -323,7 +334,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
 def _fill_like(method: str) -> bool:
     """Methods whose thickness is the fill row gap (tatami and the advanced dense fills)."""
     return method == "fill" or method in ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
-                                          "pattern_fill", "jagged_fill")
+                                          "pattern_fill", "jagged_fill", "florentine_fill")
 
 
 def _entry_distance(item: _Item, pos: Pt) -> float:
