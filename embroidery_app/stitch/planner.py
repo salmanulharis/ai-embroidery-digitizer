@@ -101,7 +101,7 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
     items: list[_Item] = []
     if forced in GUIDED_STYLES and obj.kind == "area":
         if obj.guide is None:  # no line drawn yet: sewn the usual way
-            forced = "fill" if forced == "florentine_fill" else "auto"
+            forced = "auto" if forced == "guided_satin" else "fill"
         else:
             return [_Item(-1, poly, forced, guide=obj.guide) for poly in iter_polygons(obj.geometry)
                     if poly.area >= params.min_object_area_mm2]
@@ -334,7 +334,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
 def _fill_like(method: str) -> bool:
     """Methods whose thickness is the fill row gap (tatami and the advanced dense fills)."""
     return method == "fill" or method in ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
-                                          "pattern_fill", "jagged_fill", "florentine_fill")
+                                          "pattern_fill", "jagged_fill", "florentine_fill", "carved_fill")
 
 
 # Methods that cover an area themselves (fills): a knockdown is not needed under them.

@@ -35,10 +35,10 @@ const Shapes = (() => {
     running: "outline", outline: "outline", mixed: "mixed styles", none: "too small to stitch",
     double_run: "double run outline", backstitch: "backstitch outline", stemstitch: "stemstitch outline",
     sculpture_run: "sculpture run outline", zigzag: "zigzag border", estitch: "E-stitch border",
-    guided_satin: "satin along the guide line", florentine_fill: "fill along the guide line",
+    guided_satin: "satin along the guide line", florentine_fill: "fill along the guide line", carved_fill: "fill with the guide line carved in",
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
-  const GUIDED = ["guided_satin", "florentine_fill"]; // styles that follow a drawn guide line
+  const GUIDED = ["guided_satin", "florentine_fill", "carved_fill"]; // styles that use a drawn guide line
   const PRESETS = [[0, "—", "Horizontal"], [45, "╲", "Diagonal, top-left to bottom-right"], [90, "│", "Vertical"], [135, "╱", "Diagonal, bottom-left to top-right"]];
 
   const svgEl = () => $("svgBox").querySelector("svg");
@@ -321,7 +321,7 @@ const Shapes = (() => {
         ${hasGuide ? `<button type="button" class="ghost small" data-action="guide-clear">Clear guide line</button>` : ""}
         ${Tip.icon("shape_guide")}
       </div>
-      ${guided && !chosen.every((o) => o.guide) ? `<p class="small muted">${step === 2 ? "Draw a guide line across the shape: the satin or the fill rows follow it." : "Draw a guide line in step 2 (Edit design): until then the shape is sewn the usual way."}</p>` : ""}` : "";
+      ${guided && !chosen.every((o) => o.guide) ? `<p class="small muted">${step === 2 ? "Draw a guide line across the shape: the satin or the fill rows follow it (carved fill: the line is pressed into the fill)." : "Draw a guide line in step 2 (Edit design): until then the shape is sewn the usual way."}</p>` : ""}` : "";
     dyn.innerHTML = `${chipsHtml()}
       <div class="sp-head">
         <b>${chosen.length === 1 ? "1 shape selected" : `${chosen.length} shapes selected`}</b>

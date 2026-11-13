@@ -184,6 +184,47 @@ def sew_florentine(item: "_Item", angle: float, params: StitchParams, start: Pt)
     return runs + [Run("fill", p, item.oid) for p in florentine_fill(poly, item.guide, params.fill_spacing_mm, params.fill_stitch_length_mm, cur) if len(p) >= 2]
 
 
-GUIDED_STYLES = ("guided_satin", "florentine_fill")
+# --------------------------------------------------------------------------- carved fill (user-defined split)
+
+def carved_row_xs(guide: list[Pt], angle: float, stitch_len: float, spacing: float):
+    """Tatami needle points for a carved fill (Wilcom: User Defined Split / Carving
+    Stamp): every row puts a needle point where it crosses the drawn line, so the
+    line shows pressed into the fill; elsewhere the usual brick-offset points,
+    kept clear of the line so the carved points stand out."""
+    from shapely.affinity import rotate  # noqa: PLC0415
+
+    line = rotate(LineString(guide), -angle, origin=(0, 0))
+
+    def row_xs(y: float, x0: float, x1: float) -> list[float]:
+        hit = line.intersection(LineString([(x0 - 1, y), (x1 + 1, y)]))
+        marks = sorted(p.x for p in getattr(hit, "geoms", [hit]) if isinstance(p, Point))
+        idx = int(round(y / spacing))
+        off = gen.TATAMI_OFFSETS[idx % len(gen.TATAMI_OFFSETS)] * stitch_len
+        grid = []
+        x = off + math.ceil((x0 - off) / stitch_len) * stitch_len
+        while x < x1:
+            if all(abs(x - m) >= 0.8 for m in marks):
+                grid.append(x)
+            x += stitch_len
+        return sorted(set(grid) | {m for m in marks if x0 < m < x1})
+
+    return row_xs
+
+
+def sew_carved(item: "_Item", angle: float, params: StitchParams, start: Pt) -> list[Run]:
+    from .methods import _compensate, _runs  # noqa: PLC0415
+    from .underlay import fill_foundation  # noqa: PLC0415
+    runs: list[Run] = []
+    if params.underlay:
+        runs += _runs("underlay", fill_foundation(params.fill_underlay, item.geom, angle, params.underlay_spacing_mm, start), item.oid)
+    cur = runs[-1].points[-1] if runs else start
+    row_xs = carved_row_xs(list(item.guide), angle, params.fill_stitch_length_mm, params.fill_spacing_mm)
+    pieces = gen.tatami_fill(_compensate(item.geom, params), angle, params.fill_spacing_mm, params.fill_stitch_length_mm,
+                             cur, params.max_stitch_mm, row_xs=row_xs)
+    return runs + _runs("fill", pieces, item.oid)
+
+
+GUIDED_STYLES = ("guided_satin", "florentine_fill", "carved_fill")
 register(StitchMethod("guided_satin", sew_guided_satin, density=True))
 register(StitchMethod("florentine_fill", sew_florentine, density=True))
+register(StitchMethod("carved_fill", sew_carved, directional=True, density=True))

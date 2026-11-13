@@ -114,3 +114,16 @@ def test_planned_guided_styles_keep_machine_limits():
     assert not [r for r in plan.risks if r["type"] == "stack"]
     info = describe_objects(d, StitchParams())
     assert info[0]["method"] == "guided_satin" and info[0]["guide"]
+
+
+def test_carved_fill_puts_needle_points_on_the_drawn_line():
+    sq = box(0, 0, 40, 30)
+    line = [(0, 5), (40, 25)]
+    d = Design(45, 35, [ColorLayer(0, (1, 2, 3), "c")], [DesignObject(0, sq, stitch_type="carved_fill", guide=tuple(line))])
+    plan = plan_stitches(d, StitchParams(fill_angle=0.0, vary_fill_angle=False, underlay=False, optimize=False))
+    pts = [(x, y) for c, x, y, k in plan.ops if c == STITCH and k == "fill"]
+    on_line = [p for p in pts if LineString(line).distance(Point(p)) < 0.05]
+    assert len(on_line) > 40  # about one per row the line crosses
+    near = [p for p in pts if 0.05 <= LineString(line).distance(Point(p)) < 0.3]
+    assert len(near) < len(on_line) / 4  # other points kept clear of the line, so it stands out
+    assert [it.method for it in classify(DesignObject(0, sq), "carved_fill", StitchParams())] == ["fill"]

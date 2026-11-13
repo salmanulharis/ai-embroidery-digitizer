@@ -96,6 +96,7 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("applique", "Applique (placement, stop, tack, cover)"),
     ("guided_satin", "Guided satin (follows a line you draw)"),
     ("florentine_fill", "Florentine fill (rows bend with a line you draw)"),
+    ("carved_fill", "Carved fill (a line you draw pressed into the fill)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
@@ -104,7 +105,7 @@ FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill",
 DECOR_PATH_STYLES = ("motif_run", "hand_stitch")  # sewn along a line or a shape's outline
 DECOR_AREA_STYLES = ("motif_fill", "paired_motif_fill", "pattern_fill", "jagged_fill", "raised_satin", "applique")
 FILL_PATTERN_TILES = ("diamonds", "squares", "bricks", "scales")  # pattern fill (stitch/decorative.py)
-GUIDED_STYLES = ("guided_satin", "florentine_fill")  # need a guide line on the shape (stitch/guided.py)
+GUIDED_STYLES = ("guided_satin", "florentine_fill", "carved_fill")  # need a guide line (stitch/guided.py)
 GUIDE_MAX_POINTS = 400
 
 
