@@ -6,6 +6,8 @@
   cause of thread breaks in small lettering. Drops are only removed, never moved, so
   the stitching cannot leave the design; the drop where a sequence starts or ends
   (landing after a jump, last drop before a trim) is always kept.
+* ``cap_stitch_length`` (always on) splits any stitch longer than the maximum, the
+  last guarantee before the machine file whatever stitch type produced it.
 * ``machine_check`` lists the spots that still need attention so the preview can
   mark them: stitches that had to stay short, needle holes hit many times, very
   dense spots, and lettering strokes thinner than a sewable satin column.
@@ -16,7 +18,7 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 
-from ..models import STITCH
+from ..models import JUMP, STITCH
 
 Op = tuple[str, float, float, str]
 
@@ -56,6 +58,29 @@ def make_safe(ops: list[Op], min_stitch: float, max_stitch: float) -> list[Op]:
                 kept.append(p)
         out.extend(kept)
         i = j + 1
+    return out
+
+
+def cap_stitch_length(ops: list[Op], max_stitch: float) -> list[Op]:
+    """Split any stitch longer than ``max_stitch`` into equal shorter ones.
+
+    Every generator already keeps to the limit; this is the last guarantee before the
+    machine file, so a new stitch type can never produce a stitch that snags or that a
+    format (e.g. PES) would store unsplit. Jumps are left to the file writer."""
+    out: list[Op] = []
+    prev: tuple[float, float] | None = None
+    for op in ops:
+        cmd, x, y = op[0], op[1], op[2]
+        if cmd == STITCH and prev is not None:
+            d = math.dist(prev, (x, y))
+            if d > max_stitch:
+                n = math.ceil(d / max_stitch)
+                for k in range(1, n):
+                    t = k / n
+                    out.append((STITCH, prev[0] + (x - prev[0]) * t, prev[1] + (y - prev[1]) * t, op[3]))
+        out.append(op)
+        if cmd in (STITCH, JUMP):
+            prev = (x, y)
     return out
 
 

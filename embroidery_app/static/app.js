@@ -232,7 +232,8 @@ function renderDesign(res) {
   Shapes.afterRender(res);
 }
 
-const STITCH_STYLES = [["auto", "Automatic"], ["fill", "Fill (large areas)"], ["satin", "Satin (smooth, narrow)"], ["lettering", "Lettering (follows strokes)"], ["running", "Outline only"]];
+// stitch styles for colours and shapes come from the server (models.STITCH_STYLES)
+const stitchStyles = () => state.config?.stitch_styles || [["auto", "Automatic"]];
 
 function renderLayers() {
   const L = state.design.layers;
@@ -249,7 +250,7 @@ function renderLayers() {
         <td><input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}"></td>
         <td><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
         <td class="small muted">${l.area_mm2} mm²</td>
-        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${STITCH_STYLES.map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${label}</option>`).join("")}</select></td>
+        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${label}</option>`).join("")}</select></td>
         <td><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></td>
         <td class="small nowrap">${l.objects}${l.customised ? ` <span class="muted">(${l.customised} own)</span>` : ""}
           <button type="button" class="ghost small" data-select-layer="${l.index}" ${l.enabled ? "" : "disabled"} aria-label="Select all shapes of ${n}">Select</button></td>
@@ -438,27 +439,75 @@ const PARAMS = [
   ["satin_max_width_mm", "Widest satin shape (mm)", 3, 12, 0.5, true],
   ["running_stitch_length_mm", "Outline stitch length (mm)", 1, 5, 0.1, true],
   ["underlay_spacing_mm", "Foundation spacing (mm)", 1.5, 5, 0.1, true],
+  ["push_compensation_mm", "Push compensation – shorten ends (mm)", 0, 0.5, 0.05, true],
+  ["border_width_mm", "Zigzag / E-stitch border width (mm)", 1, 6, 0.1, true],
+  ["border_spacing_mm", "Zigzag / E-stitch border gap (mm)", 0.5, 4, 0.1, true],
+  ["stipple_spacing_mm", "Stipple / maze line gap (mm)", 1, 6, 0.1, true],
+  ["cross_cell_mm", "Cross stitch size (mm)", 1.5, 6, 0.1, true],
+  ["motif_size_mm", "Motif size (mm)", 3, 20, 0.5, true],
+  ["pattern_size_mm", "Pattern fill tile size (mm)", 3, 30, 0.5, true],
+  ["jagged_mm", "Jagged fill roughness (mm)", 0.3, 5, 0.1, true],
+  ["photo_row_mm", "Photo stitch row gap (mm)", 0.6, 3, 0.1, true],
   ["trim_threshold_mm", "Cut thread for moves longer than (mm)", 1, 20, 0.5, true],
   ["min_object_area_mm2", "Skip shapes smaller than (mm²)", 0, 10, 0.05, true],
 ];
+// Named foundation (underlay) types, see stitch/underlay.py. Shared with the shape editor.
+const UNDERLAY_LABELS = {
+  fill: [
+    ["edge_tatami", "Edge run + lattice (standard)"],
+    ["edge", "Edge run only (light)"],
+    ["double_tatami", "Edge run + double lattice (stretchy or fluffy fabric)"],
+    ["none", "None"],
+  ],
+  satin: [
+    ["edge", "Edge run (standard)"],
+    ["center", "Centre run (light, narrow columns)"],
+    ["zigzag", "Zigzag"],
+    ["edge_zigzag", "Edge run + zigzag (stretchy fabric)"],
+    ["double_zigzag", "Double zigzag (fluffy fabric, raised look)"],
+    ["none", "None"],
+  ],
+};
+const UNDERLAY_FIELDS = [["fill_underlay", "fill", "Foundation under fills"], ["satin_underlay", "satin", "Foundation under satin"]];
+// tatami textures (models.FILL_PATTERNS)
+UNDERLAY_LABELS.pattern = [["standard", "Standard (brick)"], ["brick", "Half-step brick"], ["diagonal", "Diagonal twill lines"], ["random", "Random (no lines)"]];
+UNDERLAY_FIELDS.push(["fill_pattern", "pattern", "Fill texture"]);
+UNDERLAY_LABELS.tile = [["diamonds", "Diamonds"], ["squares", "Squares"], ["bricks", "Bricks"], ["scales", "Scales"]];
+UNDERLAY_FIELDS.push(["pattern", "tile", "Pattern fill pattern"]);
+UNDERLAY_FIELDS.push(["motif", "motif", "Motif"]);
+UNDERLAY_LABELS.photo = [["rows", "Rows, one thread (Photo Flash)"], ["reef", "Reef: meander, one thread"], ["colour", "Rows in every colour"]];
+UNDERLAY_FIELDS.push(["photo_style", "photo", "Photo stitch style"]);
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],
   ["vary_fill_angle", "Change fill direction for each colour"],
   ["smart_direction", "Smart direction – best angle for each section"],
   ["tie_stitches", "Lock stitches at every thread cut"],
+  ["optimize_order", "Smart sewing order (fewer, shorter jumps)"],
+  ["knockdown", "Knockdown under small details (towels, fleece)"],
+  ["trapunto", "Trapunto: fills travel along their edges only"],
+  ["motif_warp", "3D warp for motif fills"],
+  ["photo_stitch", "Photo stitch: the whole picture as a photo texture"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
 function buildStitchForm() {
   const d = state.config.stitch_defaults;
+  UNDERLAY_LABELS.motif = state.config.motifs || [["wave", "Wave"]];
   const checkbox = ([k, label]) => {
     const on = k === "triple_run" ? d.running_repeats >= 3 : !!d[k];
     return `<label class="check"><input type="checkbox" name="${k}" ${on ? "checked" : ""}> ${label} ${Tip.icon(k)}</label>`;
   };
   const tw = d.thread_weight === 60 ? 60 : 40;
+  const fabrics = state.config.fabrics || [];
+  const fabricField = fabrics.length
+    ? `<label class="full"><span class="lbl">Fabric ${Tip.icon("fabric")}</span><select name="fabric">` +
+      fabrics.map((fb) => `<option value="${fb.id}" ${fb.id === d.fabric ? "selected" : ""}>${fb.label}</option>`).join("") +
+      `</select><span class="muted small hint" id="fabricNote"></span></label>`
+    : "";
   const field = ([k, label, min, max, step]) =>
     `<label><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
   $("stitchForm").innerHTML =
+    fabricField +
     CHECKS.slice(0, 1).map(checkbox).join("") +
     `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight">` +
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
@@ -466,15 +515,47 @@ function buildStitchForm() {
     PARAMS.filter((p) => !p[5]).map(field).join("") +
     CHECKS.slice(1, 4).map(checkbox).join("") +
     `<details class="group full"><summary>Advanced stitch settings</summary><div class="params">` +
+    UNDERLAY_FIELDS.map(([k, kind, label]) =>
+      `<label><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}">` +
+      UNDERLAY_LABELS[kind].map(([v, l]) => `<option value="${v}" ${v === d[k] ? "selected" : ""}>${l}</option>`).join("") +
+      `</select></label>`).join("") +
     PARAMS.filter((p) => p[5]).map(field).join("") +
     CHECKS.slice(4).map(checkbox).join("") +
     `</div></details>`;
+  const sel = $("stitchForm").elements.fabric;
+  if (sel) {
+    sel.onchange = () => applyFabric(sel.value);
+    showFabricNote(sel.value);
+  }
+}
+// A fabric preset fills in the stitch settings it is about; every value stays editable.
+function applyFabric(id) {
+  const fb = (state.config.fabrics || []).find((x) => x.id === id);
+  if (!fb) return;
+  const f = $("stitchForm");
+  Object.entries(fb.settings).forEach(([k, v]) => {
+    const el = f.elements[k];
+    if (!el) return;
+    if (el.type === "checkbox") el.checked = !!v;
+    else el.value = v;
+  });
+  showFabricNote(id);
+}
+function showFabricNote(id) {
+  const fb = (state.config.fabrics || []).find((x) => x.id === id);
+  const note = $("fabricNote");
+  if (!note) return;
+  note.textContent = fb && fb.id !== "general"
+    ? `Backing: ${fb.backing}. Needle: ${fb.needle}.${fb.notes ? " " + fb.notes : ""}`
+    : "";
 }
 function stitchParams() {
   const f = $("stitchForm"), p = {};
   PARAMS.forEach(([k]) => (p[k] = +f.elements[k].value));
   CHECKS.forEach(([k]) => (p[k] = f.elements[k].checked));
   p.thread_weight = +f.elements.thread_weight.value;
+  if (f.elements.fabric) p.fabric = f.elements.fabric.value;
+  UNDERLAY_FIELDS.forEach(([k]) => (p[k] = f.elements[k].value));
   p.running_repeats = p.triple_run ? 3 : 1;
   delete p.triple_run;
   return p;
@@ -743,6 +824,7 @@ function draw() {
   for (let i = 0; i < upto * 4; i += 4) {
     const cmd = ops[i], x = ops[i + 1], y = ops[i + 2], kind = ops[i + 3];
     if (cmd === 3) { color++; continue; }
+    if (cmd === 4) continue; // machine stop (applique)
     if (cmd === 2) { if (px !== null) trims.push([px, py]); continue; }
     if (cmd === 1) { if (px !== null) jumps.push([px, py, x, y]); px = x; py = y; continue; }
     if (px === null) { px = x; py = y; continue; }

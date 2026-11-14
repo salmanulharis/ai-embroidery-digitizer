@@ -15,7 +15,8 @@ import tempfile
 
 import pystitch as pe
 
-from ..models import COLOR_CHANGE, JUMP, STITCH, TRIM, StitchPlan, rgb_to_hex
+from ..fabrics import get_fabric
+from ..models import COLOR_CHANGE, JUMP, STITCH, STOP, TRIM, StitchPlan, rgb_to_hex
 from ..stitch.safety import RISK_TEXT, summarize_risks
 
 FORMATS: dict[str, dict[str, str]] = {
@@ -28,6 +29,11 @@ FORMATS: dict[str, dict[str, str]] = {
 }
 
 UNITS_PER_MM = 10  # pystitch works in 0.1 mm
+
+# Writer settings per format. JEF has no trim code: pystitch writes a trim as three
+# zero-length jumps (what Janome machines read as a trim), but only when asked to -
+# without this a JEF file carries no trims at all.
+WRITE_SETTINGS: dict[str, dict] = {"jef": {"trims": True}}
 
 
 def plan_to_pattern(plan: StitchPlan, name: str = "design") -> pe.EmbPattern:
@@ -56,6 +62,8 @@ def plan_to_pattern(plan: StitchPlan, name: str = "design") -> pe.EmbPattern:
             pattern.add_command(pe.TRIM)
         elif cmd == COLOR_CHANGE:
             pattern.add_command(pe.COLOR_CHANGE)
+        elif cmd == STOP:
+            pattern.add_command(pe.STOP)
     pattern.add_command(pe.END)
     return pattern
 
@@ -68,7 +76,7 @@ def export_embroidery(plan: StitchPlan, fmt: str, name: str = "design") -> bytes
     fd, path = tempfile.mkstemp(suffix="." + fmt)
     os.close(fd)
     try:
-        pe.write(pattern, path)
+        pe.write(pattern, path, WRITE_SETTINGS.get(fmt))
         with open(path, "rb") as f:
             return f.read()
     finally:
@@ -80,7 +88,8 @@ def worksheet(plan: StitchPlan, name: str) -> str:
     lines = [
         f"Design: {name}",
         f"Size: {s['width_mm']} x {s['height_mm']} mm",
-        f"Stitches: {s['stitches']:,}   Trims: {s['trims']}   Colour changes: {s['color_changes']}",
+        f"Stitches: {s['stitches']:,}   Trims: {s['trims']}   Colour changes: {s['color_changes']}"
+        + (f"   Stops: {s['stops']} (applique: lay the fabric piece, then continue)" if s.get("stops") else ""),
         f"Estimated run time: {s['est_minutes']} min   Thread (top): ~{s['thread_m']} m",
         "",
         "Colour sequence (assign needles on the machine; DST files carry no colours):",
@@ -94,8 +103,15 @@ def worksheet(plan: StitchPlan, name: str) -> str:
             per_color[color] += 1
     for i, block in enumerate(plan.blocks, 1):
         lines.append(f"  {i:>2}. {block.name:<12} {rgb_to_hex(block.rgb)}   {per_color[i - 1]:,} stitches")
+    fabric = get_fabric(plan.fabric)
+    if fabric.id != "general":
+        lines += ["", f"Fabric: {fabric.label}. Backing: {fabric.backing}."]
+        if fabric.notes:
+            lines.append(f"  {fabric.notes}")
     if plan.thread_weight == 60:
         lines += ["", "Thread: fine 60 wt (small lettering). Needle: 65/9 or 70/10 sharp; lower top tension slightly."]
+    elif fabric.id != "general":
+        lines += ["", f"Thread: standard 40 wt. Needle: {fabric.needle}."]
     else:
         lines += ["", "Thread: standard 40 wt. Needle: 75/11 (ballpoint for knits, sharp for woven fabric)."]
     risk = summarize_risks(plan.risks)

@@ -1,0 +1,51 @@
+{
+  "logo-default": {
+    "color_change": 2,
+    "jump": 7,
+    "sha256": "9961513c43fdb4f92aaf32a6a17dfbd579f73f0e15598ad663a398b2001aa4d7",
+    "stitch": 2525,
+    "trim": 7
+  },
+  "shapes-default": {
+    "color_change": 9,
+    "jump": 21,
+    "sha256": "6f04ea2ba61380416c3a534f684585b25899af8a28222ab7ae290ca2d78c1b43",
+    "stitch": 3466,
+    "trim": 19
+  },
+  "shapes-fine": {
+    "color_change": 9,
+    "jump": 21,
+    "sha256": "5ab38c6771eefe14c3ffeb9a5e5af733187e4eb11b3787b4181b4890d6d40fc9",
+    "stitch": 3930,
+    "trim": 19
+  },
+  "shapes-plain": {
+    "color_change": 9,
+    "jump": 14,
+    "sha256": "b02b7a0cce7e65f742e4d46f20edb07a40dd8ffbf7f70518bf98af5aacee46b7",
+    "stitch": 2822,
+    "trim": 14
+  },
+  "shapes-smart": {
+    "color_change": 9,
+    "jump": 20,
+    "sha256": "6eeedd3ec9f8d60b771fa2ab62cd16a7b579736eb562465494daa91fa9a59966",
+    "stitch": 3456,
+    "trim": 18
+  },
+  "svg-default": {
+    "color_change": 3,
+    "jump": 8,
+    "sha256": "aa411a01118beda5be969c2ba96f715550b3c0f37cc20b7aad073c5f7dadce66",
+    "stitch": 3934,
+    "trim": 8
+  },
+  "svg-smart": {
+    "color_change": 3,
+    "jump": 8,
+    "sha256": "dfc5fe24b728501b9e8af152dae1615e1f9a9b56b58ef94d1743b984d9c8b9b5",
+    "stitch": 3943,
+    "trim": 8
+  }
+}

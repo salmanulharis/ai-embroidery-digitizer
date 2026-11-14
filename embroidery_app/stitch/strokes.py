@@ -47,10 +47,11 @@ class ThreadLimits:
     min_stitch_mm: float  # shortest stitch before thread breaks / needle cuts
 
 
-def thread_limits(weight: int, satin_min_width_mm: float = 0.8) -> ThreadLimits:
+def thread_limits(weight: int, satin_min_width_mm: float = 1.0) -> ThreadLimits:
     if int(weight) == 60:  # fine lettering: 60 wt thread, 65/9-70/10 needle
         return ThreadLimits(60, min(satin_min_width_mm, 0.6), 0.6, 0.3)
-    return ThreadLimits(40, satin_min_width_mm, 0.8, 0.4)  # standard 40 wt, 75/11 needle
+    # standard 40 wt, 75/11 needle: stitches under 0.5 mm cut thread or fabric (Melco filters them out)
+    return ThreadLimits(40, satin_min_width_mm, 0.8, 0.5)
 
 
 # --------------------------------------------------------------------------- ink map

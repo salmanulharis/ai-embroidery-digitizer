@@ -8,10 +8,11 @@ from __future__ import annotations
 import math
 from typing import Callable
 
+import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
-from ..geometry import Pt, dist, resample_line, ring_walk, segment_inside, subdivide
+from ..geometry import Pt, dist, resample_line, ring_walk, rotate_geom, segment_inside, subdivide
 from .rows import Chain, best_satin_angle, build_chains, chain_endpoints, scan_rows, to_rotated, unrotate
 
 Pieces = list[list[Pt]]
@@ -28,7 +29,10 @@ def _sew_chains(
     start: Pt,
     row_points: Callable[[Chain, bool, bool], list[Pt]],
     travel_step: float,
+    edge_travel: bool = False,
 ) -> Pieces:
+    """``edge_travel`` (trapunto): moves between row groups only along the outline,
+    never straight across the inside, where an open fill would show them."""
     pieces: Pieces = []
     current: list[Pt] = []
     pos = start
@@ -68,7 +72,7 @@ def _sew_chains(
                     walk_len = sum(dist(p, q) for p, q in zip(walk, walk[1:]))
                     if walk_len <= MAX_TRAVEL_MM:
                         options.append((visible(walk) + 0.02 * walk_len, walk))
-                if straight <= MAX_TRAVEL_MM and segment_inside(poly, a, b):
+                if not edge_travel and straight <= MAX_TRAVEL_MM and segment_inside(poly, a, b):
                     line = [a, *subdivide(a, b, travel_step)]
                     options.append((visible(line) + 0.02 * straight, line))
                 options.sort(key=lambda o: o[0])
@@ -112,38 +116,92 @@ def tatami_fill(
     stitch_len: float,
     start: Pt,
     max_stitch: float = 7.0,
+    offsets: tuple[float, ...] = TATAMI_OFFSETS,
+    row_ys=None,
+    row_ends=None,
+    row_xs=None,
+    edge_travel: bool = False,
 ) -> Pieces:
+    """Tatami: rows of running stitches. ``offsets`` is the row-by-row shift of the
+    needle points (a share of the stitch length): it sets the fill's texture.
+    Optional hooks, all in the rotated frame where rows run along x:
+    ``row_ys(miny, maxy)`` places the rows (see rows.scan_rows);
+    ``row_ends(y, x0, x1) -> (x0, x1)`` moves a row's ends (jagged edges);
+    ``row_xs(y, x0, x1) -> [x, ...]`` gives a row's inner needle points (pattern fills)."""
     if poly.is_empty:
         return []
-    ys, rows = scan_rows(poly, angle, spacing)
+    ys, rows = scan_rows(poly, angle, spacing, row_ys=row_ys)
     chains = build_chains(ys, rows, min_overlap=min(0.2, spacing / 2))
     edge_margin = min(0.6, stitch_len * 0.3)
+    inside_rot = rotate_geom(poly, -angle).buffer(0.05)  # rows are built in the rotated frame
+    shapely.prepare(inside_rot)
 
     def row_points(chain: Chain, reverse: bool, start_left: bool) -> list[Pt]:
         out: list[Pt] = []
         left_to_right = start_left
+        prev: tuple[float, float] | None = None  # the previous row's extent
         for y, (x0, x1) in zip(*_oriented_rows(chain, reverse)):
-            idx = int(round(y / spacing))
-            off = TATAMI_OFFSETS[idx % len(TATAMI_OFFSETS)] * stitch_len
-            k0 = math.ceil((x0 + edge_margin - off) / stitch_len)
-            grid = []
-            x = off + k0 * stitch_len
-            while x < x1 - edge_margin:
-                grid.append(x)
-                x += stitch_len
+            if row_ends is not None:
+                x0, x1 = row_ends(y, x0, x1)
+            if row_xs is not None:
+                grid = [x for x in row_xs(y, x0, x1) if x0 + edge_margin <= x <= x1 - edge_margin]
+            else:
+                idx = int(round(y / spacing))
+                off = offsets[idx % len(offsets)] * stitch_len
+                k0 = math.ceil((x0 + edge_margin - off) / stitch_len)
+                grid = []
+                x = off + k0 * stitch_len
+                while x < x1 - edge_margin:
+                    grid.append(x)
+                    x += stitch_len
             xs = [x0, *grid, x1] if left_to_right else [x1, *grid[::-1], x0]
             row = [(xx, y) for xx in xs]
             if out:
+                if abs(out[-1][0] - row[0][0]) > 3 * spacing and not inside_rot.contains(LineString([out[-1], row[0]])):
+                    # rows of different length (a notch): a straight join would cut across
+                    # the notch, outside the shape. Travel along whichever row reaches both
+                    # ends: back along the long row just sewn, or along the long row to come
+                    # (which is then sewn over it).
+                    if prev is not None and prev[0] - 1e-6 <= row[0][0] <= prev[1] + 1e-6:
+                        corner = (row[0][0], out[-1][1])
+                    else:
+                        corner = (out[-1][0], y)
+                    out.extend(subdivide(out[-1], corner, stitch_len))
                 out.extend(subdivide(out[-1], row[0], max_stitch))
                 row = row[1:]
+            prev = (x0, x1)
             out.extend(row)
             left_to_right = not left_to_right
         return out
 
-    return _sew_chains(poly, chains, angle, start, row_points, travel_step=min(2.5, stitch_len))
+    return _sew_chains(poly, chains, angle, start, row_points, travel_step=min(2.5, stitch_len), edge_travel=edge_travel)
 
 
 # --------------------------------------------------------------------------- satin
+
+SPLIT_SHIFT = 0.35  # split points move up to this share of a piece, row by row
+_GOLDEN = 0.6180339887498949  # golden-ratio steps spread the shifts evenly, never repeating
+
+
+def split_stitch(a: Pt, b: Pt, max_stitch: float, row: int) -> list[Pt]:
+    """Needle points from ``a`` to ``b`` (excluding ``a``, including ``b``).
+
+    A satin stitch longer than ``max_stitch`` is split into equal pieces whose split
+    points shift from row to row (auto split): split evenly, the points of a straight
+    column would line up into a visible seam across the satin. As few pieces as the
+    shift allows (a 9 mm stitch becomes two), each at most ``max_stitch`` and at least
+    about a quarter of it long."""
+    d = dist(a, b)
+    if d <= max_stitch:
+        return [b]
+    n = math.ceil(d * (1 + SPLIT_SHIFT) / max_stitch)  # a shifted end piece still fits
+    u = ((row * _GOLDEN) % 1.0 - 0.5) * 2 * SPLIT_SHIFT
+    pts = []
+    for k in range(1, n):
+        t = (k + u) / n
+        pts.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+    return [*pts, b]
+
 
 def satin_area(
     poly: Polygon,
@@ -151,13 +209,16 @@ def satin_area(
     start: Pt,
     max_stitch: float = 7.0,
     angle: float | None = None,
+    phase: float = 0.5,
 ) -> Pieces:
-    """Zig-zag satin across a narrow polygon at its best (shortest-row) angle."""
+    """Zig-zag satin across a narrow polygon at its best (shortest-row) angle.
+    ``phase`` shifts the rows by that share of ``spacing`` (a second zigzag pass at
+    another phase falls between the first one's stitches)."""
     if poly.is_empty:
         return []
     if angle is None:
         angle, _ = best_satin_angle(poly)
-    ys, rows = scan_rows(poly, angle, spacing)
+    ys, rows = scan_rows(poly, angle, spacing, phase)
     chains = build_chains(ys, rows, min_overlap=min(0.1, spacing / 2))
 
     def row_points(chain: Chain, reverse: bool, start_left: bool) -> list[Pt]:
@@ -165,8 +226,8 @@ def satin_area(
         left = start_left
         for y, (x0, x1) in zip(*_oriented_rows(chain, reverse)):
             p = (x0 if left else x1, y)
-            if out and dist(out[-1], p) > max_stitch:
-                out.extend(subdivide(out[-1], p, max_stitch))  # split satin
+            if out:
+                out.extend(split_stitch(out[-1], p, max_stitch, int(round(y / spacing))))  # auto split
             else:
                 out.append(p)
             left = not left
@@ -207,14 +268,14 @@ def satin_line(
         nx, ny = -ty / norm, tx / norm
         side = 1 if i % 2 == 0 else -1
         p = (x + nx * half * side, y + ny * half * side)
-        if out and dist(out[-1], p) > max_stitch:
-            out.extend(subdivide(out[-1], p, max_stitch))
+        if out:
+            out.extend(split_stitch(out[-1], p, max_stitch, i))  # auto split
         else:
             out.append(p)
     if closed and out:
         # close the loop on the matching side; at a corner of a band this stitch
         # crosses diagonally, so it is split like any other over-long one
-        out.extend(subdivide(out[-1], out[0] if n % 2 == 0 else out[1], max_stitch))
+        out.extend(split_stitch(out[-1], out[0] if n % 2 == 0 else out[1], max_stitch, n))
     return out
 
 
@@ -335,3 +396,7 @@ def _polys(geom) -> list[Polygon]:
     from ..geometry import iter_polygons
 
     return sorted(iter_polygons(geom), key=lambda p: -p.area)
+
+
+lattice = _lattice  # open tatami lattice (rows at angle + 90), for named foundations
+polygons = _polys  # polygon parts, largest first

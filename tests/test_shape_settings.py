@@ -201,7 +201,7 @@ def test_update_selected_colour_all_inherit_and_validation():
     o = next(x for x in r["objects"] if x["id"] == one)
     assert o["angle"] is None and o["stitch_type"] is None
 
-    for bad in ({"ids": [one], "stitch_type": "zigzag"}, {"ids": [one], "angle": "north"}, {"ids": ["nope"], "angle": 10},
+    for bad in ({"ids": [one], "stitch_type": "no-such-style"}, {"ids": [one], "angle": "north"}, {"ids": ["nope"], "angle": 10},
                 {"ids": [one], "scope": "galaxy", "angle": 1}):
         assert client.put(f"/api/projects/{pid}/objects", json=bad).status_code == 400
 

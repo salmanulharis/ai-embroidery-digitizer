@@ -20,7 +20,7 @@ python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
 python run.py                     # open http://127.0.0.1:8000
-pytest                            # 93 tests: pipeline, exports, API, editing, AI (mocked)
+pytest                            # pipeline, exports, API, editing, AI (mocked), golden output
 ```
 
 **Deploy to AWS EC2 with GitHub Actions** (deploys on version tags only): see [deploy/ec2/README.md](deploy/ec2/README.md).
@@ -67,7 +67,7 @@ refines the result when configured.
 | Stage | Best approach | AI? |
 |---|---|---|
 | Background removal (logos) | Border-color detection, connected to the edge (deterministic, exact edges) | No |
-| Background removal (photos) | `rembg` / BiRefNet (local, free). Optional install | Optional |
+| Background removal (photos) | `rembg` (local, free). Optional install. The model is pinned with `REMBG_MODEL` (default `isnet-general-use`): rembg's own default, BRIA RMBG-2.0, needs a paid licence for commercial use | Optional |
 | Messy input (photo of a shirt, blurry or low-res logo) | Image model redraws, cuts out or enhances the picture (Gemini image models, GPT Image, via OpenRouter…). User must approve: the model can change details or text | Optional, *where AI clearly wins* |
 | Color reduction | k-means in CIELAB + perceptual merge | No |
 | Vectorization | Smoothed label map → contour tracing (shapely). LLM-generated SVG is unreliable | No |
@@ -105,6 +105,47 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Blend fill** (Wilcom: Multi Blend): a shape set to "Blend fill" with "Blend into colour" chosen in the shape
+   editor is sewn in its own colour with rows that thin out across it, and again in the second colour shaded the
+   other way. At every point the two shares add up to one full fill (gap = row gap / share), so the colours mix
+   evenly. Without a second colour it fades into the fabric. The second half is sewn in that colour's turn.
+0. **Photo stitch** (step 3, off by default), three styles. *Rows* (Wilcom: Photo Flash): one dark thread in rows that
+   zigzag as wide as the picture is dark (auto contrast). *Reef* (Wilcom: Reef PhotoStitch): one dark thread as a
+   meander that never crosses itself, tight where dark and open where light. *Rows in every colour* (Wilcom: Color
+   PhotoStitch): each thread colour sews rows as wide as it is present, with soft 2 mm edges where colours meet. The
+   tones come from the shapes' colours, so extract a photo with several colours and remove its background.
+0. **Knockdown** (towel / fleece presets): an open two-layer fill sewn first under small details and narrow fills,
+   2 mm beyond them, in its own colour for the operator to load in the fabric's colour.
+0. **Guide lines** (shape editor, step 2: "Draw guide line"): drag a line across a shape. *Guided satin* sews
+   satin whose stitches cross that line at right angles from edge to edge (you decide how a curved satin turns -
+   the practical form of Wilcom's column input / Ink/Stitch rails); *Florentine fill* makes every fill row a copy
+   of the line, so the whole fill bends with it; *Carved fill* (Wilcom: user-defined split / carving stamp) puts the fill's
+   needle points along the line so it shows pressed into the fill. *Flexi split satin* (Wilcom: Flexi Split) splits
+   satin rungs on a pattern laid out in the column's own coordinates, so it bends with the column; *Motif column*
+   repeats motifs as wide as the column. Both use the line if drawn, else the column's centre line. Without a line the shape is sewn the usual way. The line is a
+   per-shape setting (undo, reset, merge and re-extract keep it).
+0. **Decorative styles** (`stitch/decorative.py`): motif outline (a chain of motifs along a line or outline),
+   hand stitch (uneven long stitches with tiny ones between), motif fill and paired motif fill (rows of motifs,
+   alternate rows mirrored), pattern fill (Wilcom's program split: the fill's needle points sit on a tiled
+   pattern - diamonds, squares, bricks, scales - which shows embossed), jagged fill (rough edges for fur and grass),
+   raised satin (two padding layers under a 0.30 mm satin, up to 7 mm wide) and applique (placement line, machine
+   stop to lay the fabric, tack-down zigzag, satin cover with overlapping corners). Stops are written as STOP
+   commands; DST machines read them as a colour-change stop, and the worksheet lists them.
+0. **Advanced fills** (stitch style for a colour or a shape, `stitch/fills.py`): offset (rings that follow the
+   outline), spiral (one continuous line), contour (rows along a curved column), radial (rays from the centre, thinned
+   towards it), shaded (accordion spacing: dense to light in one colour), stipple (meander that never crosses itself),
+   maze (right-angled meander) and cross stitch (crosses on a grid, each diagonal line sewn there and back). Tatami
+   fills get a texture choice: standard, half-step brick, diagonal twill or random. All use fixed seeds: the same shape
+   always gets the same stitches.
+   Options: *3D warp* bulges motif fills like a sphere (fisheye from the shape's middle); *Trapunto* makes fills
+   travel between row groups only along their outline, so open fills show no travel lines.
+0. **Decorative outlines and borders** (stitch style for a colour or a shape): double run, backstitch,
+   stemstitch, sculpture run, zigzag border and E-stitch border. They are sewn along a line, or around a filled
+   shape's outline and holes instead of filling it. Sharp corners stay needle points; spacing stays even on
+   curves. Border width and gap are in the advanced settings (a stroked line of 1 mm or more keeps its width).
+0. **Fabric preset** (step 3, default "General" = the standard settings): choosing a fabric (woven, denim,
+   T-shirt, piqué, fleece, towel, cap) fills in shrink compensation, thickness and foundation for it; every value
+   stays editable. The worksheet names the backing and needle. Values are starting points: sew a test piece.
 0. **Per-shape settings**: click shapes in the design (or in the stitch preview) to give them their
    own stitch style (automatic / fill / satin / outline / don't stitch) and direction. You can type the
    angle, use a preset, or drag to draw it. You can also apply one direction to the whole design.
@@ -131,7 +172,13 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    * wide or irregular shapes → **tatami fill** (brick-offset penetrations, angle varied per color)
    * SVG strokes: < 1 mm → **running** (optional triple/bean), 1–7 mm → **satin along the path**, wider → fill
 2. **Pull compensation**: shapes grow by 0.2 mm (configurable).
-3. **Underlay**: edge run plus a perpendicular lattice under fills. Edge or center run under satins.
+3. **Underlay (foundation)**, named types (`stitch/underlay.py`), design-wide or per shape:
+   * under fills: none, edge run, edge run + lattice (standard), edge run + double lattice (crossing at +-45 deg)
+   * under single-angle satin: none, centre run, edge run (standard), zigzag, edge run + zigzag, double zigzag;
+     columns under 2.5 mm get a centre run instead of a zigzag
+   * satin that follows a path (bands, lines, columns, lettering) keeps its own foundation along the path
+   * fabric presets pick stronger foundations for knits, fleece and towels
+   * **push compensation** (optional, 0-0.5 mm) shortens fills and columns at their ends
 4. **Rows → chains**: scan lines are grouped into monotone regions, so the needle sews back and forth
    without leaving the shape. Chains are ordered nearest-first.
 5. **Travel**: along the shape edge, or straight only where it doesn't show on finished stitching.
@@ -200,6 +247,7 @@ embroidery_app/
   service.py          workflow orchestration, on-disk projects (data/projects/<id>)
   models.py           Design (vector, mm) · StitchParams · StitchPlan
   config.py           settings from env / .env
+  fabrics.py          fabric presets (step 3): fill in compensation, density, foundation; backing + needle on the worksheet
   colors.py, geometry.py
   ingest/
     __init__.py       file-type detection
@@ -209,6 +257,18 @@ embroidery_app/
     rows.py           scan lines + chain decomposition
     generators.py     tatami, satin (area / line / band), running, underlay
     planner.py        classification, ordering, travel/jump/trim/lock assembly
+    registry.py       stitch-method registry: name, flags, generator
+    methods.py        the built-in methods (fill, satin, satin band/line, column, stroke, dot, running, outline)
+    strokes.py        small lettering: satin along each letter stroke
+    outlines.py       decorative outlines/borders: double run, backstitch, stemstitch, sculpture run, zigzag, E-stitch
+    underlay.py       named foundation types
+    fills.py          advanced fills: offset, spiral, contour, radial, shaded, stipple, maze, cross stitch
+    decorative.py     motif outline/fill, paired motif fill, pattern fill, jagged fill, hand stitch, raised satin, applique
+    library/motifs.json  built-in motifs (designed for this project)
+    guided.py         guide-line styles: guided satin, Florentine fill
+    photo.py          photo stitch: the whole picture in one thread, rows zigzag wider where darker
+    optimize.py       smart stitch reduction (coverage-checked)
+    safety.py         min/max stitch length, machine check
     smart.py          smart direction: columns along centre lines, sections, fill direction per section
   export/
     embroidery.py     pystitch writers + worksheet
@@ -250,7 +310,12 @@ for the built-in algorithms.
 
 ## Extending
 
-* **New stitch type**: add a generator in `stitch/generators.py` and a branch in `planner._stitch_item`.
+* **New stitch type**: write a generator `(item, angle, params, start) -> list[Run]` and register it with
+  `registry.register(StitchMethod(name, generator, ...flags))` (see `stitch/methods.py`); then let
+  `planner.classify` choose it. The planner dispatches through the registry, and `cap_stitch_length`
+  guarantees no stitch exceeds the maximum whatever the generator does. Golden tests
+  (`tests/test_golden.py`) catch unintended changes to existing stitching; regenerate them with
+  `UPDATE_GOLDEN=1` only for deliberate changes.
 * **New input format**: convert it to SVG or RGBA in `service.create_project`.
 * **New AI provider**: add `ai/providers/<name>.py` with a `Provider` subclass decorated with `@register`
   (implement `list_models`, plus `edit_image` and/or `vision_json`), then import it in `ai/providers/__init__.py`.

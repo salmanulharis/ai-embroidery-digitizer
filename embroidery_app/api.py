@@ -18,9 +18,11 @@ from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
 from .export import FORMATS
+from .fabrics import FABRICS
+from .stitch import decorative
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
-from .models import StitchParams
+from .models import STITCH_STYLES, StitchParams
 
 log = logging.getLogger("embroidery")
 STATIC = Path(__file__).parent / "static"
@@ -88,6 +90,9 @@ class ObjectsBody(BaseModel):
     spacing_mm: Optional[Union[float, str]] = None  # thickness (row / stitch gap), "inherit" = design setting
     pull_mm: Optional[Union[float, str]] = None  # extra width, "inherit" = design setting
     bold: Optional[Union[bool, str]] = None  # outlines 3x / once, "inherit" = design setting
+    underlay_style: Optional[str] = None  # foundation type (see stitch/underlay.py), "inherit" = design setting
+    guide: Optional[Union[list[list[float]], str]] = None  # guide line (mm), "inherit" = remove it
+    blend_to: Optional[Union[int, str]] = None  # blend fill: colour index to fade into, "inherit" = none
 
 
 class RecolorBody(BaseModel):
@@ -142,6 +147,9 @@ def get_config():
         "raster_defaults": asdict(RasterOptions()),
         "vector_defaults": asdict(VectorOptions()),
         "stitch_defaults": StitchParams().to_dict(),
+        "fabrics": [f.to_dict() for f in FABRICS],
+        "stitch_styles": [list(s) for s in STITCH_STYLES],
+        "motifs": [[k, m["label"]] for k, m in decorative.motifs().items()],
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,
@@ -191,7 +199,8 @@ def design(pid: str):
 def update_objects(pid: str, body: ObjectsBody):
     return service.update_objects(
         pid, body.ids, body.scope, body.stitch_type, body.angle, body.enabled,
-        spacing_mm=body.spacing_mm, pull_mm=body.pull_mm, bold=body.bold,
+        spacing_mm=body.spacing_mm, pull_mm=body.pull_mm, bold=body.bold, underlay_style=body.underlay_style,
+        guide=body.guide, blend_to=body.blend_to,
     )
 
 

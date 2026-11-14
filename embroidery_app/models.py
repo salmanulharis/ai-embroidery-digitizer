@@ -7,6 +7,7 @@ thread-colour layers). A ``StitchPlan`` is the machine-ready result.
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import asdict, dataclass, field, replace
 from typing import Iterable, Literal, Optional
@@ -14,7 +15,7 @@ from typing import Iterable, Literal, Optional
 from shapely import wkt
 from shapely.geometry.base import BaseGeometry
 
-StitchType = Literal["auto", "fill", "satin", "running", "lettering"]
+StitchType = str  # one of STITCH_TYPES
 ObjectKind = Literal["area", "line"]
 
 RGB = tuple[int, int, int]
@@ -61,8 +62,67 @@ class ColorLayer:
         )
 
 
-# "lettering": satin that follows each stroke (small text, script, fine line art)
-STITCH_TYPES = ("auto", "fill", "satin", "running", "lettering")
+# Stitch styles a colour or a shape can be given: (id, label for the menus).
+# "lettering": satin that follows each stroke (small text, script, fine line art).
+# The decorative outlines and borders are sewn along a line, or around a filled
+# shape's outline (see stitch/outlines.py).
+STITCH_STYLES: tuple[tuple[str, str], ...] = (
+    ("auto", "Automatic"),
+    ("fill", "Fill (large areas)"),
+    ("satin", "Satin (smooth, narrow)"),
+    ("lettering", "Lettering (follows each stroke)"),
+    ("running", "Outline only"),
+    ("double_run", "Double run outline (there and back)"),
+    ("backstitch", "Backstitch outline (hand-sewn look)"),
+    ("stemstitch", "Stemstitch outline (rope look)"),
+    ("sculpture_run", "Sculpture run outline (beaded look)"),
+    ("zigzag", "Zigzag border (open)"),
+    ("estitch", "E-stitch border (blanket edge)"),
+    ("offset_fill", "Offset fill (rings that follow the outline)"),
+    ("spiral_fill", "Spiral fill (one continuous spiral)"),
+    ("contour_fill", "Contour fill (rows follow a curved column)"),
+    ("radial_fill", "Radial fill (rays from the centre)"),
+    ("shaded_fill", "Shaded fill (dense to light, one colour)"),
+    ("stipple_fill", "Stipple fill (light meandering line)"),
+    ("maze_fill", "Maze fill (right-angled meander)"),
+    ("cross_stitch", "Cross stitch (hand cross-stitch look)"),
+    ("motif_run", "Motif outline (chain of small motifs)"),
+    ("hand_stitch", "Hand stitch outline (hand-sewn look)"),
+    ("motif_fill", "Motif fill (rows of motifs)"),
+    ("paired_motif_fill", "Paired motif fill (interlocking rows)"),
+    ("pattern_fill", "Pattern fill (embossed pattern)"),
+    ("jagged_fill", "Jagged fill (rough edges: fur, grass)"),
+    ("raised_satin", "Raised satin (padded, up to 7 mm)"),
+    ("applique", "Applique (placement, stop, tack, cover)"),
+    ("guided_satin", "Guided satin (follows a line you draw)"),
+    ("florentine_fill", "Florentine fill (rows bend with a line you draw)"),
+    ("carved_fill", "Carved fill (a line you draw pressed into the fill)"),
+    ("blend_fill", "Blend fill (fades into another colour)"),
+    ("flexi_split", "Flexi split satin (pattern follows the column)"),
+    ("motif_column", "Motif column (motifs as wide as the shape)"),
+)
+STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
+OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
+FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
+                    "stipple_fill", "maze_fill", "cross_stitch")
+DECOR_PATH_STYLES = ("motif_run", "hand_stitch")  # sewn along a line or a shape's outline
+DECOR_AREA_STYLES = ("motif_fill", "paired_motif_fill", "pattern_fill", "jagged_fill", "raised_satin", "applique")
+FILL_PATTERN_TILES = ("diamonds", "squares", "bricks", "scales")  # pattern fill (stitch/decorative.py)
+GUIDED_STYLES = ("guided_satin", "florentine_fill", "carved_fill")  # need a guide line (stitch/guided.py)
+GUIDE_MAX_POINTS = 400
+
+
+def clean_guide(value) -> Optional[tuple]:
+    """A guide line as a tuple of (x, y) mm points, or None when it is not a usable line."""
+    if not value:
+        return None
+    try:
+        pts = tuple((round(float(x), 3), round(float(y), 3)) for x, y in value)
+    except (TypeError, ValueError):
+        return None
+    if len(pts) < 2 or len(pts) > GUIDE_MAX_POINTS or not all(map(lambda p: all(map(math.isfinite, p)), pts)):
+        return None
+    return pts
 
 
 def new_object_id() -> str:
@@ -74,9 +134,18 @@ def normalize_angle(value: float) -> float:
     return round(float(value) % 180.0, 2)
 
 
+# Tatami textures: how the needle points shift from row to row (see stitch/methods.py).
+FILL_PATTERNS = ("standard", "brick", "diagonal", "random")
+
+# Named foundation (underlay) types, see stitch/underlay.py.
+FILL_UNDERLAYS = ("none", "edge", "edge_tatami", "double_tatami")
+SATIN_UNDERLAYS = ("none", "center", "edge", "zigzag", "edge_zigzag", "double_zigzag")
+UNDERLAY_STYLES = tuple(dict.fromkeys(FILL_UNDERLAYS + SATIN_UNDERLAYS))
+
 # Allowed ranges for per-shape thickness settings (same limits as the design-wide settings).
 SPACING_RANGE_MM = (0.25, 1.0)  # gap between fill rows / satin stitches
 PULL_RANGE_MM = (0.0, 0.8)  # extra width (shrink compensation)
+PUSH_RANGE_MM = (0.0, 0.5)  # push compensation (columns / fills shortened at each end)
 
 
 def _in_range(value, bounds: tuple[float, float]) -> Optional[float]:
@@ -102,6 +171,9 @@ class DesignObject:
     spacing_mm: Optional[float] = None  # thickness: fill row gap / satin stitch gap
     pull_mm: Optional[float] = None  # extra width (shrink compensation)
     bold: Optional[bool] = None  # outlines sewn 3x (True) / once (False)
+    underlay_style: Optional[str] = None  # foundation type, see UNDERLAY_STYLES / stitch/underlay.py
+    guide: Optional[tuple] = None  # guide line ((x, y), ...) in mm for the guided styles
+    blend_to: Optional[int] = None  # blend fill: the colour (layer index) it fades into
 
     @property
     def customised(self) -> bool:
@@ -110,10 +182,12 @@ class DesignObject:
     def settings(self) -> tuple:
         """All per-shape settings as one value. Merging, re-extract carry-over, reset
         and undo work on this tuple, so new settings only need adding here."""
-        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold)
+        return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style,
+                self.guide, self.blend_to)
 
     def apply_settings(self, settings: tuple) -> None:
-        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold) = settings
+        (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style,
+         self.guide, self.blend_to) = settings
 
     def clear_settings(self) -> None:
         self.apply_settings(_DEFAULT_SETTINGS)
@@ -139,6 +213,12 @@ class DesignObject:
             d["pull_mm"] = self.pull_mm
         if self.bold is not None:
             d["bold"] = self.bold
+        if self.underlay_style is not None:
+            d["underlay_style"] = self.underlay_style
+        if self.guide is not None:
+            d["guide"] = [list(p) for p in self.guide]
+        if self.blend_to is not None:
+            d["blend_to"] = self.blend_to
         return d
 
     @classmethod
@@ -146,6 +226,7 @@ class DesignObject:
         st = d.get("stitch_type")
         angle = d.get("angle")
         bold = d.get("bold")
+        underlay = d.get("underlay_style")
         return cls(
             layer=int(d["layer"]),
             geometry=wkt.loads(d["wkt"]),
@@ -158,10 +239,13 @@ class DesignObject:
             spacing_mm=_in_range(d.get("spacing_mm"), SPACING_RANGE_MM),
             pull_mm=_in_range(d.get("pull_mm"), PULL_RANGE_MM),
             bold=bold if isinstance(bold, bool) else None,
+            underlay_style=underlay if underlay in UNDERLAY_STYLES else None,
+            guide=clean_guide(d.get("guide")),
+            blend_to=int(d["blend_to"]) if isinstance(d.get("blend_to"), int) else None,
         )
 
 
-_DEFAULT_SETTINGS = (None, None, True, None, None, None)
+_DEFAULT_SETTINGS = (None, None, True, None, None, None, None, None, None)
 
 
 _CONFLICT_WARNING = (
@@ -310,23 +394,68 @@ class StitchParams:
     vary_fill_angle: bool = True  # rotate angle per layer for a richer look
     smart_direction: bool = False  # best direction for every section of the design (see stitch/smart.py)
     satin_spacing_mm: float = 0.40
-    satin_max_width_mm: float = 7.0  # wider columns become fill
-    satin_min_width_mm: float = 0.8
+    # wider columns become fill; satin stitches over max_stitch_mm (7) are auto-split
+    satin_max_width_mm: float = 10.0
+    satin_min_width_mm: float = 1.0  # 40 wt: narrower than ~1 mm breaks thread (Melco, ZSK)
     running_stitch_length_mm: float = 2.5
     running_repeats: int = 1  # 3 = bean / triple stitch
+    border_width_mm: float = 2.0  # zigzag / E-stitch borders (a stroked line keeps its own width)
+    border_spacing_mm: float = 1.2  # gap between zigzag / E-stitch border stitches
+    stipple_spacing_mm: float = 2.0  # gap between the lines of stipple and maze fills
+    cross_cell_mm: float = 3.0  # cross stitch grid size (Ink/Stitch default)
+    fill_pattern: str = "standard"  # tatami texture: standard | brick | diagonal | random
+    motif: str = "wave"  # motif outline / motif fill (stitch/library/motifs.json)
+    motif_size_mm: float = 6.0
+    pattern: str = "diamonds"  # pattern fill tile: diamonds | squares | bricks | scales
+    pattern_size_mm: float = 8.0
+    jagged_mm: float = 1.5  # jagged fill: how far the row ends wander
+    motif_warp: bool = False  # 3D warp: motif fills bulge like a sphere
+    trapunto: bool = False  # fills travel only along their outline (open fills: no visible travel)
+    knockdown: bool = False  # open fill under small details on pile fabric (towel, fleece)
+    photo_stitch: bool = False  # sew the whole picture as photo rows in one thread (stitch/photo.py)
+    photo_row_mm: float = 1.0  # gap between photo stitch rows
+    photo_style: str = "rows"  # rows (one thread) | reef (meander) | colour (rows in every colour)
     underlay: bool = True
     underlay_spacing_mm: float = 2.5
+    fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
+    satin_underlay: str = "edge"  # foundation under single-angle satin
     pull_compensation_mm: float = 0.2
+    # push compensation: fills and satin columns are shortened by this much at each end
+    # (stitches push the fabric outward along the column); 0 = off
+    push_compensation_mm: float = 0.0
     min_object_area_mm2: float = 0.05  # keeps dots/punctuation of lettering (enlarged to a sewable dot); specks are removed in step 2
     trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
     tie_stitches: bool = True
     max_stitch_mm: float = 7.0
     optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
+    optimize_order: bool = True  # 2-opt sewing order within each colour (fewer, shorter jumps)
     thread_weight: int = 40  # 40 = standard thread; 60 = fine thread for small lettering
+    # fabric preset chosen in the UI (see fabrics.py); the UI applies its values to the
+    # settings above, the plan keeps the name for the worksheet's backing/needle advice
+    fabric: str = "general"
 
     def __post_init__(self) -> None:
+        from .fabrics import FABRIC_IDS
+
         if self.thread_weight not in THREAD_WEIGHTS:
             self.thread_weight = 40
+        if self.fabric not in FABRIC_IDS:
+            self.fabric = "general"
+        if self.fill_underlay not in FILL_UNDERLAYS:
+            self.fill_underlay = "edge_tatami"
+        if self.fill_pattern not in FILL_PATTERNS:
+            self.fill_pattern = "standard"
+        if self.pattern not in FILL_PATTERN_TILES:
+            self.pattern = "diamonds"
+        self.motif_size_mm = min(max(float(self.motif_size_mm), 3.0), 20.0)
+        self.pattern_size_mm = min(max(float(self.pattern_size_mm), 3.0), 30.0)
+        self.jagged_mm = min(max(float(self.jagged_mm), 0.3), 5.0)
+        self.photo_row_mm = min(max(float(self.photo_row_mm), 0.6), 3.0)
+        if self.photo_style not in ("rows", "reef", "colour"):
+            self.photo_style = "rows"
+        if self.satin_underlay not in SATIN_UNDERLAYS:
+            self.satin_underlay = "edge"
+        self.push_compensation_mm = min(max(float(self.push_compensation_mm), PUSH_RANGE_MM[0]), PUSH_RANGE_MM[1])
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "StitchParams":
@@ -344,6 +473,7 @@ class StitchParams:
 
 # Stitch commands
 STITCH, JUMP, TRIM, COLOR_CHANGE = "stitch", "jump", "trim", "color_change"
+STOP = "stop"  # the machine stops (thread not cut), e.g. to lay an applique piece
 
 
 @dataclass
@@ -371,6 +501,7 @@ class StitchPlan:
     ops: list[tuple[str, float, float, str]] = field(default_factory=list)
     optimization: dict = field(default_factory=dict)  # smart reduction report (empty when off)
     thread_weight: int = 40
+    fabric: str = "general"  # fabric preset id (worksheet advice), see fabrics.py
     # machine check: spots where the thread may break or detail may not show
     # [{"x", "y", "type", "count"}], see stitch/safety.py
     risks: list[dict] = field(default_factory=list)
@@ -380,6 +511,7 @@ class StitchPlan:
         jumps = sum(1 for op in self.ops if op[0] == JUMP)
         trims = sum(1 for op in self.ops if op[0] == TRIM)
         changes = sum(1 for op in self.ops if op[0] == COLOR_CHANGE)
+        stops = sum(1 for op in self.ops if op[0] == STOP)
         thread_mm = 0.0
         prev = None
         for cmd, x, y, _ in self.ops:
@@ -390,12 +522,13 @@ class StitchPlan:
         xs = [op[1] for op in self.ops if op[0] == STITCH] or [0]
         ys = [op[2] for op in self.ops if op[0] == STITCH] or [0]
         # ~750 stitches/min average incl. slowdowns, ~10 s per trim, ~15 s per colour change
-        minutes = stitches / 750 + trims * 10 / 60 + changes * 15 / 60
+        minutes = stitches / 750 + trims * 10 / 60 + (changes + stops) * 15 / 60
         return {
             "stitches": stitches,
             "jumps": jumps,
             "trims": trims,
             "color_changes": changes,
+            "stops": stops,
             "colors": len(self.blocks),
             "width_mm": round(max(xs) - min(xs), 1),
             "height_mm": round(max(ys) - min(ys), 1),

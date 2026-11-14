@@ -137,12 +137,24 @@ def _border_background(
     return np.isin(labels, touching), bg_lab
 
 
+_REMBG_SESSIONS: dict = {}
+
+
+def _rembg_session(factory, model: str):
+    """One rembg session per model (loading the model is the slow part)."""
+    if model not in _REMBG_SESSIONS:
+        _REMBG_SESSIONS[model] = factory(model)
+    return _REMBG_SESSIONS[model]
+
+
 def _ai_background(rgb: np.ndarray) -> np.ndarray:
     try:
-        from rembg import remove  # type: ignore
+        from rembg import new_session, remove  # type: ignore
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ValueError("AI background removal needs the optional 'rembg' package: pip install rembg") from exc
-    out = np.array(remove(Image.fromarray(rgb)).convert("RGBA"))
+    # always name the model: rembg's default model is not licensed for free commercial use
+    session = _rembg_session(new_session, settings.rembg_model)
+    out = np.array(remove(Image.fromarray(rgb), session=session).convert("RGBA"))
     return out[:, :, 3] < 128
 
 

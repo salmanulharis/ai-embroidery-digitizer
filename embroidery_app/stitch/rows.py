@@ -30,11 +30,15 @@ class Chain:
         return len(self.segs)
 
 
-def scan_rows(poly: Polygon, angle_deg: float, spacing: float, phase: float = 0.5) -> tuple[np.ndarray, list[list[Segment]]]:
-    """Intersect the polygon (rotated by -angle) with horizontal scan lines."""
+def scan_rows(
+    poly: Polygon, angle_deg: float, spacing: float, phase: float = 0.5, row_ys=None,
+) -> tuple[np.ndarray, list[list[Segment]]]:
+    """Intersect the polygon (rotated by -angle) with horizontal scan lines.
+    ``row_ys(miny, maxy)`` optionally gives the scan lines' positions (rotated frame)
+    instead of evenly spaced ones, e.g. for accordion (shaded) spacing."""
     rp = rotate_geom(poly, -angle_deg)
     minx, miny, maxx, maxy = rp.bounds
-    ys = np.arange(miny + spacing * phase, maxy, spacing)
+    ys = np.asarray(row_ys(miny, maxy), dtype=float) if row_ys else np.arange(miny + spacing * phase, maxy, spacing)
     if len(ys) == 0:
         ys = np.array([(miny + maxy) / 2])
     lines = shapely.linestrings([[[minx - 1, y], [maxx + 1, y]] for y in ys])

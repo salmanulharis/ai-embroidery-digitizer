@@ -16,7 +16,7 @@ import numpy as np
 
 from ..colors import merge_palette, rgb_to_lab
 from ..ingest.raster import _assign, _border_background, _denoise, _fold_edge_shades, _kmeans_lab
-from ..models import THREAD_WEIGHTS, Design, StitchParams, StitchPlan
+from ..models import GUIDED_STYLES, THREAD_WEIGHTS, Design, StitchParams, StitchPlan
 
 # Valid ranges for settings the assistant may change (same limits as the UI).
 STITCH_LIMITS: dict[str, tuple] = {
@@ -29,6 +29,8 @@ STITCH_LIMITS: dict[str, tuple] = {
     "min_object_area_mm2": (0.0, 10.0),
     "underlay": (bool,),
     "optimize": (bool,),
+    "optimize_order": (bool,),
+    "knockdown": (bool,),
     "thread_weight": ("choice", THREAD_WEIGHTS),
 }
 
@@ -234,6 +236,42 @@ def detect_text(fg: np.ndarray, mm_per_px: float) -> dict:
 
 # --------------------------------------------------------------------------- stitch review
 
+CAP_MAX_HEIGHT_MM = 57.0  # 2.25 in, the usual limit for the front of a structured cap (ASI)
+
+
+def _layer_style(design: Design, index: int) -> str:
+    try:
+        return design.layer(index).stitch_type
+    except KeyError:
+        return "auto"
+
+
+def _review_fabric(plan: StitchPlan, design: Design, params: StitchParams, stats: dict, add) -> None:
+    from ..fabrics import get_fabric
+
+    fabric = get_fabric(params.fabric)
+    preset = fabric.settings
+    if fabric.id == "general":
+        return
+    if preset.get("knockdown") and not params.knockdown:
+        add("medium", "No knockdown on pile fabric",
+            f"On {fabric.label.lower()} the loops swallow small text and outlines. A knockdown (an open fill sewn "
+            "first, in the fabric's colour) keeps them on top.", knockdown=True)
+    want_pull = preset.get("pull_compensation_mm", 0.0)
+    if params.pull_compensation_mm < want_pull - 0.05:
+        add("medium", "Low shrink compensation for this fabric",
+            f"{fabric.label} pulls stitches in more than firm cotton: {want_pull:.2f} mm shrink compensation keeps "
+            "columns and fills full width.", pull_compensation_mm=want_pull)
+    if fabric.id == "cap":
+        if stats["height_mm"] > CAP_MAX_HEIGHT_MM:
+            add("medium", "Design too tall for a cap",
+                f"The design is {stats['height_mm']:.0f} mm tall; most caps take about {CAP_MAX_HEIGHT_MM:.0f} mm on "
+                "the front panel. Make it smaller in step 2.")
+        if params.satin_max_width_mm > 7.0:
+            add("low", "Wide satin on a cap", "Caps get rubbed: satin up to 7 mm wide holds up better.",
+                satin_max_width_mm=7.0)
+
+
 def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
     from ..stitch.safety import summarize_risks
 
@@ -309,13 +347,33 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
             f"{risk['dense']} small area(s) get more stitches than the fabric can take (hard spots, needle holes). "
             "A slightly thinner fill helps.", fill_spacing_mm=params.fill_spacing_mm + 0.05)
 
-    if params.satin_max_width_mm > 8:
-        add("low", "Long satin stitches allowed",
-            "Satin wider than 8 mm can snag on clothing; 7 mm is safer.", satin_max_width_mm=7.0)
+    if params.satin_max_width_mm > 10:
+        add("low", "Very wide satin allowed",
+            "Satin wider than 10 mm is split into shorter stitches but still snags easily on clothing; "
+            "10 mm or less is safer.", satin_max_width_mm=10.0)
 
     if not params.optimize:
         add("low", "Smart stitch reduction is off", "Turning it on removes stacked stitches without changing the design.",
             optimize=True)
+    if not params.optimize_order and stats["trims"] > 10:
+        add("low", "Smart sewing order is off",
+            "Turning it on sews the shapes of each colour in an order with shorter jumps, so fewer thread cuts.",
+            optimize_order=True)
+
+    # Fabric (step 3): settings the chosen fabric needs (see fabrics.py)
+    _review_fabric(plan, design, params, stats, add)
+
+    # Guided styles need a line drawn on the shape (stitch/guided.py)
+    unguided = [o for o in shapes if o.kind == "area" and o.guide is None
+                and (o.stitch_type or _layer_style(design, o.layer)) in GUIDED_STYLES]
+    if unguided:
+        add("medium", "Guide line missing",
+            f"{len(unguided)} shape(s) are set to guided satin or Florentine fill but have no guide line yet, so they "
+            "are sewn the usual way. Select them in step 2 and use “Draw guide line”.")
+    if stats.get("stops"):
+        add("low", "The machine stops for applique",
+            f"The machine stops {stats['stops']} time(s) after the placement line: lay the fabric piece over it, "
+            "then continue. The worksheet lists the stops.")
 
     if stats["colors"] > 10:
         add("low", "Many thread colours",

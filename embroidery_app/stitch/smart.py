@@ -32,7 +32,7 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Polygon
 
-from ..geometry import Pt, dist, iter_polygons, resample_line, subdivide
+from ..geometry import Pt, dist, iter_polygons, resample_line
 from . import generators as gen
 from . import strokes as st
 from .rows import build_chains, scan_rows
@@ -638,10 +638,11 @@ def _column(line: np.ndarray, closed: bool, reach_head: float, reach_tail: float
 
 
 def _capped(points: list[Pt], max_stitch: float) -> list[Pt]:
+    """Satin points with over-long stitches auto-split (staggered, see gen.split_stitch)."""
     out: list[Pt] = []
-    for p in points:
+    for i, p in enumerate(points):
         if out and dist(out[-1], p) > max_stitch:
-            out.extend(subdivide(out[-1], p, max_stitch))
+            out.extend(gen.split_stitch(out[-1], p, max_stitch, i))
         elif not out or dist(out[-1], p) > 1e-9:
             out.append(p)
     return out
