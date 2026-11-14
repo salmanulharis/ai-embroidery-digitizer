@@ -1,8 +1,10 @@
 """Golden-output regression tests.
 
 Every stitch method the planner knows is exercised on fixed designs with several
-parameter sets. The resulting machine sequence (rounded to 0.1 mm, the resolution of
-DST) is fingerprinted and compared with ``tests/golden/plans.json``.
+parameter sets. The resulting machine sequence (in 0.1 mm, the resolution of DST) is
+compared with ``tests/golden/plans.json.gz``: same commands and stitch kinds in the same
+order, every point within 0.2 mm (floating point differs slightly between Windows and
+the Linux CI, so a point can round to the next 0.1 mm).
 
 A refactor must leave these fingerprints unchanged. A deliberate change in stitching
 updates them in the same commit:
@@ -10,7 +12,7 @@ updates them in the same commit:
     UPDATE_GOLDEN=1 python -m pytest tests/test_golden.py
 """
 
-import hashlib
+import gzip
 import json
 import os
 from pathlib import Path
@@ -25,7 +27,7 @@ from embroidery_app.stitch import plan_stitches
 
 from conftest import SVG_SAMPLE, make_logo  # tests/ is on sys.path (pytest rootdir-relative import)
 
-GOLDEN = Path(__file__).parent / "golden" / "plans.json"
+GOLDEN = Path(__file__).parent / "golden" / "plans.json.gz"
 
 
 def _shapes_design() -> Design:
@@ -68,14 +70,29 @@ def _cases():
     return cases
 
 
+TOLERANCE = 2  # 0.1 mm units: a point may differ by 0.2 mm (floating point differs a little between platforms)
+
+
 def fingerprint(design: Design, params: dict) -> dict:
+    """The plan's machine sequence: commands, stitch kinds and points in 0.1 mm."""
     plan = plan_stitches(design, StitchParams.from_dict(params))
     counts = {c: 0 for c in (STITCH, JUMP, TRIM, COLOR_CHANGE)}
-    h = hashlib.sha256()
+    ops = []
     for cmd, x, y, kind in plan.ops:
-        counts[cmd] += 1
-        h.update(f"{cmd}|{round(x * 10)}|{round(y * 10)}|{kind};".encode())
-    return {**counts, "sha256": h.hexdigest()}
+        counts[cmd] = counts.get(cmd, 0) + 1
+        ops.append([cmd, round(x * 10), round(y * 10), kind])
+    return {"counts": counts, "ops": ops}
+
+
+def compare(expected: dict, result: dict) -> str | None:
+    """None when the plans match: same counts, commands and kinds in the same order, and
+    every point within TOLERANCE. Else what differs first."""
+    if expected["counts"] != result["counts"]:
+        return f"counts {expected['counts']} -> {result['counts']}"
+    for i, (a, b) in enumerate(zip(expected["ops"], result["ops"])):
+        if a[0] != b[0] or a[3] != b[3] or abs(a[1] - b[1]) > TOLERANCE or abs(a[2] - b[2]) > TOLERANCE:
+            return f"op {i}: {a} -> {b}"
+    return None
 
 
 @pytest.fixture(scope="module")
@@ -86,9 +103,9 @@ def results():
 def test_golden_plans(results):
     if os.environ.get("UPDATE_GOLDEN") == "1":
         GOLDEN.parent.mkdir(exist_ok=True)
-        GOLDEN.write_text(json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        GOLDEN.write_bytes(gzip.compress(json.dumps(results, sort_keys=True, separators=(",", ":")).encode(), mtime=0))
         pytest.skip("golden plans rewritten")
-    expected = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    expected = json.loads(gzip.decompress(GOLDEN.read_bytes()))
     assert sorted(results) == sorted(expected)
-    changed = {name for name in results if results[name] != expected[name]}
-    assert not changed, {name: (expected[name], results[name]) for name in sorted(changed)}
+    changed = {name: diff for name in results if (diff := compare(expected[name], results[name]))}
+    assert not changed, changed
