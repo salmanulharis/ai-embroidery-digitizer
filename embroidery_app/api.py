@@ -8,12 +8,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import service
+from . import auth, service, user_ai
 from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
@@ -22,6 +22,7 @@ from .fabrics import FABRICS
 from .stitch import decorative
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
+from .config import settings
 from .models import STITCH_STYLES, STITCH_TERMS, StitchParams
 
 log = logging.getLogger("embroidery")
@@ -40,6 +41,7 @@ HOOPS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    auth.ensure_super_admin()
     removed = service.cleanup_old_projects()
     if removed:
         log.info("Removed %d old projects", removed)
@@ -140,6 +142,22 @@ class AIBody(BaseModel):
         return {"provider": self.provider} if self.provider and self.provider != "builtin" else None
 
 
+# Everything below except the config, login and static files needs a login. A project id
+# in the URL must belong to the logged-in account (checked once, in auth.require_user).
+protected = APIRouter(dependencies=[Depends(auth.require_user)])
+admin = APIRouter(prefix="/api/admin", dependencies=[Depends(auth.require_admin)])
+
+
+@app.middleware("http")
+async def same_origin_only(request: Request, call_next):
+    """State-changing requests from another website are refused (with SameSite cookies,
+    a second guard against cross-site request forgery)."""
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin.split("://", 1)[-1] != request.headers.get("host"):
+        return JSONResponse({"detail": "Cross-site request refused."}, status_code=403)
+    return await call_next(request)
+
+
 @app.get("/api/config")
 def get_config():
     return {
@@ -157,46 +175,46 @@ def get_config():
     }
 
 
-@app.post("/api/ai/models")
-def ai_models(body: AIBody):
+@protected.post("/api/ai/models")
+def ai_models(body: AIBody, user: dict = Depends(auth.require_user)):
     """Live model list of a provider (with the user's key) + recommended picks."""
-    ai = body.settings()
+    ai = user_ai.for_models(user["id"], body.ai.model_dump() if body.ai else body.settings())
     if not ai:
         raise ValueError("Choose an AI service first.")
     return service.ai_models(ai, body.refresh)
 
 
-@app.post("/api/projects")
-async def upload(file: UploadFile = File(...)):
+@protected.post("/api/projects")
+async def upload(file: UploadFile = File(...), user: dict = Depends(auth.require_user)):
     data = await file.read()
     if not data:
         raise ValueError("Empty file.")
-    return service.create_project(file.filename or "design", data)
+    return service.create_project(file.filename or "design", data, owner=user["id"])
 
 
-@app.get("/api/projects/{pid}/source")
+@protected.get("/api/projects/{pid}/source")
 def source(pid: str):
     path, mime = service.source_file(pid)
     return FileResponse(path, media_type=mime, headers={"Cache-Control": "no-store"})
 
 
-@app.get("/api/projects/{pid}/original")
+@protected.get("/api/projects/{pid}/original")
 def original(pid: str):
     path, mime = service.original_file(pid)
     return FileResponse(path, media_type=mime)
 
 
-@app.post("/api/projects/{pid}/extract")
+@protected.post("/api/projects/{pid}/extract")
 def extract(pid: str, body: ExtractBody):
     return service.extract(pid, body.options)
 
 
-@app.get("/api/projects/{pid}/design")
+@protected.get("/api/projects/{pid}/design")
 def design(pid: str):
     return service.design_payload(service.load_design(pid), pid)
 
 
-@app.put("/api/projects/{pid}/objects")
+@protected.put("/api/projects/{pid}/objects")
 def update_objects(pid: str, body: ObjectsBody):
     return service.update_objects(
         pid, body.ids, body.scope, body.stitch_type, body.angle, body.enabled,
@@ -205,85 +223,181 @@ def update_objects(pid: str, body: ObjectsBody):
     )
 
 
-@app.post("/api/projects/{pid}/objects/reset")
+@protected.post("/api/projects/{pid}/objects/reset")
 def reset_objects(pid: str, body: ResetBody):
     return service.reset_objects(pid, body.ids)
 
 
-@app.post("/api/projects/{pid}/undo")
+@protected.post("/api/projects/{pid}/undo")
 def undo(pid: str):
     return service.undo(pid)
 
 
-@app.post("/api/projects/{pid}/redo")
+@protected.post("/api/projects/{pid}/redo")
 def redo(pid: str):
     return service.redo(pid)
 
 
-@app.post("/api/projects/{pid}/objects/recolor")
+@protected.post("/api/projects/{pid}/objects/recolor")
 def recolor(pid: str, body: RecolorBody):
     return service.recolor_objects(pid, body.ids, body.target, body.hex)
 
 
-@app.post("/api/projects/{pid}/objects/edit")
+@protected.post("/api/projects/{pid}/objects/edit")
 def edit_shapes(pid: str, body: ShapeEditBody):
     return service.edit_shapes(pid, body.ids, body.op, body.tool, body.points, body.size_mm)
 
 
-@app.get("/api/projects/{pid}/reference/{kind}")
+@protected.get("/api/projects/{pid}/reference/{kind}")
 def reference(pid: str, kind: str):
     data, mime = service.reference_file(pid, kind)
     return Response(data, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
-@app.put("/api/projects/{pid}/layers")
+@protected.put("/api/projects/{pid}/layers")
 def layers(pid: str, body: LayersBody):
     return service.update_layers(pid, body.layers)
 
 
-@app.post("/api/projects/{pid}/layers/merge")
+@protected.post("/api/projects/{pid}/layers/merge")
 def merge(pid: str, body: MergeBody):
     return service.merge_layers(pid, body.source, body.target)
 
 
-@app.post("/api/projects/{pid}/stitch")
+@protected.post("/api/projects/{pid}/stitch")
 def stitch(pid: str, body: StitchBody):
     return service.stitch(pid, body.params)
 
 
-@app.get("/api/projects/{pid}/export/{fmt}")
+@protected.get("/api/projects/{pid}/export/{fmt}")
 def export(pid: str, fmt: str, formats: Optional[str] = None):
     """``formats`` (comma separated, only with ``zip``): the files to put in the archive."""
     data, filename, mime = service.export(pid, fmt, service.parse_formats(formats) if fmt.lower() == "zip" else None)
     return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.post("/api/projects/{pid}/ai/clean")
-def ai_clean(pid: str, body: AIBody):
-    return service.ai_clean(pid, body.settings(), body.mode, body.colors)
+@protected.post("/api/projects/{pid}/ai/clean")
+def ai_clean(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
+    return service.ai_clean(pid, user_ai.resolve(user["id"], body.settings()), body.mode, body.colors)
 
 
-@app.post("/api/projects/{pid}/ai/revert")
+@protected.post("/api/projects/{pid}/ai/revert")
 def ai_revert(pid: str):
     return service.ai_revert(pid)
 
 
-@app.post("/api/projects/{pid}/ai/suggest")
-def ai_suggest(pid: str, body: AIBody):
+@protected.post("/api/projects/{pid}/ai/suggest")
+def ai_suggest(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
     """Recommended preparation settings: built-in analysis, refined by AI when configured."""
-    return service.ai_suggest(pid, body.settings(), body.width_mm)
+    return service.ai_suggest(pid, user_ai.resolve(user["id"], body.settings()), body.width_mm)
 
 
-@app.post("/api/projects/{pid}/ai/analyze")
-def ai_analyze(pid: str, body: AIBody):
+@protected.post("/api/projects/{pid}/ai/analyze")
+def ai_analyze(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
     """Older name of /ai/suggest, kept for compatibility."""
-    return service.ai_suggest(pid, body.settings(), body.width_mm)
+    return service.ai_suggest(pid, user_ai.resolve(user["id"], body.settings()), body.width_mm)
 
 
-@app.post("/api/projects/{pid}/ai/review")
-def ai_review(pid: str, body: AIBody):
+@protected.post("/api/projects/{pid}/ai/review")
+def ai_review(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
     """Check the generated stitches: built-in rules, plus AI review when configured."""
-    return service.ai_review(pid, body.settings())
+    return service.ai_review(pid, user_ai.resolve(user["id"], body.settings()))
+
+
+# --------------------------------------------------------------------------- accounts
+
+class LoginBody(BaseModel):
+    email: str = ""
+    password: str = ""
+    remember: bool = False
+
+
+class PasswordBody(BaseModel):
+    current: str = ""
+    password: str = ""
+
+
+class NewUserBody(BaseModel):
+    email: str
+    password: str
+
+
+class UserPatch(BaseModel):
+    email: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class AdminPasswordBody(BaseModel):
+    password: str
+
+
+@app.post("/api/auth/login")
+def login(body: LoginBody, request: Request, response: Response):
+    ip = request.client.host if request.client else "?"
+    user, token, _ = auth.login(body.email, body.password, body.remember, ip)
+    auth.set_cookie(response, request, token, body.remember)
+    return {"user": user}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    auth.logout(request.cookies.get(auth.COOKIE))
+    auth.clear_cookie(response)
+    return {"ok": True}
+
+
+@protected.get("/api/auth/me")
+def me(user: dict = Depends(auth.require_user)):
+    return {"user": user, "session_days": settings.session_days}
+
+
+@protected.post("/api/auth/password")
+def change_password(body: PasswordBody, request: Request, user: dict = Depends(auth.require_user)):
+    """Your own password: needs the current one; your other sessions end."""
+    auth.change_own_password(user["id"], body.current, body.password, request.cookies.get(auth.COOKIE))
+    return {"ok": True}
+
+
+@protected.get("/api/me/ai")
+def my_ai(user: dict = Depends(auth.require_user)):
+    """Your AI settings; keys appear only as "saved, ends in 1234"."""
+    return user_ai.view(user["id"])
+
+
+@protected.put("/api/me/ai")
+def save_my_ai(body: dict[str, Any], user: dict = Depends(auth.require_user)):
+    return user_ai.save(user["id"], body)
+
+
+@admin.get("/users")
+def admin_users():
+    return {"users": auth.list_users()}
+
+
+@admin.post("/users")
+def admin_create_user(body: NewUserBody):
+    return auth.create_user(body.email, body.password)
+
+
+@admin.patch("/users/{uid}")
+def admin_update_user(uid: int, body: UserPatch):
+    return auth.update_user(uid, body.email, body.active)
+
+
+@admin.post("/users/{uid}/password")
+def admin_reset_password(uid: int, body: AdminPasswordBody):
+    auth.set_password(uid, body.password)  # the user is signed out everywhere
+    return {"ok": True}
+
+
+@admin.delete("/users/{uid}")
+def admin_delete_user(uid: int):
+    auth.delete_user(uid)
+    return {"deleted": True}
+
+
+app.include_router(protected)
+app.include_router(admin)
 
 
 @app.get("/")

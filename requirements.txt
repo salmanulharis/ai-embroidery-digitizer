@@ -22,6 +22,9 @@ pymupdf>=2.1
 # HTTP client for the optional AI services (the maintained successor of httpx)
 httpx2>=2.16
 
+# Encrypts each user's saved AI keys (AES-GCM)
+cryptography>=50.0
+
 # Optional: AI cut-out of photo subjects (large download, ~200 MB of models)
 # rembg[cpu]>=2.0.87
 

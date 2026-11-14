@@ -38,10 +38,24 @@ class Settings:
     # (bria-rmbg / RMBG-2.0) needs a paid BRIA agreement for commercial use.
     rembg_model: str = _env("REMBG_MODEL", "isnet-general-use")
 
+    # --- Accounts (see auth.py) ---
+    # The first Super Admin, created at startup when no account has this email yet. Set as
+    # GitHub repository secrets for the deployment, never in the code.
+    super_admin_email: str = _env("SUPER_ADMIN_EMAIL").lower()
+    super_admin_password: str = os.environ.get("SUPER_ADMIN_PASSWORD", "")
+    # "Remember me" keeps a login for this many days; without it the login ends with the
+    # browser session (and after at most one day on the server).
+    session_days: int = int(_env("SESSION_DAYS", "30"))
+    # Encrypts the users' AI keys in the database. Without it a random key is created once
+    # in DATA_DIR/secret.key; setting it keeps the keys readable only with the secret.
+    app_secret_key: str = _env("APP_SECRET_KEY")
+    # Session cookie only over HTTPS: "auto" = when the request came over HTTPS.
+    cookie_secure: str = _env("COOKIE_SECURE", "auto").lower()
+
     # --- Optional AI (the app works fully without it) ---
     # Each provider reads its own variables (e.g. OPENAI_API_KEY, GEMINI_VISION_MODEL) via
-    # ``env()`` - see embroidery_app/ai/providers/. Users can also bring their own keys
-    # from the browser; those are used per request and never stored on the server.
+    # ``env()`` - see embroidery_app/ai/providers/. Each user's own keys are stored
+    # encrypted per account (user_ai.py) and used only for that user's requests.
     ai_timeout_s: float = float(_env("AI_TIMEOUT_S", "120"))
     # Allow AI endpoints on private/loopback addresses (needed for a local Ollama or
     # LM Studio). Set to 0 on public deployments so users cannot make the server call

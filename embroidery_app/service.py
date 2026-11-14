@@ -182,7 +182,29 @@ def cleanup_old_projects(max_age_days: float = 7) -> int:
 
 # --------------------------------------------------------------------------- workflow
 
-def create_project(filename: str, data: bytes) -> dict:
+def owned_by(pid: str, user_id: int) -> bool:
+    """True when the project exists and belongs to this account."""
+    try:
+        return _meta(pid).get("owner") == user_id
+    except (NotFound, FileNotFoundError, ValueError):
+        return False
+
+
+def delete_projects_of(user_id: int) -> int:
+    """Remove every project of a deleted account."""
+    removed = 0
+    for d in PROJECTS.iterdir():
+        meta = d / "meta.json"
+        try:
+            if d.is_dir() and json.loads(meta.read_text(encoding="utf-8")).get("owner") == user_id:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except (OSError, ValueError):
+            continue
+    return removed
+
+
+def create_project(filename: str, data: bytes, owner: int | None = None) -> dict:
     if len(data) > settings.max_upload_mb * 1024 * 1024:
         raise ValueError(f"File is larger than {settings.max_upload_mb} MB.")
     kind = detect_kind(filename, data)
@@ -204,7 +226,8 @@ def create_project(filename: str, data: bytes) -> dict:
     except Exception:
         shutil.rmtree(d, ignore_errors=True)
         raise
-    meta = {"id": pid, "filename": safe_name, "kind": kind, "created": time.time(), "info": info, "ai_cleaned": False}
+    meta = {"id": pid, "filename": safe_name, "kind": kind, "created": time.time(), "info": info, "ai_cleaned": False,
+            "owner": owner}
     (d / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
 

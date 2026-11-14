@@ -77,11 +77,14 @@ def fake():
     register(FakeProvider)  # adding a provider = one class + @register
     FakeProvider.answers, FakeProvider.fail, FakeProvider.seen = {}, False, []
     registry._cache.clear()
+    # the key is saved once with the account; requests only name the service
+    assert client.put("/api/me/ai", json={"vision": "fake", "edit": "fake", "providers": {"fake": {"api_key": KEY}}}).status_code == 200
     yield FakeProvider
+    client.put("/api/me/ai", json={})
     registry.PROVIDERS.pop("fake", None)
 
 
-AI = {"provider": "fake", "api_key": KEY}
+AI = {"provider": "fake"}
 
 
 # --------------------------------------------------------------------------- built-in fallback (no AI)
@@ -187,6 +190,18 @@ def test_models_endpoint_and_registry_choice(fake):
     assert r["recommended"] == {"edit": "fake-image-1", "vision": "fake-vision-2"}
     assert client.post("/api/ai/models", json={}).status_code == 400
     assert any(p["id"] == "fake" for p in client.get("/api/config").json()["ai"])
+
+
+def test_ai_needs_the_users_own_saved_key(fake):
+    pid = _project()
+    # a key sent with the request is ignored: always the account's saved settings
+    client.post(f"/api/projects/{pid}/ai/suggest", json={"ai": {"provider": "fake", "api_key": "sk-from-the-browser"}})
+    assert fake.seen[-1]["key"] == KEY
+    view = client.get("/api/me/ai").json()
+    assert view["providers"]["fake"] == {"has_key": True, "key_hint": KEY[-4:]} and KEY not in json.dumps(view)
+    client.put("/api/me/ai", json={"providers": {"fake": {"remove_key": True}}})
+    r = client.post(f"/api/projects/{pid}/ai/suggest", json={"ai": AI})
+    assert r.status_code == 400 and "AI settings" in r.json()["detail"]
 
 
 def test_vector_projects_reject_picture_tools():

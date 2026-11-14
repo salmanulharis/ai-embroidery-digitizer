@@ -11,7 +11,17 @@ import pytest
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="emb-test-"))
 for key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"):
     os.environ[key] = ""
+os.environ["SUPER_ADMIN_EMAIL"] = "admin@example.com"
+os.environ["SUPER_ADMIN_PASSWORD"] = "admin-password-123"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Tests of the design workflow run as one logged-in account; tests/test_auth.py switches
+# this off to exercise the real login, sessions, roles and project ownership.
+from embroidery_app import auth  # noqa: E402
+from embroidery_app.api import app  # noqa: E402
+
+TEST_USER = auth.create_user("tester@example.com", "tester-password-123")
+app.dependency_overrides[auth.require_user] = lambda: TEST_USER
 
 
 def make_logo() -> np.ndarray:
