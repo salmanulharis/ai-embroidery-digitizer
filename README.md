@@ -26,8 +26,27 @@ pytest                            # pipeline, exports, API, editing, AI (mocked)
 
 **Deploy to AWS EC2 with GitHub Actions** (deploys on version tags only): see [deploy/ec2/README.md](deploy/ec2/README.md).
 
-AI is optional. Open **⚙ AI settings** in the app to add your own key, or set server-wide keys in `.env`
-(copy `.env.example`). See [AI assistant](#ai-assistant).
+**Sign in:** set `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` (in `.env`, copy `.env.example`) before the first
+start; that account is created at startup and adds everyone else. See [Accounts](#accounts).
+
+AI is optional. Open **⚙ AI settings** in the app to add your own key, or set server-wide keys in `.env`.
+See [AI assistant](#ai-assistant).
+
+## Accounts
+
+- **Sign in** with email and password. There is no public sign-up: the **Super Admin** creates accounts under
+  *Account menu → Manage users* (add, edit email, activate / deactivate, reset password, delete), with a
+  generated password to copy. The Super Admin comes from `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD`
+  (GitHub secrets in production) and is created at startup when no account has that email.
+- **Sessions:** "Keep me signed in" lasts `SESSION_DAYS` (default 30); otherwise the session ends with the
+  browser. *Sign out* ends it on the server. Users can change their own password; deactivating, resetting
+  or deleting an account signs it out everywhere.
+- **Each account sees only its own designs and AI settings.** Every API request is checked on the server:
+  projects belong to the account that uploaded them, and admin functions need the Super Admin role.
+- **Security:** passwords hashed with scrypt; session tokens random, kept in an HttpOnly SameSite cookie
+  (Secure over HTTPS) and stored only as a hash; failed sign-ins are rate-limited; cross-site requests are
+  refused. Data lives in `DATA_DIR/app.db` (SQLite, upgraded automatically on start).
+- Lost Super Admin password: `python -m embroidery_app.auth reset-password <email>` on the server.
 
 ## AI assistant
 
@@ -51,9 +70,10 @@ refines the result when configured.
 **How it works:**
 - **Models are listed live** from each provider with the user's key and filtered by capability (image
   editing or image understanding). A recommended model is preselected, so no model names go stale in the code.
-- **Keys** are entered in the browser and kept there: per session by default, or "Remember on this device".
-  They're sent only with AI requests, used for that one call, never saved or logged on the server, and
-  removed from error messages. Server-wide keys in `.env` are optional defaults.
+- **Keys belong to an account.** Each user saves their own services, keys and models in AI settings. They are
+  stored encrypted (AES-GCM with `APP_SECRET_KEY`, bound to the account) and never sent back to the browser,
+  which only sees "saved, ends in 1234". AI requests always use the signed-in account's own settings; keys are
+  removed from error messages and never logged. Server-wide keys in `.env` are optional defaults for everyone.
 - **Safety:**
   - AI answers are validated and clamped to safe ranges, and unknown settings are ignored.
   - Any AI failure falls back to the built-in result with a note.
@@ -284,15 +304,27 @@ embroidery_app/
     builtin.py        non-AI picture analysis + stitch review (the default)
     prompts.py        prompts per task
     tasks.py          suggest / clean-up / review: built-in first, AI on top, validated
-  static/             index.html, app.js, shapes.js, ai.js, help.js, style.css (no build step)
+  auth.py             accounts: passwords (scrypt), sessions, roles, Super Admin from the secrets
+  db.py               SQLite (DATA_DIR/app.db): users, sessions, AI settings; migrations on start
+  user_ai.py          each account's AI settings, encrypted; used for that account's AI requests
+  static/             index.html, app.js, auth.js, shapes.js, ai.js, help.js, style.css (no build step)
 tests/                pytest suite
 ```
 
 ## API
 
+Everything except `/api/config` and sign-in needs a session; a project is reachable only by its owner.
+
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/config` | formats, defaults, AI provider availability, hoops |
+| GET | `/api/config` | formats, defaults, AI provider availability, hoops (public) |
+| POST | `/api/auth/login` · `logout` | `{email, password, remember}` → session cookie (public) |
+| GET | `/api/auth/me` | the signed-in account |
+| POST | `/api/auth/password` | `{current, password}`: change your own password |
+| GET · PUT | `/api/me/ai` | your AI settings (keys only as `has_key` / `key_hint`); PUT keeps a saved key unless a new `api_key` or `remove_key` is sent |
+| GET · POST | `/api/admin/users` | Super Admin: list / create `{email, password}` |
+| PATCH · DELETE | `/api/admin/users/{id}` | Super Admin: `{email?, active?}` / delete (with the account's designs and AI settings) |
+| POST | `/api/admin/users/{id}/password` | Super Admin: set a new password (signs the user out) |
 | POST | `/api/projects` | upload (multipart `file`) |
 | POST | `/api/projects/{id}/extract` | `{options:{width_mm, num_colors, background, min_feature_mm, …}}` |
 | PUT | `/api/projects/{id}/layers` | edit layers: enabled, thread color, stitch type, angle, order |

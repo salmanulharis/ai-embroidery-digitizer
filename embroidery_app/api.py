@@ -172,6 +172,7 @@ def get_config():
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,
+        "session_days": settings.session_days,  # "Keep me signed in for N days" on the sign-in screen
     }
 
 

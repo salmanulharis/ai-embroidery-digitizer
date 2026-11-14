@@ -76,17 +76,27 @@ Answer `yes` when asked about the fingerprint.
 | 🟥 | `EC2_SSH_PRIVATE_KEY` | clipboard: the whole private key, including the `BEGIN`/`END` lines |
 | 🟦 | `EC2_KNOWN_HOSTS` | the full line printed by `ssh-keyscan` (`13.48.10.20 ssh-ed25519 AAAA…`) |
 
-## 6. Site password (recommended; the app has no login)
+## 6. Accounts (required)
+The app has its own sign-in. There is no public sign-up: the Super Admin creates every
+account under **Account menu → Manage users**.
+
 | Save | Name | Value |
 |---|---|---|
-| 🟦 | `BASIC_AUTH_USER` | e.g. `shop` |
-| 🟥 | `BASIC_AUTH_PASSWORD` | a long password |
+| 🟥 | `SUPER_ADMIN_EMAIL` | the Super Admin's email |
+| 🟥 | `SUPER_ADMIN_PASSWORD` | at least 10 characters (avoid `"` `'` and `\`) |
+| 🟥 | `APP_SECRET_KEY` | recommended: a long random string, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Encrypts the users' saved AI keys. Never change it afterwards, or saved AI keys can no longer be read (users then add them again). Without it a random key is created on the server in `/var/lib/embroidery/secret.key` |
+| 🟦 | `SESSION_DAYS` | how long "Keep me signed in" lasts, default 30 |
 
-Skip both to make the site public.
+The deployment stops if the two `SUPER_ADMIN_*` secrets are missing. The account is created
+on the first start only; changing the secrets later does not change an existing account.
+Forgot the Super Admin password? On the server:
+```bash
+sudo systemd-run --pty --quiet --uid=embroidery -p EnvironmentFile=/etc/embroidery/embroidery.env --working-directory=/opt/embroidery /opt/embroidery/.venv/bin/python -m embroidery_app.auth reset-password you@example.com
+```
 
-The login is switched with `SITE_LOGIN` at the top of `.github/workflows/deploy.yml`:
-`"on"` uses these two values, `"off"` (current, temporary) opens the site without signing in.
-Change it and push a new tag to apply.
+`SITE_LOGIN` at the top of `.github/workflows/deploy.yml` can still put an extra Caddy
+password (`BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD`) in front of the whole site; keep it
+`"off"` - the app's own accounts replace it.
 
 ## 7. Optional settings (only add what you need)
 | Save | Name | Default / example |
@@ -95,7 +105,7 @@ Change it and push a new tag to apply.
 | 🟦 | `RASTER_MAX_SIDE_PX` | automatic (2000 on t3.small, 1400 on t3.micro) |
 | 🟦 | `RASTER_PX_PER_MM` | 12 |
 | 🟦 | `AI_TIMEOUT_S` | 120 |
-| 🟥 | `GEMINI_API_KEY` · `OPENAI_API_KEY` · `OPENROUTER_API_KEY` · `ANTHROPIC_API_KEY` | server-wide AI keys: **every visitor can use them**. Prefer each user adding their own key in the app |
+| 🟥 | `GEMINI_API_KEY` · `OPENAI_API_KEY` · `OPENROUTER_API_KEY` · `ANTHROPIC_API_KEY` | server-wide AI keys: **every signed-in user can use them**. Prefer each user adding their own key in AI settings (saved per account, encrypted) |
 | 🟦 | `GEMINI_IMAGE_MODEL`, `GEMINI_VISION_MODEL`, `OPENAI_IMAGE_MODEL`, `OPENAI_VISION_MODEL`, `OPENROUTER_IMAGE_MODEL`, `OPENROUTER_VISION_MODEL`, `ANTHROPIC_VISION_MODEL` | empty = automatic |
 
 ## 8. Release (deploys only on tags)

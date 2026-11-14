@@ -1,38 +1,44 @@
 "use strict";
-/* AI settings (user-provided keys, kept in this browser only) and the smart assistant:
-   "Suggest best settings", picture clean-up and "Check my stitches". Without an AI service
-   the server's built-in algorithms answer, so every button works without a key.
+/* AI settings (each account's own services, keys and models, saved encrypted on the server -
+   see user_ai.py) and the smart assistant: "Suggest best settings", picture clean-up and
+   "Check my stitches". Without an AI service the server's built-in algorithms answer, so
+   every button works without a key. A saved key never comes back to the browser: the
+   dialog only knows that one is saved and its last four characters.
    Uses helpers from app.js ($, api, json, busy, esc, toast, state, loadSource, extract,
    generate, PARAMS, CHECKS) - only inside functions, after app.js has loaded. */
 
 const AI = (() => {
-  const STORE = "embroidery.ai.v1";
+  const OLD_BROWSER_STORE = "embroidery.ai.v1"; // keys used to live in the browser: removed
   const CLEAN_LABELS = { redraw: "Redraw as clean artwork", remove_background: "Remove background only", enhance: "Sharpen & enhance" };
   const TYPE_LABELS = { logo: "Logo", text: "Lettering", illustration: "Illustration", photo: "Photo / colour fades", mixed: "Mixed" };
   const BG_LABELS = { auto: "Remove plain background", color: "Remove background colour everywhere", none: "Keep everything" };
   const DENOISE = ["Off", "Low", "Medium", "High"];
   let catalog = [];
-  let cfg = load();
+  let cfg = defaults(); // as saved for this account (keys: has_key / key_hint only)
+  let saved = defaults(); // copy to go back to when the dialog is closed without saving
   const loaded = {}; // provider id -> {models, recommended}
   let picked = ""; // provider shown in the dialog
 
-  // ------------------------------------------------------------------ storage
-  function defaults() { return { remember: false, vision: "builtin", edit: "", providers: {} }; }
-  function load() {
-    for (const store of [() => localStorage, () => sessionStorage]) {
-      try {
-        const raw = store().getItem(STORE);
-        if (raw) return { ...defaults(), ...JSON.parse(raw) };
-      } catch (_) { /* storage blocked: keep settings in memory only */ }
-    }
-    return defaults();
+  // ------------------------------------------------------------------ storage: the account
+  function defaults() { return { vision: "builtin", edit: "", providers: {} }; }
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  async function load() {
+    const v = await api("/api/me/ai");
+    cfg = { vision: v.vision, edit: v.edit, providers: v.providers || {} };
+    saved = clone(cfg);
   }
-  function persist() {
-    const raw = JSON.stringify(cfg);
-    try {
-      (cfg.remember ? localStorage : sessionStorage).setItem(STORE, raw);
-      (cfg.remember ? sessionStorage : localStorage).removeItem(STORE);
-    } catch (_) { /* in-memory only */ }
+  // Only a newly typed key is sent; without one the server keeps the saved key.
+  async function store() {
+    const providers = {};
+    Object.entries(cfg.providers).forEach(([id, c]) => {
+      const out = {};
+      ["api_key", "base_url", "vision_model", "edit_model"].forEach((k) => { if (c[k]) out[k] = c[k]; });
+      if (c.remove_key) out.remove_key = true;
+      providers[id] = out;
+    });
+    const v = await api("/api/me/ai", json("PUT", { vision: cfg.vision, edit: cfg.edit, providers }));
+    cfg = { vision: v.vision, edit: v.edit, providers: v.providers || {} };
+    saved = clone(cfg);
   }
 
   // ------------------------------------------------------------------ helpers
@@ -43,17 +49,15 @@ const AI = (() => {
     if (!p) return false;
     const c = cfg.providers[id] || {};
     if (p.server_configured) return true;
-    return p.needs_key ? !!c.api_key : !!(c.base_url || p.default_base_url);
+    return p.needs_key ? !!(c.has_key || c.api_key) : !!(c.base_url || p.default_base_url);
   }
-  /** The ``ai`` block for an API request, or null for the built-in algorithms. */
+  /** The ``ai`` block for an API request, or null for the built-in algorithms. Only the
+   *  service and model: the server adds this account's saved key and address. */
   function payload(cap) {
     const id = cap === "edit" ? cfg.edit : cfg.vision;
     if (!id || id === "builtin" || !ready(id) || !can(id, cap)) return null;
     const c = cfg.providers[id] || {};
-    return {
-      provider: id, api_key: c.api_key || null, base_url: c.base_url || null,
-      vision_model: c.vision_model || null, edit_model: c.edit_model || null,
-    };
+    return { provider: id, vision_model: c.vision_model || null, edit_model: c.edit_model || null };
   }
   function usingText(cap) {
     const p = payload(cap);
@@ -89,8 +93,9 @@ const AI = (() => {
     const p = prov(id), c = cfg.providers[id] || {};
     $("aiProviderHelp").textContent = (p.help || "") + (p.server_configured ? " Already set up on this server - a key here is optional." : "");
     $("aiKeyRow").classList.toggle("hidden", !p.needs_key && id !== "custom" && id !== "ollama");
-    $("aiKey").value = c.api_key || "";
-    $("aiKey").placeholder = p.needs_key && !p.server_configured ? "Paste your key" : "Optional";
+    $("aiKey").value = c.api_key || ""; // only a key typed now; a saved one is never sent back
+    $("aiKey").placeholder = c.has_key && !c.remove_key ? `Saved – ends in ${c.key_hint || "••••"}. Paste a new key to replace it`
+      : p.needs_key && !p.server_configured ? "Paste your key" : "Optional";
     $("aiKeyLink").classList.toggle("hidden", !p.key_help_url);
     if (p.key_help_url) $("aiKeyLink").href = p.key_help_url;
     $("aiKeyLink").textContent = id === "ollama" ? "Find vision models" : "Get a key";
@@ -100,6 +105,7 @@ const AI = (() => {
     $("aiEditModelRow").classList.toggle("hidden", !can(id, "edit"));
     $("aiVisionModel").innerHTML = modelOptions(id, "vision", c.vision_model);
     $("aiEditModel").innerHTML = modelOptions(id, "edit", c.edit_model);
+    $("aiForget").disabled = !cfg.providers[id];
     $("aiStatus").textContent = loaded[id] ? `Connected – ${loaded[id].models.length} suitable models.` : "";
     $("aiStatus").className = "small";
   }
@@ -109,7 +115,8 @@ const AI = (() => {
     const id = picked, p = prov(id);
     if (!p) return;
     const c = { ...(cfg.providers[id] || {}) };
-    c.api_key = $("aiKey").value.trim();
+    const typed = $("aiKey").value.trim();
+    if (typed) { c.api_key = typed; delete c.remove_key; } else delete c.api_key;
     if (p.supports_base_url) c.base_url = $("aiUrl").value.trim() === (p.default_base_url || "") ? "" : $("aiUrl").value.trim();
     if (can(id, "vision")) c.vision_model = $("aiVisionModel").value;
     if (can(id, "edit")) c.edit_model = $("aiEditModel").value;
@@ -126,9 +133,10 @@ const AI = (() => {
   async function loadModels() {
     readForm();
     const p = prov(picked), c = cfg.providers[picked] || {};
-    if (p.needs_key && !p.server_configured && !c.api_key) return status("Paste your API key first.", true);
+    if (p.needs_key && !p.server_configured && !c.api_key && !c.has_key) return status("Paste your API key first.", true);
     status("Connecting…");
     try {
+      // a key typed now is tried for this request; otherwise the server uses the saved one
       const res = await api("/api/ai/models", json("POST", { ai: { provider: picked, api_key: c.api_key || null, base_url: c.base_url || null }, refresh: true }));
       loaded[picked] = res;
       showProvider(picked);
@@ -145,37 +153,55 @@ const AI = (() => {
   }
 
   function openDialog() {
-    cfg = load();
+    cfg = clone(saved);
     $("aiProviderPick").innerHTML = catalog.map((p) => `<option value="${p.id}">${esc(p.label)}${p.server_configured ? " ✓" : ""}</option>`).join("");
     const first = (cfg.vision !== "builtin" && cfg.vision) || cfg.edit || catalog[0]?.id;
     $("aiProviderPick").value = first;
     showProvider(first);
-    $("aiRemember").checked = !!cfg.remember;
     fillUse();
     $("aiDialog").showModal();
   }
+  function closeDialog() {
+    cfg = clone(saved);
+    $("aiDialog").close();
+  }
 
-  function saveDialog() {
+  async function saveDialog() {
     readForm();
     cfg.vision = $("aiUseVision").value || "builtin";
     cfg.edit = $("aiUseEdit").value || "";
-    cfg.remember = $("aiRemember").checked;
-    persist();
+    $("aiSave").disabled = true;
+    try {
+      await store();
+    } catch (e) {
+      return status(e.message, true);
+    } finally {
+      $("aiSave").disabled = false;
+    }
     $("aiDialog").close();
     refresh();
-    toast(cfg.vision === "builtin" && !cfg.edit ? "Saved – using the built-in smart processing." : "AI settings saved.", true);
+    toast(cfg.vision === "builtin" && !cfg.edit ? "Saved – using the built-in smart processing." : "AI settings saved to your account.", true);
   }
 
-  function forget() {
-    if (!picked) return;
+  // removes the service with its key from the account at once
+  async function forget() {
+    if (!picked || !cfg.providers[picked]) return;
+    const label = prov(picked).label;
+    const before = clone(cfg);
     delete cfg.providers[picked];
     delete loaded[picked];
     if (cfg.vision === picked) cfg.vision = "builtin";
     if (cfg.edit === picked) cfg.edit = "";
-    persist();
+    try {
+      await store();
+    } catch (e) {
+      cfg = before;
+      return status(e.message, true);
+    }
     showProvider(picked);
     fillUse();
-    status("Removed from this browser.");
+    refresh();
+    status(`${label} and its key were removed from your account.`);
   }
 
   // ------------------------------------------------------------------ assistant (step 2)
@@ -183,7 +209,8 @@ const AI = (() => {
     const vis = payload("vision"), edit = payload("edit");
     $("aiBadge").textContent = vis || edit ? prov((vis || edit).provider).label.split(" ")[0] : "Built-in";
     $("aiBadge").classList.toggle("on", !!(vis || edit));
-    $("aiUsing").textContent = usingText("vision");
+    $("aiUsing").innerHTML = vis ? esc(usingText("vision"))
+      : `${esc(usingText("vision"))} <a href="#" data-ai-open>Set up your own AI service</a> for advice from an AI model.`;
     $("aiReviewUsing").textContent = usingText("vision");
     $("btnAiClean").disabled = !edit;
     $("aiCleanNote").innerHTML = edit
@@ -300,11 +327,12 @@ const AI = (() => {
   }
 
   // ------------------------------------------------------------------ init
-  function init(config) {
+  async function init(config) {
     catalog = config.ai || [];
+    try { localStorage.removeItem(OLD_BROWSER_STORE); sessionStorage.removeItem(OLD_BROWSER_STORE); } catch (_) {}
     $("btnAiSettings").onclick = openDialog;
-    $("aiClose").onclick = () => { cfg = load(); $("aiDialog").close(); };
-    $("aiDialog").addEventListener("cancel", () => { cfg = load(); });
+    $("aiClose").onclick = closeDialog;
+    $("aiDialog").addEventListener("cancel", () => { cfg = clone(saved); });
     $("aiProviderPick").onchange = () => { readForm(); showProvider($("aiProviderPick").value); };
     for (const id of ["aiKey", "aiUrl", "aiVisionModel", "aiEditModel"]) $(id).addEventListener("change", readForm);
     $("aiKeyShow").onclick = () => {
@@ -323,6 +351,7 @@ const AI = (() => {
     document.addEventListener("click", (ev) => {
       if (ev.target.closest("[data-ai-open]")) { ev.preventDefault(); openDialog(); }
     });
+    await load().catch(() => {}); // not logged in yet or offline: built-in until it loads
     refresh();
   }
 

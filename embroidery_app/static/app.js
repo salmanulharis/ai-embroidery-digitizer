@@ -11,7 +11,10 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).detail || msg; } catch (_) {}
-    throw new Error(msg);
+    if (res.status === 401 && path !== "/api/auth/login") Auth.sessionEnded();
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
@@ -150,7 +153,7 @@ function restoreForm(v) {
 function saveSession() {
   try {
     if (!state.project) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ meta: state.project, step: currentStep, form: formSnapshot() }));
+    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ uid: Auth.user()?.id, meta: state.project, step: currentStep, form: formSnapshot() }));
   } catch (_) {}
 }
 window.addEventListener("pagehide", saveSession);
@@ -158,7 +161,7 @@ window.addEventListener("pagehide", saveSession);
 async function resumeDesign() {
   let saved = null;
   try { saved = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch (_) {}
-  if (!saved?.meta?.id) return;
+  if (!saved?.meta?.id || saved.uid !== Auth.user()?.id) return;
   try {
     openProject(saved.meta);
     restoreForm(saved.form || {});
@@ -183,6 +186,7 @@ const DENOISE_LEVELS = ["Off", "Low", "Medium", "High"];
 async function init() {
   Tip.init();
   Shapes.init();
+  Auth.init();
   state.config = await api("/api/config");
   const hoop = $("hoop");
   hoop.innerHTML = '<option value="">Custom size</option>' + state.config.hoops.map((h, i) => `<option value="${i}">${esc(h.name)}</option>`).join("");
@@ -194,10 +198,12 @@ async function init() {
   for (let i = 1; i <= 15; i++) nc.insertAdjacentHTML("beforeend", `<option value="${i}">${i}</option>`);
   bindAdjustments();
 
-  AI.init(state.config);
   buildStitchForm();
   bindUpload();
   bindCanvas();
+  await Auth.start(state.config); // the sign-in screen until someone is signed in
+  document.body.classList.remove("booting", "signed-out");
+  await AI.init(state.config); // this account's AI settings
   history.replaceState({ step: 1 }, "");
   await resumeDesign();
 }
@@ -1124,4 +1130,7 @@ function togglePlay() {
   tick();
 }
 
-init().catch((e) => toast("Failed to load: " + e.message));
+init().catch((e) => {
+  document.body.classList.remove("booting");
+  toast("Failed to load: " + e.message);
+});

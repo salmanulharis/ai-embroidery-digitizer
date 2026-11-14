@@ -82,8 +82,8 @@ const HELP = {
   },
   ai_keys: {
     t: "Your API keys",
-    what: "AI services need a key from your own account with them. The key stays in this browser and is sent only with AI requests - the server uses it for that request and never saves it.",
-    why: "You stay in control of costs and can remove the key anytime.",
+    what: "AI services need a key from your own account with them. It is saved with your account here, encrypted, and used only for your own requests - nobody else can see or use it, and it is never shown again (only its last four characters).",
+    why: "You stay in control of costs and can remove the key anytime with Remove this key.",
     eg: "Google Gemini has a free tier - a good place to start.",
   },
   ai_vision_use: {
@@ -103,10 +103,6 @@ const HELP = {
     t: "Model",
     what: "Which of the service's AI models to use. “Automatic” picks a suitable current model for you.",
     why: "Press “Connect & load models” to see what your account offers. Bigger models give better results but cost more.",
-  },
-  ai_remember: {
-    t: "Remember on this device",
-    what: "Keeps your settings and keys after you close the browser. Leave it off on shared computers - then they are forgotten when you close the browser.",
   },
   layers_sew: {
     t: "Stitch this colour",

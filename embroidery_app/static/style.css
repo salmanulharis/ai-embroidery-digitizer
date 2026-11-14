@@ -65,6 +65,9 @@ header { position: sticky; top: 0; z-index: 15; display: flex; align-items: cent
 @media (max-width: 899px) { .steps-nav { width: 100%; } .steps { justify-content: space-between; } }
 /* tablets: icon-only header buttons keep the actions on the title row */
 @media (max-width: 899px) { .hide-md { display: none; } }
+/* below 1500 px Undo / Redo / Pin show their icons only, so the header keeps one row with the account button */
+@media (max-width: 1499px) { .hide-lg { display: none; } }
+@media (max-width: 560px) { .hdr-actions button { padding-left: 9px; padding-right: 9px; } }
 /* phones: the header scrolls away instead of covering a fifth of the screen; the title
    gives way to the edit buttons once a design is open */
 @media (max-width: 560px) {
@@ -419,3 +422,64 @@ body.dragging-colour tr.drop-ok td { background: var(--accent-soft); }
   box-shadow: 0 10px 30px rgba(0,0,0,.3); font-size: var(--text-md); white-space: nowrap; }
 .drag-ghost.ok { border-color: var(--accent); }
 .drag-ghost i { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); vertical-align: -3px; margin: 0 3px; }
+
+/* ------------------------------------------------------------------ accounts: sign in, account menu, users */
+/* nothing shows until the sign-in state is known; signed out = only the sign-in card */
+body.booting > *:not(script) { visibility: hidden; }
+.login-view { display: none; }
+body.signed-out > header, body.signed-out > main, body.signed-out > footer { display: none; }
+body.signed-out .login-view { display: flex; min-height: 100vh; min-height: 100dvh; align-items: center; justify-content: center; padding: var(--gutter); }
+.login-card { width: min(400px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 28px 28px 20px; }
+.login-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--text-base); margin-bottom: 18px; }
+.login-card h1 { font-size: 22px; margin: 0 0 4px; }
+.login-card > p { margin: 0 0 16px; }
+.login-card label.check { margin: 4px 0 8px; color: var(--text); }
+.login-card button.primary { margin-top: 6px; min-height: 44px; }
+.login-error { margin: 0 0 14px; padding: 9px 12px; border-radius: var(--radius-sm); font-size: var(--text-md);
+  background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
+.login-foot { margin: 14px 0 0; text-align: center; }
+
+.user-menu { position: relative; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: var(--text-sm); }
+.user-email { display: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 1700px) { .user-email { display: inline; } } /* else the initial only: the header stays one row */
+.user-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 25; min-width: 230px; display: flex; flex-direction: column; gap: 2px;
+  padding: 8px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px rgba(0, 0, 0, .18); }
+.user-pop.hidden { display: none; }
+.user-pop button { justify-content: flex-start; border-color: transparent; }
+.user-pop button:hover:not(:disabled) { background: var(--raised); border-color: transparent; }
+.user-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 6px 8px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line); word-break: break-all; }
+
+/* the users page replaces the design steps while it is open */
+body.users-open #step1, body.users-open #step2, body.users-open #step3, body.users-open .steps-nav, body.users-open #editActions { display: none !important; }
+body.users-open #usersView { display: block !important; }
+.users-head { align-items: flex-start; margin-bottom: 14px; }
+.users-head h2 { margin: 0; }
+.users-head p { margin: 2px 0 0; }
+table.users { width: 100%; border-collapse: collapse; font-size: var(--text-md); }
+table.users th, table.users td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+table.users th { color: var(--muted); font-weight: 500; background: var(--raised); }
+table.users tr:last-child td { border-bottom: none; }
+table.users tr.off td:first-child b { color: var(--muted); }
+.user-actions { text-align: right; white-space: nowrap; }
+.user-actions button { margin-left: 4px; }
+.status { font-weight: 600; font-size: var(--text-sm); }
+button.danger { color: var(--danger); }
+button.danger:hover:not(:disabled) { border-color: var(--danger); }
+dialog.form-dialog { border: 1px solid var(--line); border-radius: var(--radius); padding: 0; background: var(--card); color: var(--text);
+  width: min(480px, calc(100vw - 24px)); box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+dialog.form-dialog::backdrop { background: rgba(10, 14, 22, .5); backdrop-filter: blur(2px); }
+dialog.form-dialog input[readonly] { opacity: .8; }
+@media (max-width: 760px) {
+  table.users, table.users tbody { display: block; }
+  table.users tr:first-child { display: none; }
+  table.users tr { display: grid; gap: 6px; padding: 12px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  table.users td { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0; border: none; }
+  table.users td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: var(--text-sm); }
+  .user-actions { justify-content: flex-start !important; flex-wrap: wrap; white-space: normal; padding-top: 6px !important; }
+  .user-actions button { margin: 0; }
+  .tableWrap:has(table.users) { border: none; overflow: visible; }
+}

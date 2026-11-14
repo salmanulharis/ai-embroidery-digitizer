@@ -7,7 +7,24 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="booting">
+<!-- LOGIN (no sign-up: accounts are created by the Super Admin) -->
+<section id="loginView" class="login-view" aria-labelledby="loginTitle">
+  <form class="login-card" id="loginForm" novalidate>
+    <div class="login-brand"><span class="logo" aria-hidden="true">&#10045;</span> Embroidery Digitizer</div>
+    <h1 id="loginTitle">Sign in</h1>
+    <p class="muted small" id="loginNote">Use the email and password from your administrator.</p>
+    <div class="login-error hidden" id="loginError" role="alert"></div>
+    <label><span class="lbl">Email</span><input type="email" id="loginEmail" autocomplete="username" required spellcheck="false" inputmode="email"></label>
+    <label><span class="lbl">Password</span>
+      <span class="row nowrap-row"><input type="password" id="loginPassword" autocomplete="current-password" required>
+      <button type="button" class="ghost small" id="loginShow" aria-pressed="false" aria-label="Show password">Show</button></span></label>
+    <label class="check"><input type="checkbox" id="loginRemember"> <span>Keep me signed in for <span id="loginDays">30</span> days</span></label>
+    <button type="submit" class="primary" id="loginSubmit">Sign in</button>
+    <p class="muted small login-foot">Forgot your password? Ask your administrator to reset it.</p>
+  </form>
+</section>
+
 <header>
   <h1><span class="logo" aria-hidden="true">&#10045;</span> <span class="app-title">Embroidery Digitizer</span></h1>
   <nav aria-label="Steps" class="steps-nav">
@@ -21,13 +38,23 @@
   <div class="hdr-actions">
     <button type="button" class="ghost hidden" id="btnNew" title="Upload another file" aria-label="New design">&#10010;<span class="hide-md"> New design</span></button>
     <span class="edit-actions hidden" id="editActions">
-      <button type="button" class="ghost" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;<span class="hide-md"> Undo</span></button>
-      <button type="button" class="ghost" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo">&#8631;<span class="hide-md"> Redo</span></button>
+      <button type="button" class="ghost" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;<span class="hide-lg"> Undo</span></button>
+      <button type="button" class="ghost" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo">&#8631;<span class="hide-lg"> Redo</span></button>
       <i data-help="undo"></i>
-      <button type="button" class="ghost" id="btnPin" aria-pressed="false" aria-label="Pin preview" title="Keep the preview in view while you scroll the settings">&#128204;<span class="hide-md"> Pin preview</span></button>
+      <button type="button" class="ghost" id="btnPin" aria-pressed="false" aria-label="Pin preview" title="Keep the preview in view while you scroll the settings">&#128204;<span class="hide-lg"> Pin preview</span></button>
       <i data-help="pin"></i>
     </span>
     <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
+    <div class="user-menu">
+      <button type="button" class="ghost" id="btnUser" aria-expanded="false" aria-controls="userMenu" aria-label="Account">
+        <span class="avatar" id="userAvatar" aria-hidden="true">?</span><span class="user-email" id="userEmail"></span></button>
+      <div class="user-pop hidden" id="userMenu">
+        <p class="small muted user-pop-head"><span id="userMenuEmail"></span><span class="badge" id="userRole"></span></p>
+        <button type="button" class="ghost" id="btnUsers">&#128101; Manage users</button>
+        <button type="button" class="ghost" id="btnMyPassword">&#128273; Change password</button>
+        <button type="button" class="ghost" id="btnLogout">&#8618; Sign out</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -252,6 +279,23 @@
       <button type="button" id="barDownload">&#8615; Download</button>
     </div>
   </section>
+
+  <!-- USERS (Super Admin only; the server checks the role on every request) -->
+  <section id="usersView" class="panel hidden" aria-labelledby="usersTitle">
+    <div class="card">
+      <div class="row between users-head">
+        <div>
+          <h2 id="usersTitle">Users</h2>
+          <p class="muted small" id="usersCount"></p>
+        </div>
+        <div class="row">
+          <button type="button" class="ghost" id="btnUsersBack">&larr; Back to the app</button>
+          <button type="button" class="primary" id="btnAddUser">&#10010; Add user</button>
+        </div>
+      </div>
+      <div class="tableWrap"><table class="users" id="usersTable"></table></div>
+    </div>
+  </section>
 </main>
 
 <footer class="site-foot">
@@ -266,7 +310,8 @@
       <button type="button" class="ghost" id="aiClose" aria-label="Close">&times;</button>
     </div>
     <p class="small muted">Optional. Without AI the built-in smart processing is used - everything works without a key.
-      Your key is kept in this browser and sent only with AI requests; the server never stores it. <i data-help="ai_keys"></i></p>
+      These settings belong to your account: your key is saved encrypted on the server, used only for your requests
+      and never shown again. <i data-help="ai_keys"></i></p>
 
     <label><span class="lbl">Use for advice &amp; stitch checks <i data-help="ai_vision_use"></i></span>
       <select id="aiUseVision"></select></label>
@@ -291,10 +336,50 @@
       <select id="aiVisionModel"></select></label>
     <label id="aiEditModelRow"><span class="lbl">Model for clean-up <i data-help="ai_model"></i></span>
       <select id="aiEditModel"></select></label>
-    <label class="check"><input type="checkbox" id="aiRemember"> Remember on this device <i data-help="ai_remember"></i></label>
     <div class="row end">
       <button type="button" class="ghost" id="aiForget">Remove this key</button>
       <button type="button" class="primary" id="aiSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="userDialog" class="form-dialog" aria-labelledby="userDialogTitle">
+  <form method="dialog" class="ai-dialog" id="userForm" novalidate>
+    <div class="row between">
+      <h2 id="userDialogTitle">Add user</h2>
+      <button type="button" class="ghost" data-close aria-label="Close">&times;</button>
+    </div>
+    <p class="small muted" id="userDialogNote"></p>
+    <label id="userEmailRow"><span class="lbl">Email</span><input type="email" id="userFormEmail" autocomplete="off" spellcheck="false" inputmode="email"></label>
+    <div id="userPasswordRow">
+      <label><span class="lbl">Password</span>
+        <span class="row nowrap-row"><input type="text" id="userFormPassword" autocomplete="new-password" spellcheck="false" minlength="10">
+        <button type="button" class="ghost small" id="userGenerate">Generate</button>
+        <button type="button" class="ghost small" id="userCopy">Copy</button></span></label>
+      <p class="small muted">At least 10 characters. Share it with the user privately - it is not shown again.</p>
+    </div>
+    <p class="small" id="userDialogStatus" role="status"></p>
+    <div class="row end">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary" id="userSave">Create user</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="pwDialog" class="form-dialog" aria-labelledby="pwDialogTitle">
+  <form method="dialog" class="ai-dialog" id="pwForm" novalidate>
+    <div class="row between">
+      <h2 id="pwDialogTitle">Change your password</h2>
+      <button type="button" class="ghost" data-close aria-label="Close">&times;</button>
+    </div>
+    <label><span class="lbl">Current password</span><input type="password" id="pwCurrent" autocomplete="current-password"></label>
+    <label><span class="lbl">New password</span><input type="password" id="pwNew" autocomplete="new-password" minlength="10"></label>
+    <label><span class="lbl">Repeat the new password</span><input type="password" id="pwRepeat" autocomplete="new-password"></label>
+    <p class="small muted">At least 10 characters. You stay signed in here; other devices are signed out.</p>
+    <p class="small" id="pwStatus" role="status"></p>
+    <div class="row end">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary">Change password</button>
     </div>
   </form>
 </dialog>
@@ -305,6 +390,7 @@
 <div id="srStatus" class="visually-hidden" role="status" aria-live="polite"></div>
 <div id="srAlert" class="visually-hidden" role="alert"></div>
 <script src="/static/help.js"></script>
+<script src="/static/auth.js"></script>
 <script src="/static/shapes.js"></script>
 <script src="/static/ai.js"></script>
 <script src="/static/app.js"></script>
