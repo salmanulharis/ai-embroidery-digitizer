@@ -124,6 +124,31 @@ def hand_stitch(geom, start: Pt, step: float) -> Pieces:
 
 # --------------------------------------------------------------------------- motif fill
 
+def warp_3d(pieces: Pieces, poly: Polygon) -> Pieces:
+    """3D warp (Wilcom, with Motif Fill): the stitching bulges like a sphere seen from
+    the front - points move outwards from the shape's middle on a fisheye curve, so the
+    motifs are large in the middle and squeezed towards the edges. Clipped back to the
+    shape afterwards."""
+    c = poly.representative_point() if not poly.contains(poly.centroid) else poly.centroid
+    radius = max(Point(c).distance(Point(p)) for p in poly.exterior.coords) or 1.0
+    out: Pieces = []
+    inside = poly.buffer(-0.25)
+    for piece in pieces:
+        warped = []
+        for x, y in piece:
+            dx, dy = x - c.x, y - c.y
+            r = math.hypot(dx, dy)
+            if r < 1e-9:
+                warped.append((x, y))
+                continue
+            k = radius * math.sin(min(r / radius, 1.0) * math.pi / 2) / r  # r -> R sin(pi r / 2R)
+            warped.append((c.x + dx * k, c.y + dy * k))
+        cut = LineString(warped).intersection(inside) if len(warped) >= 2 else None
+        if cut is not None:
+            out += [list(g.coords) for g in getattr(cut, "geoms", [cut]) if isinstance(g, LineString) and g.length > 1.0]
+    return out
+
+
 def motif_fill(poly: Polygon, angle: float, size: float, name: str, start: Pt, paired: bool = False) -> Pieces:
     """Rows of motifs across the shape, ``size`` apart, clipped to it."""
     rp = rotate(poly, -angle, origin=(0, 0))
@@ -245,6 +270,8 @@ def _path_style(fn):
 def _sew_motif_fill(paired: bool):
     def generate(item: "_Item", angle: float, params: StitchParams, start: Pt) -> list[Run]:
         pieces = motif_fill(item.geom, angle, params.motif_size_mm, params.motif, start, paired=paired)
+        if params.motif_warp:
+            pieces = warp_3d(pieces, item.geom)
         return [Run("running", p, item.oid) for p in pieces if len(p) >= 2]
     return generate
 

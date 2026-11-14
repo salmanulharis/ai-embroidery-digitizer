@@ -128,7 +128,7 @@ def sew_fill(item: "_Item", angle: float, params: StitchParams, start: Pt) -> li
     cur = _after(runs, start)
     offsets = FILL_PATTERN_OFFSETS.get(params.fill_pattern, gen.TATAMI_OFFSETS)
     runs += _runs("fill", gen.tatami_fill(poly, angle, params.fill_spacing_mm, params.fill_stitch_length_mm, cur,
-                                          params.max_stitch_mm, offsets=offsets), item.oid)
+                                          params.max_stitch_mm, offsets=offsets, edge_travel=params.trapunto), item.oid)
     return runs
 
 

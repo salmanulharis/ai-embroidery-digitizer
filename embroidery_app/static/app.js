@@ -485,6 +485,8 @@ const CHECKS = [
   ["tie_stitches", "Lock stitches at every thread cut"],
   ["optimize_order", "Smart sewing order (fewer, shorter jumps)"],
   ["knockdown", "Knockdown under small details (towels, fleece)"],
+  ["trapunto", "Trapunto: fills travel along their edges only"],
+  ["motif_warp", "3D warp for motif fills"],
   ["photo_stitch", "Photo stitch: the whole picture as a photo texture"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];

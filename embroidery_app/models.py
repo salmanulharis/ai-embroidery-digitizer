@@ -409,6 +409,8 @@ class StitchParams:
     pattern: str = "diamonds"  # pattern fill tile: diamonds | squares | bricks | scales
     pattern_size_mm: float = 8.0
     jagged_mm: float = 1.5  # jagged fill: how far the row ends wander
+    motif_warp: bool = False  # 3D warp: motif fills bulge like a sphere
+    trapunto: bool = False  # fills travel only along their outline (open fills: no visible travel)
     knockdown: bool = False  # open fill under small details on pile fabric (towel, fleece)
     photo_stitch: bool = False  # sew the whole picture as photo rows in one thread (stitch/photo.py)
     photo_row_mm: float = 1.0  # gap between photo stitch rows

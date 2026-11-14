@@ -471,7 +471,7 @@ def _blend(poly, angle, p, start, reverse=False):
     """One colour of a blend: dense at one side, nearly gone at the other. The other
     colour is the same shape shaded the opposite way, so together they cover it."""
     return gen.tatami_fill(poly, angle, p.fill_spacing_mm, p.fill_stitch_length_mm, start, p.max_stitch_mm,
-                           row_ys=blend_rows(p.fill_spacing_mm, reverse=reverse))
+                           row_ys=blend_rows(p.fill_spacing_mm, reverse=reverse), edge_travel=p.trapunto)
 
 
 def _sew_blend_partner(item, angle, params, start):
@@ -513,7 +513,7 @@ def _open(fill):
 
 def _shaded(poly, angle, p, start):
     return gen.tatami_fill(poly, angle, p.fill_spacing_mm, p.fill_stitch_length_mm, start, p.max_stitch_mm,
-                           row_ys=shaded_rows(p.fill_spacing_mm))
+                           row_ys=shaded_rows(p.fill_spacing_mm), edge_travel=p.trapunto)
 
 
 FILL_STYLES = {

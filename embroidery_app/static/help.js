@@ -373,6 +373,18 @@ const HELP = {
     why: "Closer rows show finer detail but take more stitches; wider rows give a bolder, graphic look.",
     eg: "1 mm for most photos; 0.8 mm for small, detailed ones; 1.5 mm for a bold look.",
   },
+  trapunto: {
+    t: "Trapunto",
+    what: "Inside a fill, the needle moves from one group of rows to the next only along the shape's edge, never straight across the inside.",
+    why: "In light, open fills (shaded and blend fills, a thin fill) a straight travel line shows through the rows; along the edge it is hidden.",
+    eg: "Turn it on for shaded, blend or light fills. Standard dense fills hide their travel anyway.",
+  },
+  motif_warp: {
+    t: "3D warp",
+    what: "Motif fills bulge like a sphere seen from the front: the motifs are large in the middle of the shape and squeezed towards its edges.",
+    why: "Gives a round, three-dimensional look to balls, bubbles and badges.",
+    eg: "Use it on round or oval shapes with a motif fill.",
+  },
   fill_underlay: {
     t: "Foundation under fills",
     what: "Stitches sewn first, under each filled area, to hold the fabric still. Edge run + lattice is a run just inside the outline plus an open grid; the double lattice adds a second, crossing grid.",

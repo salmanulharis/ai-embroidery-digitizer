@@ -8,10 +8,11 @@ from __future__ import annotations
 import math
 from typing import Callable
 
+import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
-from ..geometry import Pt, dist, resample_line, ring_walk, segment_inside, subdivide
+from ..geometry import Pt, dist, resample_line, ring_walk, rotate_geom, segment_inside, subdivide
 from .rows import Chain, best_satin_angle, build_chains, chain_endpoints, scan_rows, to_rotated, unrotate
 
 Pieces = list[list[Pt]]
@@ -28,7 +29,10 @@ def _sew_chains(
     start: Pt,
     row_points: Callable[[Chain, bool, bool], list[Pt]],
     travel_step: float,
+    edge_travel: bool = False,
 ) -> Pieces:
+    """``edge_travel`` (trapunto): moves between row groups only along the outline,
+    never straight across the inside, where an open fill would show them."""
     pieces: Pieces = []
     current: list[Pt] = []
     pos = start
@@ -68,7 +72,7 @@ def _sew_chains(
                     walk_len = sum(dist(p, q) for p, q in zip(walk, walk[1:]))
                     if walk_len <= MAX_TRAVEL_MM:
                         options.append((visible(walk) + 0.02 * walk_len, walk))
-                if straight <= MAX_TRAVEL_MM and segment_inside(poly, a, b):
+                if not edge_travel and straight <= MAX_TRAVEL_MM and segment_inside(poly, a, b):
                     line = [a, *subdivide(a, b, travel_step)]
                     options.append((visible(line) + 0.02 * straight, line))
                 options.sort(key=lambda o: o[0])
@@ -116,6 +120,7 @@ def tatami_fill(
     row_ys=None,
     row_ends=None,
     row_xs=None,
+    edge_travel: bool = False,
 ) -> Pieces:
     """Tatami: rows of running stitches. ``offsets`` is the row-by-row shift of the
     needle points (a share of the stitch length): it sets the fill's texture.
@@ -128,10 +133,13 @@ def tatami_fill(
     ys, rows = scan_rows(poly, angle, spacing, row_ys=row_ys)
     chains = build_chains(ys, rows, min_overlap=min(0.2, spacing / 2))
     edge_margin = min(0.6, stitch_len * 0.3)
+    inside_rot = rotate_geom(poly, -angle).buffer(0.05)  # rows are built in the rotated frame
+    shapely.prepare(inside_rot)
 
     def row_points(chain: Chain, reverse: bool, start_left: bool) -> list[Pt]:
         out: list[Pt] = []
         left_to_right = start_left
+        prev: tuple[float, float] | None = None  # the previous row's extent
         for y, (x0, x1) in zip(*_oriented_rows(chain, reverse)):
             if row_ends is not None:
                 x0, x1 = row_ends(y, x0, x1)
@@ -149,13 +157,24 @@ def tatami_fill(
             xs = [x0, *grid, x1] if left_to_right else [x1, *grid[::-1], x0]
             row = [(xx, y) for xx in xs]
             if out:
+                if abs(out[-1][0] - row[0][0]) > 3 * spacing and not inside_rot.contains(LineString([out[-1], row[0]])):
+                    # rows of different length (a notch): a straight join would cut across
+                    # the notch, outside the shape. Travel along whichever row reaches both
+                    # ends: back along the long row just sewn, or along the long row to come
+                    # (which is then sewn over it).
+                    if prev is not None and prev[0] - 1e-6 <= row[0][0] <= prev[1] + 1e-6:
+                        corner = (row[0][0], out[-1][1])
+                    else:
+                        corner = (out[-1][0], y)
+                    out.extend(subdivide(out[-1], corner, stitch_len))
                 out.extend(subdivide(out[-1], row[0], max_stitch))
                 row = row[1:]
+            prev = (x0, x1)
             out.extend(row)
             left_to_right = not left_to_right
         return out
 
-    return _sew_chains(poly, chains, angle, start, row_points, travel_step=min(2.5, stitch_len))
+    return _sew_chains(poly, chains, angle, start, row_points, travel_step=min(2.5, stitch_len), edge_travel=edge_travel)
 
 
 # --------------------------------------------------------------------------- satin

@@ -137,6 +137,8 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    maze (right-angled meander) and cross stitch (crosses on a grid, each diagonal line sewn there and back). Tatami
    fills get a texture choice: standard, half-step brick, diagonal twill or random. All use fixed seeds: the same shape
    always gets the same stitches.
+   Options: *3D warp* bulges motif fills like a sphere (fisheye from the shape's middle); *Trapunto* makes fills
+   travel between row groups only along their outline, so open fills show no travel lines.
 0. **Decorative outlines and borders** (stitch style for a colour or a shape): double run, backstitch,
    stemstitch, sculpture run, zigzag border and E-stitch border. They are sewn along a line, or around a filled
    shape's outline and holes instead of filling it. Sharp corners stay needle points; spacing stays even on
