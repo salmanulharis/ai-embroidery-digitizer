@@ -18,7 +18,7 @@
 
 /* ------------------------------------------------------------------ base */
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--hdr) + 8px); } /* focused fields never hide under the sticky header */
 body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
 h1 { font-size: 17px; margin: 0; display: flex; align-items: center; gap: 8px; letter-spacing: -.01em; }
 h2 { font-size: 17px; margin: 0 0 8px; letter-spacing: -.01em; }
@@ -269,14 +269,17 @@ dialog#aiDialog::backdrop { background: rgba(10,14,22,.5); backdrop-filter: blur
 .sp-bold select:disabled { opacity: .5; }
 @media (max-width: 700px) { .sp-thickgrid { grid-template-columns: 1fr; } }
 .sp-list { margin-top: 8px; }
-.sp-list summary { cursor: pointer; color: var(--muted); }
+.sp-list summary { cursor: pointer; color: var(--muted); padding: 3px 0; } /* 24px+ tap target, keeps the disclosure marker */
 .sp-list select { width: 100%; margin-top: 6px; min-height: 34px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
 .sp-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* ------------------------------------------------------------------ feedback */
-.toast { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: #b3261e; color: #fff; padding: 10px 16px;
-  border-radius: var(--radius-sm); max-width: calc(100vw - 24px); z-index: 40; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.toast { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: #b3261e; color: #fff; padding: 6px 6px 6px 16px;
+  border-radius: var(--radius-sm); max-width: calc(100vw - 24px); z-index: 40; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  display: flex; align-items: center; gap: 10px; }
 .toast.info { background: #1d2330; }
+.toast-close { flex: none; width: 32px; min-height: 32px; padding: 0; border: none; background: transparent; color: inherit; font-size: 20px; line-height: 1; }
+.toast-close:hover:not(:disabled) { background: rgba(255,255,255,.15); }
 .busy { position: fixed; inset: 0; background: rgba(10,14,22,.4); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; gap: 12px; color: #fff; z-index: 35; font-size: 15px; padding: 20px; text-align: center; }
 .spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }

@@ -17,21 +17,54 @@ async function api(path, opts = {}) {
 }
 const json = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
+// Screen readers hear status politely and errors at once; the text is set a frame after
+// clearing it so the same message twice is announced twice.
+function announce(msg, urgent = false) {
+  const region = $(urgent ? "srAlert" : "srStatus");
+  region.textContent = "";
+  requestAnimationFrame(() => (region.textContent = msg));
+}
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Notes close after 6 s (not while the pointer or focus is on them); errors stay until closed.
+const INFO_TOAST_MS = 6000;
+function hideToast() {
+  clearTimeout(toast.timer);
+  $("toast").classList.add("hidden");
+}
 function toast(msg, info = false) {
   const t = $("toast");
-  t.textContent = msg;
+  $("toastText").textContent = msg;
   t.className = "toast" + (info ? " info" : "");
+  t.dataset.info = info ? "1" : "";
+  announce(msg, !info);
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.add("hidden"), info ? 2500 : 6000);
+  if (info) toast.timer = setTimeout(hideToast, INFO_TOAST_MS);
 }
+(() => {
+  const t = $("toast");
+  const pause = () => clearTimeout(toast.timer);
+  const resume = () => { if (t.dataset.info && !t.matches(":hover, :focus-within")) toast.timer = setTimeout(hideToast, INFO_TOAST_MS); };
+  t.addEventListener("mouseenter", pause);
+  t.addEventListener("focusin", pause);
+  t.addEventListener("mouseleave", resume);
+  t.addEventListener("focusout", resume);
+  $("toastClose").onclick = hideToast;
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !t.classList.contains("hidden")) hideToast(); });
+})();
 async function busy(text, fn) {
   $("busyText").textContent = text;
   $("busy").classList.remove("hidden");
+  document.querySelector("main").setAttribute("aria-busy", "true");
+  announce(text);
   Tip.hide();
-  try { return await fn(); } catch (e) { toast(e.message); throw e; } finally { $("busy").classList.add("hidden"); }
+  try { return await fn(); } catch (e) { toast(e.message); throw e; } finally {
+    $("busy").classList.add("hidden");
+    document.querySelector("main").removeAttribute("aria-busy");
+  }
 }
 function showStep(n) {
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   $("editActions").classList.toggle("hidden", n < 2);
   requestAnimationFrame(measureHeader);
   ["step1", "step2", "step3"].forEach((id, i) => $(id).classList.toggle("hidden", (n >= 3 ? 3 : n) !== i + 1));
@@ -242,9 +275,10 @@ const styleLabel = (v, label) => {
 
 function renderLayers() {
   const L = state.design.layers;
-  const th = (label, key) => `<th scope="col">${label} ${Tip.icon(key)}</th>`;
+  // help only where the heading alone does not explain the column (fewer tab stops)
+  const th = (label, key) => `<th scope="col">${label}${key ? " " + Tip.icon(key) : ""}</th>`;
   $("layers").innerHTML =
-    `<tr><th scope="col" class="grip-col"><span class="visually-hidden">Drag to merge</span>${Tip.icon("layers_drag")}</th>${th("Stitch", "layers_sew")}${th("Thread", "layers_thread")}${th("Name", "layers_name")}${th("Area", "layers_area")}` +
+    `<tr><th scope="col" class="grip-col"><span class="visually-hidden">Drag to merge</span>${Tip.icon("layers_drag")}</th>${th("Stitch", "layers_sew")}${th("Thread", "layers_thread")}${th("Name")}${th("Area", "layers_area")}` +
     `${th("Stitch style", "layers_stitch")}${th("Direction", "layers_angle")}${th("Shapes", "layers_shapes")}${th("Order", "layers_order")}${th("Merge into", "layers_merge")}</tr>` +
     L.map((l, i) => {
       const n = esc(l.name);
@@ -636,11 +670,11 @@ function renderStats() {
   const c = state.preview.comparison;
   const s = c && !c.reverted ? (state.variant === "original" ? c.original : c.optimized) : state.preview.stats;
   const items = [
-    [s.stitches.toLocaleString(), "stitches", "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)", "stats_size"],
-    [s.colors, "colours", "stats_colours"], [s.trims, "thread cuts", "stats_trims"], [s.color_changes, "colour changes", "stats_changes"],
-    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used", "stats_thread"],
+    [s.stitches.toLocaleString(), "stitches", "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)"],
+    [s.colors, "colours"], [s.trims, "thread cuts", "stats_trims"], [s.color_changes, "colour changes"],
+    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used"],
   ];
-  $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l} ${Tip.icon(k)}</span></div>`).join("");
+  $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
   $("warnings3").innerHTML = state.preview.warnings.map((w) => `<div>${esc(w)}</div>`).join("");
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span></div>`).join("");

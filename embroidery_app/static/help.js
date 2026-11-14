@@ -119,11 +119,6 @@ const HELP = {
     what: "Click the swatch to pick the exact thread colour.",
     why: "Changes the preview and the colours saved in PES/VP3 files. Your machine uses the threads you load.",
   },
-  layers_name: {
-    t: "Name",
-    what: "A label for this thread, shown on the worksheet for the machine operator.",
-    eg: "“Navy 1966” to match your thread brand's number.",
-  },
   layers_area: {
     t: "Area",
     what: "How much of the design this colour covers.",
@@ -556,12 +551,8 @@ const HELP = {
     why: "Check for yourself that the design looks the same with fewer stitches.",
   },
   stats_stitches: { t: "Stitches", what: "Total number of needle stitches.", why: "More stitches = longer sewing and stiffer embroidery." },
-  stats_size: { t: "Size", what: "Final width × height of the stitched design in millimetres." },
-  stats_colours: { t: "Colours", what: "Number of different threads used." },
   stats_trims: { t: "Thread cuts", what: "How often the machine cuts the thread to move to another area.", why: "Each cut adds a few seconds of sewing time." },
-  stats_changes: { t: "Colour changes", what: "How often the machine switches to another thread." },
   stats_time: { t: "Estimated sewing time", what: "A rough estimate including thread cuts and colour changes.", why: "Actual time depends on your machine speed." },
-  stats_thread: { t: "Thread used", what: "Approximate length of top thread needed." },
   sequence: {
     t: "Thread order",
     what: "The order in which the machine sews the colours.",
@@ -614,6 +605,26 @@ const Tip = (() => {
     current = null;
   }
 
+  // A "?" button inside a <label> would become the label's control: the field it labels
+  // would have no name, and clicking the label text would open the help. Point each such
+  // label at its field, and name the field with the label text alone.
+  let fieldId = 0;
+  function labelFields(root) {
+    const labels = root.matches?.("label") ? [root] : [...(root.querySelectorAll?.("label") || [])];
+    labels.forEach((label) => {
+      if (label.htmlFor || !label.querySelector(".help")) return;
+      const field = [...label.querySelectorAll("input, select, textarea")].find((f) => f.type !== "hidden");
+      if (!field) return;
+      if (!field.id) field.id = `field-${++fieldId}`;
+      label.htmlFor = field.id;
+      if (field.hasAttribute("aria-label") || field.hasAttribute("aria-labelledby")) return;
+      const text = label.cloneNode(true);
+      text.querySelectorAll(".help, output, input, select, textarea, .hint, a").forEach((n) => n.remove());
+      const name = text.textContent.replace(/\s+/g, " ").trim();
+      if (name) field.setAttribute("aria-label", name);
+    });
+  }
+
   function init() {
     // replace <i data-help="key"> placeholders in static markup
     document.querySelectorAll("i[data-help]").forEach((i) => {
@@ -623,6 +634,10 @@ const Tip = (() => {
       if (i.classList.contains("hidden")) wrap.firstChild && wrap.firstChild.classList.add("hidden");
       i.replaceWith(...wrap.childNodes);
     });
+    labelFields(document);
+    // forms built later (stitch settings, shape panel, AI settings) get the same treatment
+    new MutationObserver((changes) => changes.forEach((c) => c.addedNodes.forEach((n) => n.nodeType === 1 && labelFields(n))))
+      .observe(document.body, { childList: true, subtree: true });
     document.addEventListener("mouseover", (ev) => { const b = ev.target.closest(".help"); if (b) show(b); });
     document.addEventListener("mouseout", (ev) => { if (ev.target.closest(".help") && current && !current.matches(":focus")) hide(); });
     document.addEventListener("focusin", (ev) => { const b = ev.target.closest(".help"); if (b) show(b); });

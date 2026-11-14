@@ -30,7 +30,8 @@
 
 <main>
   <!-- STEP 1 -->
-  <section id="step1" class="panel">
+  <section id="step1" class="panel" aria-labelledby="step1Title">
+    <h2 id="step1Title" class="visually-hidden">Upload your design</h2>
     <label class="drop" id="drop">
       <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg,.ai,.pdf" hidden>
       <span class="drop-icon" aria-hidden="true">&#8682;</span>
@@ -183,6 +184,7 @@
         <button class="ghost" id="btnBack">&larr; Back to design</button>
       </aside>
       <div class="card">
+        <h2 class="visually-hidden">Stitch preview and download</h2>
         <div class="preview-zone">
         <div class="toolbar">
           <div class="seg" id="viewMode" role="group" aria-label="Preview style">
@@ -275,8 +277,10 @@
 </dialog>
 
 <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
-<div id="toast" class="toast hidden" role="alert"></div>
-<div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">Working…</span></div>
+<div id="toast" class="toast hidden"><span id="toastText"></span><button type="button" class="toast-close" id="toastClose" aria-label="Close message">&times;</button></div>
+<div id="busy" class="busy hidden"><div class="spinner" aria-hidden="true"></div><span id="busyText">Working…</span></div>
+<div id="srStatus" class="visually-hidden" role="status" aria-live="polite"></div>
+<div id="srAlert" class="visually-hidden" role="alert"></div>
 <script src="/static/help.js"></script>
 <script src="/static/shapes.js"></script>
 <script src="/static/ai.js"></script>

@@ -107,7 +107,7 @@ const Shapes = (() => {
 
   function selectLayer(index) {
     select(objects.filter((o) => o.layer === index).map((o) => o.id));
-    $("shapePanel").scrollIntoView({ block: "nearest", behavior: "smooth" });
+    $("shapePanel").scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }
 
   // ------------------------------------------------------------------ saving
