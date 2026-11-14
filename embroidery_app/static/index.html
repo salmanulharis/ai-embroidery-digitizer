@@ -9,7 +9,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="logo" aria-hidden="true">&#10045;</span> Embroidery Digitizer</h1>
+  <h1><span class="logo" aria-hidden="true">&#10045;</span> <span class="app-title">Embroidery Digitizer</span></h1>
   <nav aria-label="Steps" class="steps-nav">
     <ol class="steps" id="steps">
       <li data-step="1" class="active"><button type="button" data-goto="1" aria-label="Upload" aria-current="step"><span>Upload</span></button></li>
@@ -19,12 +19,12 @@
     </ol>
   </nav>
   <div class="hdr-actions">
-    <button type="button" class="ghost hidden" id="btnNew" title="Upload another file" aria-label="New design">&#10010;<span class="hide-sm"> New design</span></button>
+    <button type="button" class="ghost hidden" id="btnNew" title="Upload another file" aria-label="New design">&#10010;<span class="hide-md"> New design</span></button>
     <span class="edit-actions hidden" id="editActions">
-      <button type="button" class="ghost" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;<span class="hide-sm"> Undo</span></button>
-      <button type="button" class="ghost" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo">&#8631;<span class="hide-sm"> Redo</span></button>
+      <button type="button" class="ghost" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;<span class="hide-md"> Undo</span></button>
+      <button type="button" class="ghost" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo">&#8631;<span class="hide-md"> Redo</span></button>
       <i data-help="undo"></i>
-      <button type="button" class="ghost" id="btnPin" aria-pressed="false" title="Keep the preview in view while you scroll the settings">&#128204;<span class="hide-sm"> Pin preview</span></button>
+      <button type="button" class="ghost" id="btnPin" aria-pressed="false" aria-label="Pin preview" title="Keep the preview in view while you scroll the settings">&#128204;<span class="hide-md"> Pin preview</span></button>
       <i data-help="pin"></i>
     </span>
     <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
@@ -209,6 +209,10 @@
           <label class="check"><input type="checkbox" id="showFabric"> Dark fabric</label>
           <button type="button" class="ghost to-download" id="btnToDownload">&#8615; Download</button>
         </div>
+        <div class="stale-note hidden" id="staleNote">
+          <span>Settings changed – the preview shows the previous stitches.</span>
+          <button type="button" class="small primary" id="btnStaleStitch">Create stitches</button>
+        </div>
         <div class="canvasWrap"><canvas id="canvas" aria-label="Stitch preview - scroll to zoom, drag to move"></canvas><div id="legend" class="legend"></div></div>
         <div class="player">
           <button id="btnPlay" aria-label="Play sewing simulation">&#9654;</button>
@@ -241,6 +245,11 @@
           </div>
         </div>
       </div>
+    </div>
+    <div class="mobile-bar" id="mobileBar" role="toolbar" aria-label="Stitch actions">
+      <button type="button" id="barSettings">&#9881; Settings</button>
+      <button type="button" class="primary" id="barStitch">Create stitches</button>
+      <button type="button" id="barDownload">&#8615; Download</button>
     </div>
   </section>
 </main>

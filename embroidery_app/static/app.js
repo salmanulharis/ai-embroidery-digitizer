@@ -413,14 +413,14 @@ function renderLayers() {
         <td class="grip-col"><span class="grip" data-drag-layer="${l.index}" title="Drag onto another colour to merge ${n} into it" role="img" aria-label="Drag ${n} onto another colour to merge">⠿</span></td>
         <td><input type="checkbox" data-k="enabled" ${l.enabled ? "checked" : ""} aria-label="Stitch ${n}"></td>
         <td><input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}"></td>
-        <td><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
-        <td class="small muted">${l.area_mm2} mm²</td>
-        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${styleLabel(v, label)}</option>`).join("")}</select></td>
-        <td><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></td>
-        <td class="small nowrap">${l.objects}${l.customised ? ` <span class="muted">(${l.customised} own)</span>` : ""}
+        <td class="cell-name"><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
+        <td class="small muted" data-label="Area">${l.area_mm2} mm²</td>
+        <td class="cell-wide" data-label="Stitch style"><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${styleLabel(v, label)}</option>`).join("")}</select></td>
+        <td data-label="Direction (empty = automatic)"><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></td>
+        <td class="small nowrap" data-label="Shapes">${l.objects}${l.customised ? ` <span class="muted">(${l.customised} own)</span>` : ""}
           <button type="button" class="ghost small" data-select-layer="${l.index}" ${l.enabled ? "" : "disabled"} aria-label="Select all shapes of ${n}">Select</button></td>
-        <td><button data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="Sew ${n} earlier">↑</button><button data-move="1" ${i === L.length - 1 ? "disabled" : ""} aria-label="Sew ${n} later">↓</button></td>
-        <td><select data-merge aria-label="Merge ${n} into another colour"><option value="">–</option>${L.filter((o) => o.index !== l.index).map((o) => `<option value="${o.index}">${esc(o.name)}</option>`).join("")}</select></td>
+        <td data-label="Order"><button data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="Sew ${n} earlier">↑</button><button data-move="1" ${i === L.length - 1 ? "disabled" : ""} aria-label="Sew ${n} later">↓</button></td>
+        <td data-label="Merge into"><select data-merge aria-label="Merge ${n} into another colour"><option value="">–</option>${L.filter((o) => o.index !== l.index).map((o) => `<option value="${o.index}">${esc(o.name)}</option>`).join("")}</select></td>
       </tr>`;
     }).join("");
 }
@@ -571,7 +571,9 @@ document.addEventListener("keydown", (ev) => {
 
 // Pin preview: the preview stays in view while the settings scroll (remembered per browser).
 function measureHeader() {
-  const h = document.querySelector("header").getBoundingClientRect().height;
+  const header = document.querySelector("header");
+  // on phones the header scrolls away, so nothing has to keep clear of it
+  const h = getComputedStyle(header).position === "sticky" ? header.getBoundingClientRect().height : 0;
   document.documentElement.style.setProperty("--hdr", `${Math.round(h)}px`);
 }
 function setPinned(on) {
@@ -729,9 +731,35 @@ function stitchParams() {
 }
 $("btnStitch").onclick = () => generate();
 
+// After a setting changes, the preview still shows the previous stitches: say so until
+// the stitches are created again.
+function setStale(on) {
+  state.stale = on;
+  $("staleNote").classList.toggle("hidden", !on);
+  ["btnStitch", "barStitch"].forEach((id) => $(id).classList.toggle("attention", on));
+}
+["input", "change"].forEach((type) => $("stitchForm").addEventListener(type, () => {
+  if (!state.preview || state.stale) return;
+  setStale(true);
+  announce("Settings changed. Create stitches to update the preview.");
+}));
+$("btnStaleStitch").onclick = () => generate();
+
+// Phones: a bar at the bottom of the stitch page keeps the settings, sewing and
+// Download one tap away (the settings sit below the preview there).
+$("barSettings").onclick = () => {
+  const side = $("stitchForm").closest("aside");
+  side.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
+  side.querySelector("h2").setAttribute("tabindex", "-1");
+  side.querySelector("h2").focus({ preventScroll: true });
+};
+$("barStitch").onclick = () => generate();
+$("barDownload").onclick = () => state.preview && revealDownload();
+
 async function generate(opts = {}) {
   const prev = await busy("Creating stitches…", () => api(`/api/projects/${state.project.id}/stitch`, json("POST", { params: stitchParams() })));
   state.preview = prev;
+  setStale(false);
   Shapes.setStitchShapes(prev.shapes);
   Shapes.setObjects(prev.objects); // stitch style and direction as they were really sewn
   const canCompare = !!(prev.comparison && !prev.comparison.reverted && prev.original_ops);
@@ -876,6 +904,7 @@ function bindCanvas() {
     v.x = mx - (mx - v.x) * f;
     v.y = my - (my - v.y) * f;
     v.scale *= f;
+    state.viewMoved = true;
     draw();
   }, { passive: false });
   // touch: two fingers pinch to zoom (one finger drags, a tap selects)
@@ -903,12 +932,14 @@ function bindCanvas() {
       v.y = my - (my - v.y) * f;
       v.scale *= f;
       pinch.d = d;
+      state.viewMoved = true;
       draw();
       return;
     }
     if (!drag) return;
     state.view.x += ev.clientX - drag.x;
     state.view.y += ev.clientY - drag.y;
+    state.viewMoved = true;
     drag = { ...drag, x: ev.clientX, y: ev.clientY };
     draw();
   });
@@ -928,7 +959,11 @@ function bindCanvas() {
     Shapes.click3(xMm, yMm, ev.shiftKey || ev.ctrlKey || ev.metaKey);
   });
   c.addEventListener("pointercancel", () => (drag = null));
-  window.addEventListener("resize", () => state.preview && draw());
+  // a new window size or a rotated phone fits the design again, unless you zoomed or moved it
+  window.addEventListener("resize", () => {
+    if (!state.preview || !c.clientWidth) return;
+    if (state.viewMoved) draw(); else fit();
+  });
   $("btnFit").onclick = fit;
   $("showFabric").onchange = () => { $("canvas").parentElement.classList.toggle("dark", $("showFabric").checked); draw(); };
   $("viewMode").addEventListener("click", (ev) => {
@@ -953,6 +988,8 @@ function fit() {
   const c = $("canvas"), p = state.preview;
   if (!p) return;
   const w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return; // not on screen
+  state.viewMoved = false;
   const ops = activeOps();
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (let i = 0; i < ops.length; i += 4) {

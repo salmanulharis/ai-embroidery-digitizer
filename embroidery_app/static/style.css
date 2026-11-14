@@ -50,11 +50,16 @@ header { position: sticky; top: 0; z-index: 15; display: flex; align-items: cent
 .steps li.done button::before { content: "\2713"; border-color: var(--ok); color: var(--ok); }
 @media (min-width: 900px) { .steps-nav { order: 0; } }
 @media (max-width: 899px) { .steps-nav { width: 100%; } .steps { justify-content: space-between; } }
+/* tablets: icon-only header buttons keep the actions on the title row */
+@media (max-width: 899px) { .hide-md { display: none; } }
+/* phones: the header scrolls away instead of covering a fifth of the screen; the title
+   gives way to the edit buttons once a design is open */
 @media (max-width: 560px) {
-  header { padding: 8px 12px; }
+  header { position: static; padding: 8px 12px; gap: 8px; }
   .steps button { padding: 4px; font-size: 12px; }
   .steps li:not(.active) span { display: none; }
-  .hide-sm { display: none; }
+  .hide-sm, #aiBadge { display: none; }
+  header:has(#editActions:not(.hidden)) .app-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 
 /* ------------------------------------------------------------------ layout */
@@ -152,6 +157,21 @@ table.layers select, table.layers input:not([type=checkbox]):not([type=color]) {
 table.layers input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 table.layers button { min-height: 30px; padding: 2px 9px; }
 table.layers tr.off td:not(:first-child) { opacity: .45; }
+/* phones: each thread colour becomes a card, every column visible with its name */
+@media (max-width: 700px) {
+  .tableWrap { overflow: visible; border: none; }
+  table.layers, table.layers tbody { display: block; min-width: 0; }
+  table.layers tr:first-child { display: none; } /* the column headings: each card names its fields */
+  table.layers tr { display: grid; grid-template-columns: 28px 30px 44px minmax(0, 1fr); align-items: center; gap: 8px 6px;
+    padding: 10px; margin: 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); }
+  table.layers td { display: block; padding: 0; border: none; min-width: 0; }
+  table.layers td[data-label] { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+  table.layers td[data-label]::before { content: attr(data-label); flex: 1 1 auto; color: var(--muted); font-size: 12px; } /* label left, values together on the right */
+  table.layers .cell-name input { width: 100%; }
+  table.layers .cell-wide select { flex: 1 1 180px; max-width: 100%; }
+  table.layers tr.off td:not(:first-child) { opacity: 1; }
+  table.layers tr.off { opacity: .6; }
+}
 .warnings div { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: var(--radius-sm); margin: 8px 0; font-size: 13px; }
 
 /* ------------------------------------------------------------------ step 3 */
@@ -168,6 +188,20 @@ table.layers tr.off td:not(:first-child) { opacity: .45; }
   .toolbar > .seg button { flex: 1 1 40%; }
 }
 .toolbar .to-download { margin-left: auto; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.stale-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 0 0 8px; padding: 8px 10px 8px 12px;
+  border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+.stale-note button.primary { width: auto; margin: 0; }
+button.attention { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+/* phones: settings, sewing and Download stay one tap away on the stitch page */
+.mobile-bar { display: none; }
+@media (max-width: 960px) {
+  .mobile-bar { display: flex; gap: 8px; position: sticky; bottom: 0; z-index: 12; margin: 12px -12px -12px; padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+    background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -6px 16px rgba(16, 24, 40, .08); }
+  .mobile-bar button { flex: 1 1 0; min-width: 0; padding: 7px 8px; }
+  .mobile-bar button.primary { flex: 1.4 1 0; margin: 0; }
+  #step3 .side .sticky-action, .toolbar .to-download { display: none; } /* the bar has both */
+  body:has(#step3:not(.hidden)) .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
 .canvasWrap { position: relative; height: clamp(320px, 62vh, 680px); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; background: #fbfaf7; }
 .canvasWrap.dark { background: #22252b; }
 canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
