@@ -475,10 +475,9 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
     min_fill_spacing = params.fill_spacing_mm  # smallest fill row gap actually sewn
     details: list[BaseGeometry] = []  # what a knockdown goes under (small text, satin, outlines)
     enabled = [l for l in design.layers if l.enabled]
-    if params.photo_stitch:  # the whole picture in one thread, as photo rows
-        from .photo import photo_block  # noqa: PLC0415
-        block = photo_block(design, params)
-        blocks = [block] if block.runs else []
+    if params.photo_stitch:  # the whole picture as a photo texture (stitch/photo.py)
+        from .photo import photo_blocks  # noqa: PLC0415
+        blocks = photo_blocks(design, params)
         enabled = []
     for position, layer in enumerate(enabled):
         items: list[_Item] = []

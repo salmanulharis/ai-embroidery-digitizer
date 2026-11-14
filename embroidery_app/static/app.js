@@ -475,6 +475,8 @@ UNDERLAY_FIELDS.push(["fill_pattern", "pattern", "Fill texture"]);
 UNDERLAY_LABELS.tile = [["diamonds", "Diamonds"], ["squares", "Squares"], ["bricks", "Bricks"], ["scales", "Scales"]];
 UNDERLAY_FIELDS.push(["pattern", "tile", "Pattern fill pattern"]);
 UNDERLAY_FIELDS.push(["motif", "motif", "Motif"]);
+UNDERLAY_LABELS.photo = [["rows", "Rows, one thread (Photo Flash)"], ["reef", "Reef: meander, one thread"], ["colour", "Rows in every colour"]];
+UNDERLAY_FIELDS.push(["photo_style", "photo", "Photo stitch style"]);
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],
@@ -483,7 +485,7 @@ const CHECKS = [
   ["tie_stitches", "Lock stitches at every thread cut"],
   ["optimize_order", "Smart sewing order (fewer, shorter jumps)"],
   ["knockdown", "Knockdown under small details (towels, fleece)"],
-  ["photo_stitch", "Photo stitch: the whole picture in one thread, as rows"],
+  ["photo_stitch", "Photo stitch: the whole picture as a photo texture"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
 function buildStitchForm() {

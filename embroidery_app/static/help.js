@@ -361,6 +361,12 @@ const HELP = {
     why: "Photos have soft shading that separate colour areas cannot show; rows of varying width reproduce it with one thread.",
     eg: "Portraits and pets in one colour on a light fabric. Remove the background in step 2 so only the subject is sewn.",
   },
+  photo_style: {
+    t: "Photo stitch style",
+    what: "Rows: one dark thread in rows that zigzag wider where the picture is darker. Reef: one dark thread as a meander that never crosses itself, tight where dark and open where light. Rows in every colour: each thread colour sews rows as wide as that colour is present, and neighbouring colours share the rows where they meet.",
+    why: "Rows and Reef shade a photo with a single thread; every colour keeps the colours of a colour photo and blends them softly.",
+    eg: "Rows for portraits; Reef for a light, artistic look; every colour for colourful photos extracted with 6–10 colours.",
+  },
   photo_row_mm: {
     t: "Photo stitch row gap",
     what: "The distance between the rows of the photo stitch.",

@@ -109,9 +109,11 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    editor is sewn in its own colour with rows that thin out across it, and again in the second colour shaded the
    other way. At every point the two shares add up to one full fill (gap = row gap / share), so the colours mix
    evenly. Without a second colour it fades into the fabric. The second half is sewn in that colour's turn.
-0. **Photo stitch** (step 3, off by default; Wilcom: Photo Flash): the whole picture in one dark thread, as rows
-   that zigzag as wide as the picture is dark (auto contrast: the lightest shade thin, the darkest full). The shading
-   comes from the shapes' colours, so extract a photo with several shades (e.g. 8 colours) and remove its background.
+0. **Photo stitch** (step 3, off by default), three styles. *Rows* (Wilcom: Photo Flash): one dark thread in rows that
+   zigzag as wide as the picture is dark (auto contrast). *Reef* (Wilcom: Reef PhotoStitch): one dark thread as a
+   meander that never crosses itself, tight where dark and open where light. *Rows in every colour* (Wilcom: Color
+   PhotoStitch): each thread colour sews rows as wide as it is present, with soft 2 mm edges where colours meet. The
+   tones come from the shapes' colours, so extract a photo with several colours and remove its background.
 0. **Knockdown** (towel / fleece presets): an open two-layer fill sewn first under small details and narrow fills,
    2 mm beyond them, in its own colour for the operator to load in the fabric's colour.
 0. **Guide lines** (shape editor, step 2: "Draw guide line"): drag a line across a shape. *Guided satin* sews

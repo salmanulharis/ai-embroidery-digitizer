@@ -50,3 +50,28 @@ def test_photo_stitch_is_off_by_default_and_rows_follow_the_setting():
 
 def test_luminance():
     assert luminance((255, 255, 255)) == 1.0 and luminance((0, 0, 0)) == 0.0
+
+
+def test_reef_is_denser_where_the_picture_is_darker():
+    plan = plan_stitches(_steps_design(), StitchParams(photo_stitch=True, photo_style="reef"))
+    assert [b.name for b in plan.blocks] == ["Reef photo stitch"]
+    pts = np.array([(x, y) for c, x, y, k in plan.ops if c == STITCH])
+    per_band = [((pts[:, 0] > 5 + 10 * i) & (pts[:, 0] < 15 + 10 * i)).sum() for i in range(4)]
+    assert per_band[3] > 2 * per_band[0], per_band  # darkest band much denser than the lightest
+    steps = [np.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(plan.ops, plan.ops[1:]) if a[0] == b[0] == STITCH]
+    assert max(steps) <= 7.0 + 1e-6
+
+
+def test_colour_photo_sews_every_colour_and_mixes_them_at_the_seams():
+    plan = plan_stitches(_steps_design(), StitchParams(photo_stitch=True, photo_style="colour"))
+    assert [b.name for b in plan.blocks] == ["g0", "g1", "g2", "g3"]
+    block, by_colour = 0, {}
+    for c, x, y, k in plan.ops:
+        if c == "color_change":
+            block += 1
+        elif c == STITCH:
+            by_colour.setdefault(block, []).append(x)
+    first = np.array(by_colour[0])
+    assert first.max() > 15.2  # crosses its edge at x = 15 into the next colour's band (soft seam)
+    assert first.max() < 17.5  # but only a little
+    assert StitchParams(photo_style="bogus").photo_style == "rows"

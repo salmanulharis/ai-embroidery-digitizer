@@ -257,7 +257,9 @@ def _hidden_link(link: LineString, centre: Pt, spacing: float) -> bool:
 
 def _tree_loop(edges: list[tuple[Pt, Pt]], width: float, square: bool = False) -> list[list[Pt]]:
     """The outline of a tree drawn with thick lines: a closed meander that never crosses
-    itself and visits every branch. One loop per connected tree."""
+    itself and visits every branch. One loop per connected tree - plus one per hole:
+    where neighbouring branches touch, the thick lines enclose holes, and the branches
+    inside a hole are only reached by sewing the hole's outline too."""
     if not edges:
         return []
     lines = MultiLineString([list(e) for e in edges])
@@ -266,6 +268,7 @@ def _tree_loop(edges: list[tuple[Pt, Pt]], width: float, square: bool = False) -
     loops = []
     for part in iter_polygons(blob):
         loops.append(list(part.exterior.simplify(0.05).coords))
+        loops += [list(h.simplify(0.05).coords) for h in part.interiors if h.length > 4 * width]
     return loops
 
 
