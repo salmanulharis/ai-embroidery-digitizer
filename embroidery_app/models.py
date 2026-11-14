@@ -102,6 +102,53 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("motif_column", "Motif column (motifs as wide as the shape)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
+
+# The trade name of each style - what Wilcom and digitizers call it - shown next to the
+# plain-language label in the menus, so both readers recognise it.
+STITCH_TERMS: dict[str, str] = {
+    "fill": "Tatami",
+    "satin": "Satin column",
+    "lettering": "Satin lettering",
+    "running": "Run stitch",
+    "double_run": "Double run",
+    "backstitch": "Backstitch",
+    "stemstitch": "Stemstitch",
+    "sculpture_run": "Sculpture run",
+    "zigzag": "Zigzag",
+    "estitch": "E-stitch",
+    "offset_fill": "Offset fill",
+    "spiral_fill": "Spiral fill",
+    "contour_fill": "Contour fill",
+    "radial_fill": "Radial fill",
+    "shaded_fill": "Accordion spacing",
+    "stipple_fill": "Stipple fill",
+    "maze_fill": "Maze fill",
+    "cross_stitch": "Cross stitch",
+    "motif_run": "Motif run",
+    "hand_stitch": "Hand stitch",
+    "motif_fill": "Motif fill",
+    "paired_motif_fill": "Paired motif fill",
+    "pattern_fill": "Program split",
+    "jagged_fill": "Jagged edge",
+    "raised_satin": "Raised satin",
+    "applique": "Applique",
+    "guided_satin": "Turning satin",
+    "florentine_fill": "Florentine effect",
+    "carved_fill": "Carving stamp / user-defined split",
+    "blend_fill": "Multi blend",
+    "flexi_split": "Flexi split",
+    "motif_column": "Motif column",
+}
+
+
+def style_label(style: str) -> str:
+    """Menu label with the trade name, e.g. "Fill (large areas) - Tatami". A label that
+    already starts with its trade name ("Offset fill (...)") is not repeated."""
+    label = dict(STITCH_STYLES).get(style, style)
+    term = STITCH_TERMS.get(style)
+    if not term or label.lower().startswith(term.lower()):
+        return label
+    return f"{label} — {term}"
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
 FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
                     "stipple_fill", "maze_fill", "cross_stitch")

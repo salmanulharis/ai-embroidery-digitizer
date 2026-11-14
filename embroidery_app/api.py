@@ -22,7 +22,7 @@ from .fabrics import FABRICS
 from .stitch import decorative
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
-from .models import STITCH_STYLES, StitchParams
+from .models import STITCH_STYLES, STITCH_TERMS, StitchParams
 
 log = logging.getLogger("embroidery")
 STATIC = Path(__file__).parent / "static"
@@ -149,6 +149,7 @@ def get_config():
         "stitch_defaults": StitchParams().to_dict(),
         "fabrics": [f.to_dict() for f in FABRICS],
         "stitch_styles": [list(s) for s in STITCH_STYLES],
+        "stitch_terms": STITCH_TERMS,  # trade names, shown next to the labels
         "motifs": [[k, m["label"]] for k, m in decorative.motifs().items()],
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),

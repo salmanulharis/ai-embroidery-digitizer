@@ -147,3 +147,14 @@ def test_curves_keep_the_set_stitch_length(style, step):
     steps = sorted(math.dist(a, b) for a, b in zip(rail, rail[1:]) if math.dist(a, b) > 1e-6)
     expected = step if style != "zigzag" else 2 * step  # zigzag returns to a side every second stitch
     assert steps[len(steps) // 2] == pytest.approx(expected, rel=0.15)
+
+
+def test_menus_show_the_trade_name_next_to_the_label():
+    from embroidery_app.models import STITCH_STYLES, STITCH_TERMS, style_label
+    assert all(k in STITCH_TERMS for k, _ in STITCH_STYLES if k != "auto")
+    assert style_label("fill") == "Fill (large areas) — Tatami"
+    assert style_label("pattern_fill").endswith("— Program split")
+    assert style_label("offset_fill") == "Offset fill (rings that follow the outline)"  # not repeated
+    assert style_label("auto") == "Automatic"
+    terms = TestClient(app).get("/api/config").json()["stitch_terms"]
+    assert terms["fill"] == "Tatami"

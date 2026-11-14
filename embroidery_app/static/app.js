@@ -234,6 +234,11 @@ function renderDesign(res) {
 
 // stitch styles for colours and shapes come from the server (models.STITCH_STYLES)
 const stitchStyles = () => state.config?.stitch_styles || [["auto", "Automatic"]];
+// label + trade name ("Fill (large areas) — Tatami"), unless the label already starts with it
+const styleLabel = (v, label) => {
+  const term = state.config?.stitch_terms?.[v];
+  return term && !label.toLowerCase().startsWith(term.toLowerCase()) ? `${label} — ${term}` : label;
+};
 
 function renderLayers() {
   const L = state.design.layers;
@@ -250,7 +255,7 @@ function renderLayers() {
         <td><input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}"></td>
         <td><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
         <td class="small muted">${l.area_mm2} mm²</td>
-        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${label}</option>`).join("")}</select></td>
+        <td><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${styleLabel(v, label)}</option>`).join("")}</select></td>
         <td><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></td>
         <td class="small nowrap">${l.objects}${l.customised ? ` <span class="muted">(${l.customised} own)</span>` : ""}
           <button type="button" class="ghost small" data-select-layer="${l.index}" ${l.enabled ? "" : "disabled"} aria-label="Select all shapes of ${n}">Select</button></td>

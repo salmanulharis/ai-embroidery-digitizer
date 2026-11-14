@@ -27,7 +27,7 @@ const Shapes = (() => {
   ];
 
   // stitch styles come from the server (models.STITCH_STYLES), shared with the colour table
-  const styleOptions = () => [["inherit", "Same as colour"], ...stitchStyles(), ["skip", "Don't stitch"]];
+  const styleOptions = () => [["inherit", "Same as colour"], ...stitchStyles().map(([v, l]) => [v, styleLabel(v, l)]), ["skip", "Don't stitch"]];
   const styleName = (v) => (stitchStyles().find(([k]) => k === v)?.[1] || v).replace(/ \(.*\)$/, "");
   const METHOD_LABEL = {
     fill: "fill", satin: "satin", satin_band: "satin that follows the shape", satin_line: "satin that follows the line",
