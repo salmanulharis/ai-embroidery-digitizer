@@ -43,6 +43,8 @@ class Settings:
     # GitHub repository secrets for the deployment, never in the code.
     super_admin_email: str = _env("SUPER_ADMIN_EMAIL").lower()
     super_admin_password: str = os.environ.get("SUPER_ADMIN_PASSWORD", "")
+    # Optional sign-in name of the Super Admin; set only here, applied at every start.
+    super_admin_username: str = _env("SUPER_ADMIN_USERNAME").lower()
     # "Remember me" keeps a login for this many days; without it the login ends with the
     # browser session (and after at most one day on the server).
     session_days: int = int(_env("SESSION_DAYS", "30"))

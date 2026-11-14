@@ -308,7 +308,8 @@ def ai_review(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
 # --------------------------------------------------------------------------- accounts
 
 class LoginBody(BaseModel):
-    email: str = ""
+    login: str = ""  # email or username
+    email: str = ""  # older clients
     password: str = ""
     remember: bool = False
 
@@ -321,10 +322,12 @@ class PasswordBody(BaseModel):
 class NewUserBody(BaseModel):
     email: str
     password: str
+    username: Optional[str] = None
 
 
 class UserPatch(BaseModel):
     email: Optional[str] = None
+    username: Optional[str] = None  # "" removes it
     active: Optional[bool] = None
 
 
@@ -335,7 +338,7 @@ class AdminPasswordBody(BaseModel):
 @app.post("/api/auth/login")
 def login(body: LoginBody, request: Request, response: Response):
     ip = request.client.host if request.client else "?"
-    user, token, _ = auth.login(body.email, body.password, body.remember, ip)
+    user, token, _ = auth.login(body.login or body.email, body.password, body.remember, ip)
     auth.set_cookie(response, request, token, body.remember)
     return {"user": user}
 
@@ -377,12 +380,12 @@ def admin_users():
 
 @admin.post("/users")
 def admin_create_user(body: NewUserBody):
-    return auth.create_user(body.email, body.password)
+    return auth.create_user(body.email, body.password, username=body.username)
 
 
 @admin.patch("/users/{uid}")
 def admin_update_user(uid: int, body: UserPatch):
-    return auth.update_user(uid, body.email, body.active)
+    return auth.update_user(uid, body.email, body.active, body.username)
 
 
 @admin.post("/users/{uid}/password")

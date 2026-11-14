@@ -42,6 +42,11 @@ MIGRATIONS = [
         updated_at REAL NOT NULL
     );
     """,
+    # 2: optional sign-in name, unique in any letter case (several accounts may have none)
+    """
+    ALTER TABLE users ADD COLUMN username TEXT;
+    CREATE UNIQUE INDEX users_username ON users(username COLLATE NOCASE);
+    """,
 ]
 
 _lock = threading.RLock()

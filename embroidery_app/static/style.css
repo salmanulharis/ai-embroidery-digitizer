@@ -449,6 +449,7 @@ body.signed-out .login-view { display: flex; min-height: 100vh; min-height: 100d
   padding: 8px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px rgba(0, 0, 0, .18); }
 .user-pop.hidden { display: none; }
 .user-pop button { justify-content: flex-start; border-color: transparent; }
+.user-pop-name { display: block; color: var(--text); }
 .user-pop button:hover:not(:disabled) { background: var(--raised); border-color: transparent; }
 .user-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 6px 8px; padding-bottom: 8px;
   border-bottom: 1px solid var(--line); word-break: break-all; }

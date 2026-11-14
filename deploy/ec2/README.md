@@ -84,14 +84,15 @@ account under **Account menu → Manage users**.
 |---|---|---|
 | 🟥 | `SUPER_ADMIN_EMAIL` | the Super Admin's email |
 | 🟥 | `SUPER_ADMIN_PASSWORD` | at least 10 characters (avoid `"` `'` and `\`) |
+| 🟥 | `SUPER_ADMIN_USERNAME` | optional: a username to sign in with instead of the email (3-32 letters, digits, `.` `_` `-`). Set only here - the app cannot change it; a new value applies at the next deploy |
 | 🟥 | `APP_SECRET_KEY` | recommended: a long random string, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Encrypts the users' saved AI keys. Never change it afterwards, or saved AI keys can no longer be read (users then add them again). Without it a random key is created on the server in `/var/lib/embroidery/secret.key` |
 | 🟦 | `SESSION_DAYS` | how long "Keep me signed in" lasts, default 30 |
 
-The deployment stops if the two `SUPER_ADMIN_*` secrets are missing. The account is created
+The deployment stops if `SUPER_ADMIN_EMAIL` or `SUPER_ADMIN_PASSWORD` is missing. The account is created
 on the first start only; changing the secrets later does not change an existing account.
 Forgot the Super Admin password? On the server:
 ```bash
-sudo systemd-run --pty --quiet --uid=embroidery -p EnvironmentFile=/etc/embroidery/embroidery.env --working-directory=/opt/embroidery /opt/embroidery/.venv/bin/python -m embroidery_app.auth reset-password you@example.com
+sudo systemd-run --pty --quiet --uid=embroidery -p EnvironmentFile=/etc/embroidery/embroidery.env --working-directory=/opt/embroidery /opt/embroidery/.venv/bin/python -m embroidery_app.auth reset-password you@example.com   # or your username
 ```
 
 `SITE_LOGIN` at the top of `.github/workflows/deploy.yml` can still put an extra Caddy

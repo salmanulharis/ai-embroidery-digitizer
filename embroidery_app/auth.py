@@ -1,4 +1,4 @@
-"""Accounts: email + password login, sessions and the two roles.
+"""Accounts: sign-in with email or username + password, sessions and the two roles.
 
 - Passwords are hashed with scrypt (salted, memory-hard); only the hash is stored.
 - A login creates a random session token. The browser gets it in an HttpOnly cookie, the
@@ -6,12 +6,15 @@
 - "Remember me" keeps the session for ``SESSION_DAYS``; otherwise the cookie ends with
   the browser session and the server forgets it after a day at most.
 - There is no sign-up. The Super Admin (from SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD)
-  is created at startup and creates every other account.
+  is created at startup and creates every other account. Its username comes only from
+  SUPER_ADMIN_USERNAME (applied at every start); other accounts get theirs from the admin.
+- A username is optional, unique in any letter case and never contains "@", so the one
+  sign-in field tells an email from a username.
 - Roles: ``super_admin`` manages accounts; ``user`` only uses the app. Every rule is
   enforced here, on the server.
 
 Command line (on the server, for a lost password):
-    python -m embroidery_app.auth reset-password someone@example.com
+    python -m embroidery_app.auth reset-password someone@example.com   (or a username)
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ MIN_PASSWORD = 10
 MAX_PASSWORD = 256
 SHORT_SESSION_S = 24 * 3600  # without "Remember me"
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
+_USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
 
 
 # --------------------------------------------------------------------------- passwords
@@ -81,21 +85,38 @@ def check_email(email: str) -> str:
     return email
 
 
+def check_username(username: str | None) -> str | None:
+    """A cleaned username, or None for none. 3-32 characters: letters, digits, . _ -
+    starting with a letter or digit (stored in lower case)."""
+    username = (username or "").strip().lower()
+    if not username:
+        return None
+    if not _USERNAME.match(username):
+        raise ValueError("A username has 3-32 characters: letters, digits, dot, dash or underscore, starting with a letter or digit.")
+    return username
+
+
+def _username_free(c, username: str | None, uid: int | None = None) -> None:
+    if username and c.execute("SELECT 1 FROM users WHERE username = ? AND id != ?", (username, uid or 0)).fetchone():
+        raise ValueError("This username is already taken.")
+
+
 # --------------------------------------------------------------------------- users
 
 def _public(row) -> dict:
-    return {"id": row["id"], "email": row["email"], "role": row["role"], "active": bool(row["active"]),
+    return {"id": row["id"], "email": row["email"], "username": row["username"], "role": row["role"], "active": bool(row["active"]),
             "created_at": row["created_at"], "last_login_at": row["last_login_at"]}
 
 
-def create_user(email: str, password: str, role: str = USER) -> dict:
-    email, password = check_email(email), check_password_rules(password)
+def create_user(email: str, password: str, role: str = USER, username: str | None = None) -> dict:
+    email, password, username = check_email(email), check_password_rules(password), check_username(username)
     now = time.time()
     with db.tx() as c:
         if c.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
             raise ValueError("An account with this email already exists.")
-        cur = c.execute("INSERT INTO users (email, password_hash, role, active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
-                        (email, hash_password(password), role, now, now))
+        _username_free(c, username)
+        cur = c.execute("INSERT INTO users (email, username, password_hash, role, active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                        (email, username, hash_password(password), role, now, now))
         return _public(c.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
@@ -112,11 +133,27 @@ def list_users() -> list[dict]:
         return [_public(r) for r in c.execute("SELECT * FROM users ORDER BY role DESC, email")]
 
 
-def update_user(uid: int, email: str | None = None, active: bool | None = None) -> dict:
-    target = get_user(uid)
-    if target["role"] == SUPER_ADMIN and (active is False or (email is not None and check_email(email) != target["email"])):
-        raise ValueError("The Super Admin account cannot be deactivated or renamed here (its email is set in the deployment secrets).")
+def find_user(login: str):
+    """The account row for a sign-in name: an email (contains "@") or a username."""
+    login = (login or "").strip().lower()
+    if not login:
+        return None
+    column = "email" if "@" in login else "username"
     with db.tx() as c:
+        return c.execute(f"SELECT * FROM users WHERE {column} = ?", (login,)).fetchone()
+
+
+def update_user(uid: int, email: str | None = None, active: bool | None = None, username: str | None = None) -> dict:
+    """``username``: None leaves it, "" removes it."""
+    target = get_user(uid)
+    if target["role"] == SUPER_ADMIN and (active is False or (email is not None and check_email(email) != target["email"])
+                                          or (username is not None and check_username(username) != target["username"])):
+        raise ValueError("The Super Admin account cannot be deactivated or renamed here (its email and username are set in the deployment secrets).")
+    with db.tx() as c:
+        if username is not None:
+            username = check_username(username)
+            _username_free(c, username, uid)
+            c.execute("UPDATE users SET username = ?, updated_at = ? WHERE id = ?", (username, time.time(), uid))
         if email is not None:
             email = check_email(email)
             if c.execute("SELECT 1 FROM users WHERE email = ? AND id != ?", (email, uid)).fetchone():
@@ -156,7 +193,8 @@ def delete_user(uid: int) -> None:
 
 
 def ensure_super_admin() -> None:
-    """Create the Super Admin from the deployment secrets when no account has that email."""
+    """Create the Super Admin from the deployment secrets when no account has that email,
+    and give it the username from SUPER_ADMIN_USERNAME (the only place it is set)."""
     email, password = settings.super_admin_email, settings.super_admin_password
     if not email or not password:
         with db.tx() as c:
@@ -164,10 +202,32 @@ def ensure_super_admin() -> None:
                 log.warning("No Super Admin: set SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD to create one.")
         return
     with db.tx() as c:
-        if c.execute("SELECT 1 FROM users WHERE email = ?", (email.lower(),)).fetchone():
+        row = c.execute("SELECT id, role, username FROM users WHERE email = ?", (email.lower(),)).fetchone()
+    if not row:
+        create_user(email, password, SUPER_ADMIN)
+        log.info("Super Admin account created for %s", email)
+    elif row["role"] != SUPER_ADMIN:
+        return  # an ordinary account already uses this email: leave it alone
+    _apply_admin_username(email.lower())
+
+
+def _apply_admin_username(email: str) -> None:
+    if not settings.super_admin_username:
+        return
+    try:
+        username = check_username(settings.super_admin_username)
+    except ValueError as e:
+        log.error("SUPER_ADMIN_USERNAME is not used: %s", e)
+        return
+    with db.tx() as c:
+        row = c.execute("SELECT id, username FROM users WHERE email = ?", (email,)).fetchone()
+        if row["username"] == username:
             return
-    create_user(email, password, SUPER_ADMIN)
-    log.info("Super Admin account created for %s", email)
+        if c.execute("SELECT 1 FROM users WHERE username = ? AND id != ?", (username, row["id"])).fetchone():
+            log.error("SUPER_ADMIN_USERNAME %r is already used by another account; not applied.", username)
+            return
+        c.execute("UPDATE users SET username = ?, updated_at = ? WHERE id = ?", (username, time.time(), row["id"]))
+    log.info("Super Admin username set to %s", username)
 
 
 # --------------------------------------------------------------------------- login throttling
@@ -177,8 +237,8 @@ _flock = threading.Lock()
 WINDOW_S, MAX_PER_ACCOUNT, MAX_PER_IP = 15 * 60, 5, 30
 
 
-def _throttle_keys(ip: str, email: str) -> list[tuple[str, int]]:
-    return [(f"a:{ip}:{email}", MAX_PER_ACCOUNT), (f"i:{ip}", MAX_PER_IP)]
+def _throttle_keys(ip: str, account: str) -> list[tuple[str, int]]:
+    return [(f"a:{ip}:{account}", MAX_PER_ACCOUNT), (f"i:{ip}", MAX_PER_IP)]
 
 
 def _blocked(ip: str, email: str) -> bool:
@@ -209,19 +269,20 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def login(email: str, password: str, remember: bool, ip: str) -> tuple[dict, str, float]:
-    """(user, session token, expiry) or a 401/403/429 error with a plain message."""
-    email = (email or "").strip().lower()
-    if _blocked(ip, email):
+def login(name: str, password: str, remember: bool, ip: str) -> tuple[dict, str, float]:
+    """Sign in with an email or a username. (user, session token, expiry), or a 401/403/429
+    error with a plain message."""
+    row = find_user(name)
+    # failures count per account, whether its email or its username was typed
+    account = f"#{row['id']}" if row else (name or "").strip().lower()
+    if _blocked(ip, account):
         raise HTTPException(429, "Too many attempts. Wait 15 minutes, then try again.")
-    with db.tx() as c:
-        row = c.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     if not verify_password(password or "", row["password_hash"] if row else _DUMMY_HASH) or not row:
-        _record_failure(ip, email)
-        raise HTTPException(401, "Wrong email or password.")
+        _record_failure(ip, account)
+        raise HTTPException(401, "Wrong email, username or password.")
     if not row["active"]:
         raise HTTPException(403, "This account is deactivated. Ask your administrator to activate it.")
-    _clear_failures(ip, email)
+    _clear_failures(ip, account)
     token = secrets.token_urlsafe(32)
     now = time.time()
     expires = now + (settings.session_days * 86400 if remember else SHORT_SESSION_S)
@@ -287,18 +348,17 @@ def _main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[0] not in ("reset-password",):
         print(__doc__.split("Command line")[1].strip())
         return 2
-    email = check_email(argv[1])
-    with db.tx() as c:
-        row = c.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    name = argv[1].strip().lower()
+    row = find_user(name)
     if not row:
-        print(f"No account for {email}.")
+        print(f"No account for {name}.")
         return 1
     password = getpass.getpass("New password: ")
     if password != getpass.getpass("Repeat: "):
         print("The passwords differ.")
         return 1
     set_password(row["id"], password)
-    print(f"Password changed for {email}; all of its sessions have ended.")
+    print(f"Password changed for {row['email']}; all of its sessions have ended.")
     return 0
 
 

@@ -3,6 +3,8 @@
 account's projects or AI keys. Runs with the real login (the test-wide login override
 from conftest.py is switched off here)."""
 
+import dataclasses
+import sqlite3
 import time
 
 import cv2
@@ -64,7 +66,9 @@ def test_wrong_password_and_unknown_email_get_the_same_answer():
     c = browser()
     a = c.post("/api/auth/login", json={"email": ADMIN[0], "password": "nope-nope-nope"})
     b = c.post("/api/auth/login", json={"email": "nobody@example.com", "password": "nope-nope-nope"})
-    assert a.status_code == b.status_code == 401 and a.json() == b.json() == {"detail": "Wrong email or password."}
+    c2 = c.post("/api/auth/login", json={"login": "nobody", "password": "nope-nope-nope"})
+    assert a.status_code == b.status_code == c2.status_code == 401
+    assert a.json() == b.json() == c2.json() == {"detail": "Wrong email, username or password."}
 
 
 def test_session_cookie_remember_me_and_logout():
@@ -213,3 +217,93 @@ def test_ai_settings_and_keys_are_per_account():
         row = conn.execute("SELECT data FROM ai_settings WHERE user_id = ?", (cid,)).fetchone()
         conn.execute("INSERT OR REPLACE INTO ai_settings (user_id, data, updated_at) VALUES (?, ?, ?)", (did, row["data"], time.time()))
     assert dev.get("/api/me/ai").json()["providers"] == {}  # a copied row cannot be read by another account
+
+
+# --------------------------------------------------------------------------- usernames
+
+def test_sign_in_with_username_or_email():
+    admin = logged_in(*ADMIN)
+    u = admin.post("/api/admin/users", json={"email": "lena@example.com", "password": "user-password-123", "username": "Lena.K"}).json()
+    assert u["username"] == "lena.k"  # stored in lower case
+    for name in ("lena.k", "LENA.K", " lena.k ", "lena@example.com"):
+        c = browser()
+        r = c.post("/api/auth/login", json={"login": name, "password": "user-password-123"})
+        assert r.status_code == 200 and r.json()["user"]["username"] == "lena.k", name
+    # older clients send "email"
+    assert browser().post("/api/auth/login", json={"email": "lena.k", "password": "user-password-123"}).status_code == 200
+    assert admin.get("/api/admin/users").json()["users"][0].keys() >= {"username"}
+
+
+def test_usernames_are_unique_and_checked():
+    admin = logged_in(*ADMIN)
+    u = new_user(admin, "omar@example.com")
+    assert u["username"] is None  # optional
+    assert admin.post("/api/admin/users", json={"email": "o2@example.com", "password": "user-password-123", "username": "omar"}).status_code == 200
+    for bad in ("OMAR", "omar"):  # taken, in any letter case
+        r = admin.post("/api/admin/users", json={"email": f"x{len(bad)}{bad}@example.com", "password": "user-password-123", "username": bad})
+        assert r.status_code == 400 and "taken" in r.json()["detail"]
+    for bad in ("ab", "has space", "a@b", "-start", "x" * 33, "ümlaut"):
+        r = admin.post("/api/admin/users", json={"email": "y@example.com", "password": "user-password-123", "username": bad})
+        assert r.status_code == 400, bad
+    assert admin.patch(f"/api/admin/users/{u['id']}", json={"username": "Omar"}).status_code == 400  # taken by o2
+    assert admin.patch(f"/api/admin/users/{u['id']}", json={"username": "omar.f"}).json()["username"] == "omar.f"
+    assert admin.patch(f"/api/admin/users/{u['id']}", json={"email": "omar.f@example.com"}).json()["username"] == "omar.f"  # untouched
+    logged_in("omar.f", "user-password-123")
+    assert admin.patch(f"/api/admin/users/{u['id']}", json={"username": ""}).json()["username"] is None  # removed
+    assert browser().post("/api/auth/login", json={"login": "omar.f", "password": "user-password-123"}).status_code == 401
+    logged_in("omar.f@example.com", "user-password-123")  # the email still works
+
+
+def test_failures_count_per_account_whichever_name_is_typed():
+    admin = logged_in(*ADMIN)
+    admin.post("/api/admin/users", json={"email": "tina@example.com", "password": "user-password-123", "username": "tina"})
+    c = browser()
+    for i in range(auth.MAX_PER_ACCOUNT):
+        name = "tina" if i % 2 else "tina@example.com"
+        assert c.post("/api/auth/login", json={"login": name, "password": "guess-guess-1"}).status_code == 401
+    assert c.post("/api/auth/login", json={"login": "tina", "password": "user-password-123"}).status_code == 429
+
+
+def test_super_admin_username_comes_only_from_the_secret(monkeypatch):
+    monkeypatch.setattr(auth, "settings", dataclasses.replace(auth.settings, super_admin_username="chief"))
+    auth.ensure_super_admin()
+    admin = logged_in("CHIEF", ADMIN[1])
+    me = admin.get("/api/auth/me").json()["user"]
+    assert me["username"] == "chief" and me["role"] == "super_admin"
+    # not changeable in the app, not even by the Super Admin
+    for body in ({"username": "boss"}, {"username": ""}):
+        assert admin.patch(f"/api/admin/users/{me['id']}", json=body).status_code == 400
+    assert admin.patch(f"/api/admin/users/{me['id']}", json={"username": "chief"}).status_code == 200  # unchanged: fine
+    # a new secret value is applied at the next start; one taken by a user is not
+    monkeypatch.setattr(auth, "settings", dataclasses.replace(auth.settings, super_admin_username="head"))
+    auth.ensure_super_admin()
+    assert auth.get_user(me["id"])["username"] == "head"
+    other = new_user(admin, "taken@example.com")
+    admin.patch(f"/api/admin/users/{other['id']}", json={"username": "taken-name"})
+    monkeypatch.setattr(auth, "settings", dataclasses.replace(auth.settings, super_admin_username="taken-name"))
+    auth.ensure_super_admin()
+    assert auth.get_user(me["id"])["username"] == "head"
+    monkeypatch.setattr(auth, "settings", dataclasses.replace(auth.settings, super_admin_username="Not valid!"))
+    auth.ensure_super_admin()  # logged, ignored
+    assert auth.get_user(me["id"])["username"] == "head"
+
+
+def test_existing_database_gets_the_username_column(tmp_path, monkeypatch):
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript(db.MIGRATIONS[0] + "; PRAGMA user_version = 1;")
+    old.execute("INSERT INTO users (email, password_hash, role, active, created_at, updated_at) VALUES ('a@example.com', 'x', 'user', 1, 0, 0)")
+    old.execute("INSERT INTO users (email, password_hash, role, active, created_at, updated_at) VALUES ('b@example.com', 'x', 'user', 1, 0, 0)")
+    old.commit()
+    old.close()
+    monkeypatch.setattr(db, "PATH", path)
+    conn = db._connect()
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(db.MIGRATIONS)
+    assert [r["username"] for r in conn.execute("SELECT username FROM users")] == [None, None]  # several without one
+    conn.execute("UPDATE users SET username = 'same' WHERE email = 'a@example.com'")
+    try:
+        conn.execute("UPDATE users SET username = 'SAME' WHERE email = 'b@example.com'")
+        raise AssertionError("duplicate username accepted")
+    except sqlite3.IntegrityError:
+        pass
+    conn.close()

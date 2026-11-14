@@ -34,10 +34,12 @@ See [AI assistant](#ai-assistant).
 
 ## Accounts
 
-- **Sign in** with email and password. There is no public sign-up: the **Super Admin** creates accounts under
-  *Account menu → Manage users* (add, edit email, activate / deactivate, reset password, delete), with a
-  generated password to copy. The Super Admin comes from `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD`
-  (GitHub secrets in production) and is created at startup when no account has that email.
+- **Sign in** with email or username and password. There is no public sign-up: the **Super Admin** creates accounts
+  under *Account menu → Manage users* (add, edit email and username, activate / deactivate, reset password, delete),
+  with a generated password to copy. Usernames are optional and unique in any letter case (3-32 letters, digits,
+  `.` `_` `-`, never `@`). The Super Admin comes from `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` (GitHub secrets
+  in production) and is created at startup when no account has that email; its username comes only from
+  `SUPER_ADMIN_USERNAME`, applied at every start.
 - **Sessions:** "Keep me signed in" lasts `SESSION_DAYS` (default 30); otherwise the session ends with the
   browser. *Sign out* ends it on the server. Users can change their own password; deactivating, resetting
   or deleting an account signs it out everywhere.
@@ -46,7 +48,7 @@ See [AI assistant](#ai-assistant).
 - **Security:** passwords hashed with scrypt; session tokens random, kept in an HttpOnly SameSite cookie
   (Secure over HTTPS) and stored only as a hash; failed sign-ins are rate-limited; cross-site requests are
   refused. Data lives in `DATA_DIR/app.db` (SQLite, upgraded automatically on start).
-- Lost Super Admin password: `python -m embroidery_app.auth reset-password <email>` on the server.
+- Lost Super Admin password: `python -m embroidery_app.auth reset-password <email or username>` on the server.
 
 ## AI assistant
 
@@ -318,12 +320,12 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/config` | formats, defaults, AI provider availability, hoops (public) |
-| POST | `/api/auth/login` · `logout` | `{email, password, remember}` → session cookie (public) |
+| POST | `/api/auth/login` · `logout` | `{login (email or username), password, remember}` → session cookie (public) |
 | GET | `/api/auth/me` | the signed-in account |
 | POST | `/api/auth/password` | `{current, password}`: change your own password |
 | GET · PUT | `/api/me/ai` | your AI settings (keys only as `has_key` / `key_hint`); PUT keeps a saved key unless a new `api_key` or `remove_key` is sent |
-| GET · POST | `/api/admin/users` | Super Admin: list / create `{email, password}` |
-| PATCH · DELETE | `/api/admin/users/{id}` | Super Admin: `{email?, active?}` / delete (with the account's designs and AI settings) |
+| GET · POST | `/api/admin/users` | Super Admin: list / create `{email, password, username?}` |
+| PATCH · DELETE | `/api/admin/users/{id}` | Super Admin: `{email?, username? ("" removes), active?}` / delete (with the account's designs and AI settings) |
 | POST | `/api/admin/users/{id}/password` | Super Admin: set a new password (signs the user out) |
 | POST | `/api/projects` | upload (multipart `file`) |
 | POST | `/api/projects/{id}/extract` | `{options:{width_mm, num_colors, background, min_feature_mm, …}}` |

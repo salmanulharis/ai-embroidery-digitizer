@@ -13,9 +13,9 @@
   <form class="login-card" id="loginForm" novalidate>
     <div class="login-brand"><span class="logo" aria-hidden="true">&#10045;</span> Embroidery Digitizer</div>
     <h1 id="loginTitle">Sign in</h1>
-    <p class="muted small" id="loginNote">Use the email and password from your administrator.</p>
+    <p class="muted small" id="loginNote">Use the email or username and the password from your administrator.</p>
     <div class="login-error hidden" id="loginError" role="alert"></div>
-    <label><span class="lbl">Email</span><input type="email" id="loginEmail" autocomplete="username" required spellcheck="false" inputmode="email"></label>
+    <label><span class="lbl">Email or username</span><input type="text" id="loginEmail" autocomplete="username" required spellcheck="false" autocapitalize="none" autocorrect="off"></label>
     <label><span class="lbl">Password</span>
       <span class="row nowrap-row"><input type="password" id="loginPassword" autocomplete="current-password" required>
       <button type="button" class="ghost small" id="loginShow" aria-pressed="false" aria-label="Show password">Show</button></span></label>
@@ -49,7 +49,7 @@
       <button type="button" class="ghost" id="btnUser" aria-expanded="false" aria-controls="userMenu" aria-label="Account">
         <span class="avatar" id="userAvatar" aria-hidden="true">?</span><span class="user-email" id="userEmail"></span></button>
       <div class="user-pop hidden" id="userMenu">
-        <p class="small muted user-pop-head"><span id="userMenuEmail"></span><span class="badge" id="userRole"></span></p>
+        <p class="small muted user-pop-head"><span><span id="userMenuEmail"></span><span class="user-pop-name" id="userMenuName"></span></span><span class="badge" id="userRole"></span></p>
         <button type="button" class="ghost" id="btnUsers">&#128101; Manage users</button>
         <button type="button" class="ghost" id="btnMyPassword">&#128273; Change password</button>
         <button type="button" class="ghost" id="btnLogout">&#8618; Sign out</button>
@@ -351,6 +351,12 @@
     </div>
     <p class="small muted" id="userDialogNote"></p>
     <label id="userEmailRow"><span class="lbl">Email</span><input type="email" id="userFormEmail" autocomplete="off" spellcheck="false" inputmode="email"></label>
+    <div id="userNameRow">
+      <label><span class="lbl">Username <span class="muted">(optional)</span></span>
+        <input type="text" id="userFormName" autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off" maxlength="32"
+          aria-describedby="userNameHint"></label>
+      <p class="small muted" id="userNameHint">Can be used to sign in instead of the email. 3–32 letters, digits, dot, dash or underscore; must be unique.</p>
+    </div>
     <div id="userPasswordRow">
       <label><span class="lbl">Password</span>
         <span class="row nowrap-row"><input type="text" id="userFormPassword" autocomplete="new-password" spellcheck="false" minlength="10">
