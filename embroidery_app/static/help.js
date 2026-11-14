@@ -82,7 +82,7 @@ const HELP = {
   },
   ai_keys: {
     t: "Your API keys",
-    what: "AI services need a key from your own account with them. The key stays in this browser and is sent only with AI requests - the server uses it for that request and never saves it.",
+    what: "AI services need a key from your own account with them. The key stays in this browser and is sent only with AI requests - the server uses it for that request and does not keep it. Only if you turn on Use on all your devices is it stored, encrypted with your passphrase.",
     why: "You stay in control of costs and can remove the key anytime.",
     eg: "Google Gemini has a free tier - a good place to start.",
   },
@@ -107,6 +107,12 @@ const HELP = {
   ai_remember: {
     t: "Remember on this device",
     what: "Keeps your settings and keys after you close the browser. Leave it off on shared computers - then they are forgotten when you close the browser.",
+  },
+  ai_sync: {
+    t: "Use on all your devices",
+    what: "Saves your AI services, keys and models on the server, locked with a passphrase you choose. On another device, enter the same passphrase and press Load my settings.",
+    why: "Set up AI once and use it everywhere. Your browser encrypts everything before it is sent, so the server stores only scrambled data and never your key or passphrase. The most recent save is used on every device.",
+    eg: "A passphrase of four unrelated words, like “velvet lantern orbit maple”. It cannot be recovered - if you forget it, save your settings again with a new one.",
   },
   layers_sew: {
     t: "Stitch this colour",
