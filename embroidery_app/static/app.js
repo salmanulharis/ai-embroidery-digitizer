@@ -295,6 +295,15 @@ function bindUpload() {
     if (f) upload(f);
   };
   $("btnChoose").onclick = () => input.click();
+  // a bundled example goes through the normal upload, so it behaves like any file
+  $("btnExample").onclick = async () => {
+    const blob = await busy("Loading the example…", async () => {
+      const r = await fetch("/static/example-logo.png");
+      if (!r.ok) throw new Error("The example could not be loaded. Please try again.");
+      return r.blob();
+    }).catch(() => null);
+    if (blob) upload(new File([blob], "example-logo.png", { type: "image/png" })).catch(() => {});
+  };
   $("btnNew").onclick = () => { showStep(1); $("btnChoose").focus(); };
   $("btnBackToOpen").onclick = () => goToStep(state.preview ? 3 : 2).catch(() => {});
   ["dragenter", "dragover"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
@@ -393,10 +402,10 @@ const styleLabel = (v, label) => {
 function renderLayers() {
   const L = state.design.layers;
   // help only where the heading alone does not explain the column (fewer tab stops)
-  const th = (label, key) => `<th scope="col">${label}${key ? " " + Tip.icon(key) : ""}</th>`;
+  const th = (label, key, note) => `<th scope="col">${label}${key ? " " + Tip.icon(key) : ""}${note ? `<span class="th-note">${note}</span>` : ""}</th>`;
   $("layers").innerHTML =
     `<tr><th scope="col" class="grip-col"><span class="visually-hidden">Drag to merge</span>${Tip.icon("layers_drag")}</th>${th("Stitch", "layers_sew")}${th("Thread", "layers_thread")}${th("Name")}${th("Area", "layers_area")}` +
-    `${th("Stitch style", "layers_stitch")}${th("Direction", "layers_angle")}${th("Shapes", "layers_shapes")}${th("Order", "layers_order")}${th("Merge into", "layers_merge")}</tr>` +
+    `${th("Stitch style", "layers_stitch")}${th("Direction", "layers_angle", "empty = automatic")}${th("Shapes", "layers_shapes")}${th("Order", "layers_order")}${th("Merge into", "layers_merge")}</tr>` +
     L.map((l, i) => {
       const n = esc(l.name);
       return `
