@@ -98,6 +98,8 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("florentine_fill", "Florentine fill (rows bend with a line you draw)"),
     ("carved_fill", "Carved fill (a line you draw pressed into the fill)"),
     ("blend_fill", "Blend fill (fades into another colour)"),
+    ("flexi_split", "Flexi split satin (pattern follows the column)"),
+    ("motif_column", "Motif column (motifs as wide as the shape)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")

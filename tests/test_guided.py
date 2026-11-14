@@ -127,3 +127,32 @@ def test_carved_fill_puts_needle_points_on_the_drawn_line():
     near = [p for p in pts if 0.05 <= LineString(line).distance(Point(p)) < 0.3]
     assert len(near) < len(on_line) / 4  # other points kept clear of the line, so it stands out
     assert [it.method for it in classify(DesignObject(0, sq), "carved_fill", StitchParams())] == ["fill"]
+
+
+def test_column_styles_find_the_column_without_a_guide_line():
+    from embroidery_app.stitch.guided import auto_centre
+    centre = auto_centre(box(5, 10, 65, 18))
+    assert centre is not None and centre.length > 55
+    assert abs(centre.interpolate(0.5, normalized=True).y - 14) < 0.5  # along the middle
+
+
+def test_flexi_split_puts_pattern_points_inside_satin_rungs():
+    bar = box(5, 10, 65, 18)
+    plan = plan_stitches(Design(70, 25, [ColorLayer(0, (1, 2, 3), "c")], [DesignObject(0, bar, stitch_type="flexi_split")]),
+                         StitchParams(optimize=False, tie_stitches=False, underlay=False, pattern="diamonds", pattern_size_mm=8.0))
+    pts = np.array([(x, y) for c, x, y, k in plan.ops if c == STITCH and k == "satin"])
+    inner = pts[(pts[:, 1] > 10.8) & (pts[:, 1] < 17.2)]
+    assert len(inner) > 100  # split points inside the column, not only on its edges
+    # the splits lie on the diamond lines: y - 10 - pull = +-x (mod 8) in column coordinates
+    assert all(bar.buffer(0.5).contains(Point(p)) for p in pts)
+    steps = [math.dist(a[1:3], b[1:3]) for a, b in zip(plan.ops, plan.ops[1:]) if a[0] == b[0] == STITCH]
+    assert max(steps) <= 7.0 + 1e-6
+
+
+def test_motif_column_motifs_are_as_wide_as_the_column():
+    bar = box(5, 10, 65, 18)
+    plan = plan_stitches(Design(70, 25, [ColorLayer(0, (1, 2, 3), "c")], [DesignObject(0, bar, stitch_type="motif_column")]),
+                         StitchParams(motif="wave"))
+    ys = np.array([y for c, x, y, k in plan.ops if c == STITCH and 15 < x < 55])
+    assert np.ptp(ys) > 0.65 * 8  # the wave spans 0.8 of a motif, the motif 0.9 of the 8 mm width
+    assert ys.min() >= 10 - 0.1 and ys.max() <= 18 + 0.1

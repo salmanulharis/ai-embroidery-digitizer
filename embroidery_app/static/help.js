@@ -393,7 +393,7 @@ const HELP = {
   },
   shape_guide: {
     t: "Guide line",
-    what: "A line you draw across the shape. With “Guided satin” the satin stitches cross it at right angles all along it, from edge to edge; with “Florentine fill” every fill row is a copy of it, so the whole fill bends with it; with “Carved fill” the fill's needle points are placed along it, so the line shows pressed into the fill.",
+    what: "A line you draw across the shape. With “Guided satin” the satin stitches cross it at right angles all along it, from edge to edge; with “Florentine fill” every fill row is a copy of it, so the whole fill bends with it; with “Carved fill” the fill's needle points are placed along it, so the line shows pressed into the fill. “Flexi split satin” and “Motif column” follow the line if there is one, else they find the shape's centre line themselves.",
     why: "You decide exactly how a curved satin turns or how a fill flows, where the automatic direction is not what you want.",
     eg: "Choose the stitch style first, then press “Draw guide line” and drag along the middle of a curved band (satin) or in the direction the rows should flow (fill).",
   },

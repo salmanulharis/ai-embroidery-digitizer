@@ -120,7 +120,9 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    satin whose stitches cross that line at right angles from edge to edge (you decide how a curved satin turns -
    the practical form of Wilcom's column input / Ink/Stitch rails); *Florentine fill* makes every fill row a copy
    of the line, so the whole fill bends with it; *Carved fill* (Wilcom: user-defined split / carving stamp) puts the fill's
-   needle points along the line so it shows pressed into the fill. Without a line the shape is sewn the usual way. The line is a
+   needle points along the line so it shows pressed into the fill. *Flexi split satin* (Wilcom: Flexi Split) splits
+   satin rungs on a pattern laid out in the column's own coordinates, so it bends with the column; *Motif column*
+   repeats motifs as wide as the column. Both use the line if drawn, else the column's centre line. Without a line the shape is sewn the usual way. The line is a
    per-shape setting (undo, reset, merge and re-extract keep it).
 0. **Decorative styles** (`stitch/decorative.py`): motif outline (a chain of motifs along a line or outline),
    hand stitch (uneven long stitches with tiny ones between), motif fill and paired motif fill (rows of motifs,

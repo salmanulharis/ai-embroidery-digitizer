@@ -28,6 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 Pieces = list[list[Pt]]
 REACH_MM = 60.0  # how far the edges are searched from the guide line
+RUNG_SMOOTH_MM = 1.5  # rung direction: the centre line's direction over this distance each way
 
 
 def _extended(line: LineString, d: float) -> LineString:
@@ -90,6 +91,97 @@ def guided_satin(poly: Polygon, guide: list[Pt], spacing: float, pull: float, ma
         out.extend(gen.split_stitch(out[-1], p, max_stitch, i) if out else [p])
     run = gen.running(centre, 2.0)
     return ([run] if len(run) >= 2 else []), ([out] if len(out) >= 2 else [])
+
+
+# --------------------------------------------------------------------------- columns: rungs, flexi split, motif column
+
+def auto_centre(poly: Polygon) -> LineString | None:
+    """A column's centre line without a drawn guide: the single column found by the
+    smart-direction analysis, else the shape's long axis, continued to its edges."""
+    from . import smart  # noqa: PLC0415
+
+    if smart.fits_columns(poly):
+        shape = smart.analyse_columns(poly)
+        if shape.ok and len(shape.columns) == 1 and not shape.columns[0].closed:
+            centre = _centre(poly, [tuple(p) for p in shape.columns[0].pts])
+            if centre is not None:
+                return centre
+    rect = list(poly.minimum_rotated_rectangle.exterior.coords)
+    (ax, ay), (bx, by), (cx, cy) = rect[0], rect[1], rect[2]
+    if math.hypot(bx - ax, by - ay) < math.hypot(cx - bx, cy - by):  # use the long side
+        (ax, ay), (bx, by) = (bx, by), (cx, cy)
+    c = poly.representative_point()
+    dx, dy = (bx - ax) / 2, (by - ay) / 2
+    return _centre(poly, [(c.x - dx, c.y - dy), (c.x + dx, c.y + dy)])
+
+
+def column_rungs(poly: Polygon, centre: LineString, spacing: float, pull: float) -> list[tuple[float, Pt, Pt]]:
+    """Straight rungs across the column, ``spacing`` apart along its centre line:
+    (distance along the centre, left end, right end), each end on the outline."""
+    n = max(2, math.ceil(centre.length / spacing))
+    rungs = []
+    for k in range(n + 1):
+        s = centre.length * k / n
+        q = centre.interpolate(s)
+        # direction over +-1.5 mm: small kinks in a found centre line must not fan the rungs
+        a = centre.interpolate(max(0.0, s - RUNG_SMOOTH_MM))
+        b = centre.interpolate(min(centre.length, s + RUNG_SMOOTH_MM))
+        tx, ty = b.x - a.x, b.y - a.y
+        norm = math.hypot(tx, ty) or 1.0
+        nx, ny = -ty / norm, tx / norm
+        left = _to_edge(poly, (q.x, q.y), (nx, ny))
+        right = _to_edge(poly, (q.x, q.y), (-nx, -ny))
+        if left + right <= 0.3:
+            continue
+        rungs.append((s, (q.x + nx * (left + pull), q.y + ny * (left + pull)),
+                      (q.x - nx * (right + pull), q.y - ny * (right + pull))))
+    return rungs
+
+
+def flexi_split(poly: Polygon, centre: LineString, params: StitchParams, start: Pt) -> list[Pt]:
+    """Satin across the column whose rungs are split where a pattern tile, laid out in
+    the column's own coordinates (along it x across it), has its lines: the pattern
+    bends with the column and scales with nothing - it shows embossed in the satin
+    (Wilcom: Flexi Split)."""
+    from .decorative import pattern_xs  # noqa: PLC0415
+
+    if dist(start, centre.coords[-1]) < dist(start, centre.coords[0]):
+        centre = LineString(list(centre.coords)[::-1])
+    split_at = pattern_xs(params.pattern, params.pattern_size_mm, 3.0, params.satin_spacing_mm)
+    out: list[Pt] = []
+    for i, (s, left, right) in enumerate(column_rungs(poly, centre, params.satin_spacing_mm, params.pull_compensation_mm)):
+        w = dist(left, right)
+        a, b = (left, right) if i % 2 == 0 else (right, left)
+        xs = split_at(s, 0.0, w)  # distances from the left end
+        fr = sorted(x / w for x in xs) if a is left else sorted(1 - x / w for x in xs)
+        out += [a, *[(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f) for f in fr], b]
+    return out
+
+
+def motif_column(poly: Polygon, centre: LineString, params: StitchParams, start: Pt) -> list[Pt]:
+    """Motifs repeated along the column, each as wide as the column (Wilcom: Motif Column)."""
+    from .decorative import motif_along  # noqa: PLC0415
+
+    if dist(start, centre.coords[-1]) < dist(start, centre.coords[0]):
+        centre = LineString(list(centre.coords)[::-1])
+    widths = [dist(l, r) for _, l, r in column_rungs(poly, centre, 1.0, 0.0)]
+    if not widths:
+        return []
+    size = max(2.0, float(sorted(widths)[len(widths) // 2]) * 0.9)
+    return motif_along(list(centre.coords), size, params.motif)
+
+
+def _column_style(fn):
+    def generate(item: "_Item", angle: float, params: StitchParams, start: Pt) -> list[Run]:
+        centre = _centre(item.geom, list(item.guide)) if item.guide else auto_centre(item.geom)
+        if centre is None:
+            return []
+        runs = [Run("underlay", gen.running(centre, 2.0), item.oid)] if params.underlay and fn is flexi_split else []
+        cur = runs[-1].points[-1] if runs else start
+        pts = fn(item.geom, centre, params, cur)
+        kind = "satin" if fn is flexi_split else "running"
+        return runs + ([Run(kind, pts, item.oid)] if len(pts) >= 2 else [])
+    return generate
 
 
 # --------------------------------------------------------------------------- florentine fill
@@ -228,3 +320,6 @@ GUIDED_STYLES = ("guided_satin", "florentine_fill", "carved_fill")
 register(StitchMethod("guided_satin", sew_guided_satin, density=True))
 register(StitchMethod("florentine_fill", sew_florentine, density=True))
 register(StitchMethod("carved_fill", sew_carved, directional=True, density=True))
+COLUMN_STYLES = ("flexi_split", "motif_column")  # use the guide line if there is one, else find the column
+register(StitchMethod("flexi_split", _column_style(flexi_split), density=True))
+register(StitchMethod("motif_column", _column_style(motif_column)))

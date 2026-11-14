@@ -121,6 +121,11 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
         return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
     if forced in DECOR_AREA_STYLES:
         forced = "auto"  # a line has no area: sewn along its path as usual
+    if forced in ("flexi_split", "motif_column") and obj.kind == "area":
+        return [_Item(-1, poly, forced, guide=obj.guide) for poly in iter_polygons(obj.geometry)
+                if poly.area >= params.min_object_area_mm2]
+    if forced in ("flexi_split", "motif_column"):
+        forced = "auto"
     if forced == "blend_fill" and obj.kind == "area":
         return [_Item(-1, poly, "blend_fill") for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
     if forced == "blend_fill":

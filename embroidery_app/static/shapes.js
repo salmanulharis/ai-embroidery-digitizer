@@ -38,7 +38,7 @@ const Shapes = (() => {
     guided_satin: "satin along the guide line", florentine_fill: "fill along the guide line", carved_fill: "fill with the guide line carved in",
   };
   // angle convention matches the stitch engine: y points down, so 45° runs down-right
-  const GUIDED = ["guided_satin", "florentine_fill", "carved_fill"]; // styles that use a drawn guide line
+  const GUIDED = ["guided_satin", "florentine_fill", "carved_fill", "flexi_split", "motif_column"]; // styles that use a drawn guide line
   // how a shape is sewn, in words: the known methods above, else the style's menu name
   const methodLabel = (m) => METHOD_LABEL[m] || styleName(m).toLowerCase();
   const PRESETS = [[0, "—", "Horizontal"], [45, "╲", "Diagonal, top-left to bottom-right"], [90, "│", "Vertical"], [135, "╱", "Diagonal, bottom-left to top-right"]];
