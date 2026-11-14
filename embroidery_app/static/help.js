@@ -395,7 +395,7 @@ const HELP = {
     t: "Foundation under satin",
     what: "Stitches sewn first, under each satin column. An edge run sits just inside both edges; a zigzag runs across the column and lifts the satin. Columns narrower than 2.5 mm get a centre run instead of a zigzag.",
     why: "It keeps satin edges crisp and stops the stitches sinking into soft fabric.",
-    eg: "Edge run for most fabric; edge run + zigzag for T-shirts and polos; double zigzag for fleece or a raised look.",
+    eg: "Edge run for most fabric; edge run + zigzag for T-shirts and polos; double zigzag for fleece or a raised look. Automatic picks by each column's width, as Wilcom does: centre run under 3 mm, edge run under 4 mm, edge run + zigzag from 4 mm.",
   },
   push_compensation_mm: {
     t: "Push compensation",

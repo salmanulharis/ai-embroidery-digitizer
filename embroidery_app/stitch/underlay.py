@@ -14,6 +14,8 @@ Under satin columns:
   zigzag         an open zigzag across the column
   edge_zigzag    edge run + zigzag
   double_zigzag  two zigzag passes, the second between the first one's stitches
+  auto           chosen by the column's width (Wilcom's circle tests): centre run under
+                 3 mm, edge run under 4 mm, edge run + zigzag from 4 mm
 
 A zigzag only fits a column wide enough for it: under a column narrower than
 ZIGZAG_MIN_WIDTH_MM a zigzag becomes a centre run (``edge_zigzag`` an edge run),
@@ -31,9 +33,33 @@ from ..models import FILL_UNDERLAYS, SATIN_UNDERLAYS  # noqa: F401  (the names, 
 from . import generators as gen
 from .rows import scan_rows, unrotate
 ZIGZAG_MIN_WIDTH_MM = 2.5
+# Wilcom Auto Fabric's circle tests: a 2 mm circle does not fit = lettering, a 4 mm
+# circle fits = wide satin, in between = narrow satin.
+LETTERING_MM, WIDE_SATIN_MM = 2.0, 4.0
 ZIGZAG_INSET_MM = 0.4  # zigzag foundation stays this far inside the edges
 
 Pieces = list[list[Pt]]
+
+
+def widest_circle(poly: Polygon) -> float:
+    """Diameter of the largest circle that fits in the shape (its widest point)."""
+    import shapely  # noqa: PLC0415
+
+    return 2.0 * shapely.maximum_inscribed_circle(poly, 0.05).length
+
+
+def size_class(poly: Polygon) -> str:
+    """Wilcom Auto Fabric's classes by circle test: lettering | narrow | wide."""
+    d = widest_circle(poly)
+    return "lettering" if d < LETTERING_MM else "narrow" if d < WIDE_SATIN_MM else "wide"
+
+
+def auto_satin_foundation(poly: Polygon) -> str:
+    """Satin foundation by width (Wilcom: centre run for narrow columns of about 2-3 mm,
+    edge run for larger ones, zigzag under wide satin): under 3 mm a centre run, under
+    4 mm an edge run, from 4 mm an edge run plus a zigzag."""
+    d = widest_circle(poly)
+    return "center" if d < 3.0 else "edge" if d < WIDE_SATIN_MM else "edge_zigzag"
 
 
 def column_width(poly: Polygon) -> float:
@@ -74,6 +100,8 @@ def satin_foundation(style: str, poly: Polygon, angle: float | None, spacing: fl
     """Foundation under single-angle satin. ``angle`` is the satin's stitch direction."""
     if style == "none":
         return []
+    if style == "auto":
+        style = auto_satin_foundation(poly)
     if column_width(poly) < ZIGZAG_MIN_WIDTH_MM:
         style = {"zigzag": "center", "double_zigzag": "center", "edge_zigzag": "edge"}.get(style, style)
     if style == "center":

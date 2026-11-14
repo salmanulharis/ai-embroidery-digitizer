@@ -27,3 +27,4 @@ httpx2>=2.16
 
 # Development
 pytest>=9.2
+hypothesis>=6.100  # property tests (tests/test_properties.py)

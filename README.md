@@ -20,7 +20,8 @@ python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
 python run.py                     # open http://127.0.0.1:8000
-pytest                            # pipeline, exports, API, editing, AI (mocked), golden output
+pytest                            # pipeline, exports, API, editing, AI (mocked), golden output,
+                                  # property tests on random shapes (HYPOTHESIS_PROFILE=deep for a longer search)
 ```
 
 **Deploy to AWS EC2 with GitHub Actions** (deploys on version tags only): see [deploy/ec2/README.md](deploy/ec2/README.md).
@@ -178,6 +179,8 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
      columns under 2.5 mm get a centre run instead of a zigzag
    * satin that follows a path (bands, lines, columns, lettering) keeps its own foundation along the path
    * fabric presets pick stronger foundations for knits, fleece and towels
+   * satin "Automatic by width" uses Wilcom's circle tests: centre run under 3 mm, edge run under 4 mm,
+     edge run + zigzag from 4 mm (shapes are also classed lettering / narrow / wide satin)
    * **push compensation** (optional, 0-0.5 mm) shortens fills and columns at their ends
 4. **Rows → chains**: scan lines are grouped into monotone regions, so the needle sews back and forth
    without leaving the shape. Chains are ordered nearest-first.

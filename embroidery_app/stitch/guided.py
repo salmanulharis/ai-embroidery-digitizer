@@ -179,8 +179,14 @@ def _column_style(fn):
         runs = [Run("underlay", gen.running(centre, 2.0), item.oid)] if params.underlay and fn is flexi_split else []
         cur = runs[-1].points[-1] if runs else start
         pts = fn(item.geom, centre, params, cur)
-        kind = "satin" if fn is flexi_split else "running"
-        return runs + ([Run(kind, pts, item.oid)] if len(pts) >= 2 else [])
+        if fn is flexi_split:
+            return runs + ([Run("satin", pts, item.oid)] if len(pts) >= 2 else [])
+        # motifs can be wider than a small or tapering shape: keep them inside it
+        if len(pts) < 2:
+            return runs
+        cut = LineString(pts).intersection(item.geom.buffer(0.2))
+        parts = [list(g.coords) for g in getattr(cut, "geoms", [cut]) if isinstance(g, LineString) and g.length > 0.5]
+        return runs + [Run("running", p, item.oid) for p in parts]
     return generate
 
 

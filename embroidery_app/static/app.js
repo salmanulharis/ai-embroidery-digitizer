@@ -465,6 +465,7 @@ const UNDERLAY_LABELS = {
     ["zigzag", "Zigzag"],
     ["edge_zigzag", "Edge run + zigzag (stretchy fabric)"],
     ["double_zigzag", "Double zigzag (fluffy fabric, raised look)"],
+    ["auto", "Automatic by width (centre / edge / edge + zigzag)"],
     ["none", "None"],
   ],
 };

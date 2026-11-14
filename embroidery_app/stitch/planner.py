@@ -32,6 +32,7 @@ from . import fills  # noqa: F401  (registers the advanced fills)
 from . import decorative  # noqa: F401  (registers the decorative styles)
 from . import guided  # noqa: F401  (registers the guide-line styles)
 from . import registry
+from . import underlay
 from . import smart
 from . import strokes as st
 from .methods import thread_limits as _limits
@@ -296,6 +297,8 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
         else:
             angle = None
         area = obj.geometry.area if obj.kind == "area" else 0.0
+        polys = list(iter_polygons(obj.geometry)) if obj.kind == "area" else []
+        size_cls = underlay.size_class(max(polys, key=lambda p: p.area)) if polys else "line"
         sp = shape_params(obj, params)
         # named foundations apply to fills and single-angle satin (the rest follow their path)
         if methods == ["fill"]:
@@ -337,6 +340,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "underlay_applies": underlay_applies if sp.underlay else None,  # fill | satin | None
             "effective_underlay": effective_underlay if sp.underlay else None,
             "too_small": not items,
+            "size_class": size_cls,  # Wilcom circle test: lettering | narrow | wide (| line)
         })
     return out
 

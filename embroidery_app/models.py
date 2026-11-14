@@ -139,7 +139,7 @@ FILL_PATTERNS = ("standard", "brick", "diagonal", "random")
 
 # Named foundation (underlay) types, see stitch/underlay.py.
 FILL_UNDERLAYS = ("none", "edge", "edge_tatami", "double_tatami")
-SATIN_UNDERLAYS = ("none", "center", "edge", "zigzag", "edge_zigzag", "double_zigzag")
+SATIN_UNDERLAYS = ("none", "center", "edge", "zigzag", "edge_zigzag", "double_zigzag", "auto")
 UNDERLAY_STYLES = tuple(dict.fromkeys(FILL_UNDERLAYS + SATIN_UNDERLAYS))
 
 # Allowed ranges for per-shape thickness settings (same limits as the design-wide settings).
