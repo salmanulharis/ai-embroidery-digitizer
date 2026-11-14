@@ -307,3 +307,13 @@ def test_existing_database_gets_the_username_column(tmp_path, monkeypatch):
     except sqlite3.IntegrityError:
         pass
     conn.close()
+
+
+def test_a_bad_admin_secret_does_not_stop_the_app(monkeypatch, caplog):
+    for email, password in (("new-admin@example.com", "short"), ("not-an-email", "long-enough-password")):
+        monkeypatch.setattr(auth, "settings", dataclasses.replace(auth.settings, super_admin_email=email, super_admin_password=password))
+        auth.ensure_super_admin()  # logs instead of raising
+        assert "Super Admin not created" in caplog.text
+        assert all(u["email"] != email for u in auth.list_users())
+    with TestClient(app) as c:  # the whole startup (lifespan) runs
+        assert c.get("/api/config").status_code == 200

@@ -204,7 +204,11 @@ def ensure_super_admin() -> None:
     with db.tx() as c:
         row = c.execute("SELECT id, role, username FROM users WHERE email = ?", (email.lower(),)).fetchone()
     if not row:
-        create_user(email, password, SUPER_ADMIN)
+        try:
+            create_user(email, password, SUPER_ADMIN)
+        except ValueError as e:  # a bad secret must not stop the whole app from starting
+            log.error("Super Admin not created - fix SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD and deploy again: %s", e)
+            return
         log.info("Super Admin account created for %s", email)
     elif row["role"] != SUPER_ADMIN:
         return  # an ordinary account already uses this email: leave it alone

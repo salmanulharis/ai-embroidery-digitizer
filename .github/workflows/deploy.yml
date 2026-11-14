@@ -63,6 +63,11 @@ jobs:
           HAS_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD != '' }}
           HAS_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL != '' }}
           HAS_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD != '' }}
+          # checked here (never printed; GitHub masks secrets) so a bad value stops the release
+          # before the server is touched - the same rules as embroidery_app/auth.py
+          ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+          ADMIN_USERNAME: ${{ secrets.SUPER_ADMIN_USERNAME }}
         run: |
           missing=""
           for v in EC2_HOST EC2_USER APP_DOMAIN LETSENCRYPT_EMAIL EC2_KNOWN_HOSTS; do
@@ -74,6 +79,17 @@ jobs:
           [ "$HAS_ADMIN_EMAIL" = "true" ] || missing="$missing SUPER_ADMIN_EMAIL(secret)"
           [ "$HAS_ADMIN_PASSWORD" = "true" ] || missing="$missing SUPER_ADMIN_PASSWORD(secret)"
           if [ -n "$missing" ]; then echo "::error::Missing:$missing"; exit 1; fi
+          bad=""
+          email=$(printf '%s' "$ADMIN_EMAIL" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+          [[ "$email" =~ ^[^@]{1,64}@[^@]+\.[^@]{2,}$ ]] || bad="$bad SUPER_ADMIN_EMAIL(not a valid email address)"
+          [ "${#ADMIN_PASSWORD}" -ge 10 ] || bad="$bad SUPER_ADMIN_PASSWORD(needs at least 10 characters)"
+          [ "${#ADMIN_PASSWORD}" -le 256 ] || bad="$bad SUPER_ADMIN_PASSWORD(longer than 256 characters)"
+          [[ "$ADMIN_PASSWORD" != *$'\n'* ]] || bad="$bad SUPER_ADMIN_PASSWORD(must be one line)"
+          username=$(printf '%s' "$ADMIN_USERNAME" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+          if [ -n "$username" ] && ! [[ "$username" =~ ^[a-z0-9][a-z0-9._-]{2,31}$ ]]; then
+            bad="$bad SUPER_ADMIN_USERNAME(3-32 letters, digits, . _ - starting with a letter or digit)"
+          fi
+          if [ -n "$bad" ]; then echo "::error::Fix these secrets, then push a new tag:$bad"; exit 1; fi
 
       - name: Set up SSH
         env:
