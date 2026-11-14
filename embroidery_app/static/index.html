@@ -266,7 +266,7 @@
       <button type="button" class="ghost" id="aiClose" aria-label="Close">&times;</button>
     </div>
     <p class="small muted">Optional. Without AI the built-in smart processing is used - everything works without a key.
-      Your key is kept in this browser and sent only with AI requests. The server stores it only if you turn on syncing below, and then only encrypted. <i data-help="ai_keys"></i></p>
+      Your key is kept in this browser and sent only with AI requests; the server never stores it. <i data-help="ai_keys"></i></p>
 
     <label><span class="lbl">Use for advice &amp; stitch checks <i data-help="ai_vision_use"></i></span>
       <select id="aiUseVision"></select></label>
@@ -292,29 +292,6 @@
     <label id="aiEditModelRow"><span class="lbl">Model for clean-up <i data-help="ai_model"></i></span>
       <select id="aiEditModel"></select></label>
     <label class="check"><input type="checkbox" id="aiRemember"> Remember on this device <i data-help="ai_remember"></i></label>
-    <section class="ai-sync" aria-labelledby="aiSyncTitle">
-      <h3 id="aiSyncTitle">Use on all your devices <i data-help="ai_sync"></i></h3>
-      <div id="aiSyncOff">
-        <p class="small muted">Keep these settings on the server, encrypted in this browser first – the server never sees your key or passphrase.
-          Enter the same passphrase on another computer or phone to use them there.</p>
-        <label><span class="lbl">Sync passphrase</span>
-          <span class="row nowrap-row"><input type="password" id="aiSyncPass" autocomplete="new-password" spellcheck="false" placeholder="At least 12 characters, e.g. four words">
-          <button type="button" class="ghost small" id="aiSyncShow" aria-pressed="false">Show</button></span></label>
-        <div class="row">
-          <button type="button" id="aiSyncSave">Save to my account</button>
-          <button type="button" class="ghost" id="aiSyncLoad">Load my settings</button>
-        </div>
-      </div>
-      <div id="aiSyncOn" class="hidden">
-        <p class="small"><b class="good">&#10003; Synced on this device.</b> <span id="aiSyncWhen"></span>
-          Saving here updates every device that uses your passphrase.</p>
-        <div class="row">
-          <button type="button" class="ghost small" id="aiSyncUnlink">Stop syncing on this device</button>
-          <button type="button" class="ghost small" id="aiSyncDelete">Delete from server</button>
-        </div>
-      </div>
-      <p class="small" id="aiSyncStatus" aria-live="polite"></p>
-    </section>
     <div class="row end">
       <button type="button" class="ghost" id="aiForget">Remove this key</button>
       <button type="button" class="primary" id="aiSave">Save</button>

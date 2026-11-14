@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai_sync, service
+from . import service
 from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
@@ -62,16 +62,6 @@ async def _bad_request(_: Request, exc: ValueError):
 @app.exception_handler(AIError)
 async def _ai_error(_: Request, exc: AIError):
     return JSONResponse({"detail": f"AI service: {exc}"}, status_code=502)
-
-
-@app.exception_handler(ai_sync.SyncNotFound)
-async def _sync_not_found(_: Request, exc: ai_sync.SyncNotFound):
-    return JSONResponse({"detail": "No AI settings are saved with this passphrase yet."}, status_code=404)
-
-
-@app.exception_handler(ai_sync.SyncDenied)
-async def _sync_denied(_: Request, exc: ai_sync.SyncDenied):
-    return JSONResponse({"detail": "These settings were saved with a different passphrase."}, status_code=403)
 
 
 class ExtractBody(BaseModel):
@@ -174,31 +164,6 @@ def ai_models(body: AIBody):
     if not ai:
         raise ValueError("Choose an AI service first.")
     return service.ai_models(ai, body.refresh)
-
-
-# Encrypted AI settings shared between your browsers (see ai_sync.py). POST bodies keep
-# the ids out of access logs.
-class SyncBody(BaseModel):
-    id: str
-    write: Optional[str] = None
-    data: Optional[str] = None
-    iv: Optional[str] = None
-
-
-@app.post("/api/ai/sync/load")
-def ai_sync_load(body: SyncBody):
-    return ai_sync.load(body.id)
-
-
-@app.post("/api/ai/sync/save")
-def ai_sync_save(body: SyncBody):
-    return ai_sync.save(body.id, body.write or "", body.data or "", body.iv or "")
-
-
-@app.post("/api/ai/sync/delete")
-def ai_sync_delete(body: SyncBody):
-    ai_sync.delete(body.id, body.write or "")
-    return {"deleted": True}
 
 
 @app.post("/api/projects")

@@ -1,6 +1,5 @@
 "use strict";
-/* AI settings (user-provided keys, kept in this browser, optionally synced to the server
-   encrypted with the user's passphrase) and the smart assistant:
+/* AI settings (user-provided keys, kept in this browser only) and the smart assistant:
    "Suggest best settings", picture clean-up and "Check my stitches". Without an AI service
    the server's built-in algorithms answer, so every button works without a key.
    Uses helpers from app.js ($, api, json, busy, esc, toast, state, loadSource, extract,
@@ -34,118 +33,6 @@ const AI = (() => {
       (cfg.remember ? localStorage : sessionStorage).setItem(STORE, raw);
       (cfg.remember ? sessionStorage : localStorage).removeItem(STORE);
     } catch (_) { /* in-memory only */ }
-  }
-
-  // ------------------------------------------------------------------ sync between devices
-  // A passphrase gives three values (PBKDF2-SHA256, one salt each): the lookup id, a write
-  // token and an AES-GCM key. Settings are encrypted here; the server (ai_sync.py) keeps
-  // only the id, the hashed write token and the encrypted data. This device remembers the
-  // derived values, never the passphrase. The most recent save wins on every device.
-  const SYNC_STORE = "embroidery.ai.sync.v1";
-  const SYNC_MIN_CHARS = 12;
-  const hex = (b) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-  const b64 = (b) => btoa(String.fromCharCode(...b));
-  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-  const canSync = () => !!(window.crypto && crypto.subtle);
-  let link = loadLink();
-
-  function loadLink() {
-    try { return JSON.parse(localStorage.getItem(SYNC_STORE)) || null; } catch (_) { return null; }
-  }
-  function saveLink(l) {
-    link = l;
-    try { if (l) localStorage.setItem(SYNC_STORE, JSON.stringify(l)); else localStorage.removeItem(SYNC_STORE); } catch (_) {}
-  }
-  async function derive(pass) {
-    const enc = new TextEncoder();
-    const base = await crypto.subtle.importKey("raw", enc.encode(pass.normalize("NFKC")), "PBKDF2", false, ["deriveBits"]);
-    const bits = async (use) => new Uint8Array(await crypto.subtle.deriveBits(
-      { name: "PBKDF2", hash: "SHA-256", salt: enc.encode(`embroidery-digitizer/ai-sync/${use}`), iterations: 310000 }, base, 256));
-    const [id, write, key] = await Promise.all([bits("id"), bits("write"), bits("key")]);
-    return { id: hex(id), write: hex(write), key: b64(key) };
-  }
-  const aesKey = (l) => crypto.subtle.importKey("raw", unb64(l.key), "AES-GCM", false, ["encrypt", "decrypt"]);
-  async function push(l = link) {
-    const body = new TextEncoder().encode(JSON.stringify({ vision: cfg.vision, edit: cfg.edit, providers: cfg.providers, saved_at: cfg.saved_at || Date.now() }));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await aesKey(l), body));
-    return api("/api/ai/sync/save", json("POST", { id: l.id, write: l.write, data: b64(data), iv: b64(iv) }));
-  }
-  async function pull(l = link) {
-    const r = await api("/api/ai/sync/load", json("POST", { id: l.id }));
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(r.iv) }, await aesKey(l), unb64(r.data));
-    return JSON.parse(new TextDecoder().decode(plain));
-  }
-  function applySynced(s) {
-    cfg = { ...cfg, vision: s.vision || "builtin", edit: s.edit || "", providers: s.providers || {}, saved_at: s.saved_at || 0 };
-    persist();
-  }
-  // every save on this device: stamp it, keep it here, and send it to the account if linked
-  async function commit() {
-    cfg.saved_at = Date.now();
-    persist();
-    if (!link || !canSync()) return;
-    try { await push(); } catch (e) { toast(`Saved on this device, but not to your account: ${e.message}`); }
-  }
-
-  function syncStatus(text, bad = false) {
-    $("aiSyncStatus").textContent = text;
-    $("aiSyncStatus").className = "small " + (text ? (bad ? "bad" : "good") : "");
-  }
-  function showSync() {
-    const on = !!link;
-    $("aiSyncOff").classList.toggle("hidden", on || !canSync());
-    $("aiSyncOn").classList.toggle("hidden", !on);
-    $("aiSyncWhen").textContent = on && cfg.saved_at ? `Last saved ${new Date(cfg.saved_at).toLocaleString()}.` : "";
-    if (!canSync()) syncStatus("Syncing needs a secure (https) connection.", true);
-  }
-  async function linkWith(loadIt) {
-    const pass = $("aiSyncPass").value;
-    if (pass.length < SYNC_MIN_CHARS) return syncStatus(`Use at least ${SYNC_MIN_CHARS} characters – four unrelated words work well.`, true);
-    syncStatus(loadIt ? "Loading your settings…" : "Saving to your account…");
-    try {
-      const l = await derive(pass);
-      if (loadIt) {
-        applySynced(await pull(l));
-        saveLink(l);
-        renderDialog();
-        refresh();
-        syncStatus("Loaded – this device now uses your saved AI settings.");
-      } else {
-        readForm();
-        cfg.vision = $("aiUseVision").value || "builtin";
-        cfg.edit = $("aiUseEdit").value || "";
-        cfg.saved_at = Date.now();
-        await push(l);
-        saveLink(l);
-        persist();
-        refresh();
-        syncStatus("Saved. Enter the same passphrase on your other devices and press Load my settings.");
-      }
-      $("aiSyncPass").value = "";
-      showSync();
-    } catch (e) {
-      syncStatus(e.message, true);
-    }
-  }
-  async function deleteSynced() {
-    if (!link || !confirm("Delete your AI settings from the server? Other devices stop syncing; this device keeps its own copy.")) return;
-    try {
-      await api("/api/ai/sync/delete", json("POST", { id: link.id, write: link.write }));
-      saveLink(null);
-      showSync();
-      syncStatus("Deleted from the server.");
-    } catch (e) {
-      syncStatus(e.message, true);
-    }
-  }
-  // on page load: a newer save from another device replaces this device's settings
-  async function pullLatest() {
-    if (!link || !canSync()) return;
-    try {
-      const s = await pull();
-      if ((s.saved_at || 0) > (cfg.saved_at || 0)) { applySynced(s); refresh(); }
-    } catch (_) { /* offline or deleted elsewhere: keep this device's settings */ }
   }
 
   // ------------------------------------------------------------------ helpers
@@ -257,44 +144,38 @@ const AI = (() => {
     $("aiStatus").className = "small " + (bad ? "bad" : "good");
   }
 
-  function renderDialog() {
+  function openDialog() {
+    cfg = load();
     $("aiProviderPick").innerHTML = catalog.map((p) => `<option value="${p.id}">${esc(p.label)}${p.server_configured ? " ✓" : ""}</option>`).join("");
     const first = (cfg.vision !== "builtin" && cfg.vision) || cfg.edit || catalog[0]?.id;
     $("aiProviderPick").value = first;
     showProvider(first);
     $("aiRemember").checked = !!cfg.remember;
     fillUse();
-    showSync();
-  }
-
-  function openDialog() {
-    cfg = load();
-    syncStatus("");
-    renderDialog();
     $("aiDialog").showModal();
   }
 
-  async function saveDialog() {
+  function saveDialog() {
     readForm();
     cfg.vision = $("aiUseVision").value || "builtin";
     cfg.edit = $("aiUseEdit").value || "";
     cfg.remember = $("aiRemember").checked;
+    persist();
     $("aiDialog").close();
     refresh();
-    await commit();
-    toast(cfg.vision === "builtin" && !cfg.edit ? "Saved – using the built-in smart processing." : link ? "AI settings saved on all your devices." : "AI settings saved.", true);
+    toast(cfg.vision === "builtin" && !cfg.edit ? "Saved – using the built-in smart processing." : "AI settings saved.", true);
   }
 
-  async function forget() {
+  function forget() {
     if (!picked) return;
     delete cfg.providers[picked];
     delete loaded[picked];
     if (cfg.vision === picked) cfg.vision = "builtin";
     if (cfg.edit === picked) cfg.edit = "";
+    persist();
     showProvider(picked);
     fillUse();
-    await commit();
-    status(link ? "Removed from this browser and your account." : "Removed from this browser.");
+    status("Removed from this browser.");
   }
 
   // ------------------------------------------------------------------ assistant (step 2)
@@ -433,18 +314,6 @@ const AI = (() => {
       $("aiKeyShow").setAttribute("aria-pressed", show);
     };
     $("aiLoadModels").onclick = loadModels;
-    $("aiSyncSave").onclick = () => linkWith(false);
-    $("aiSyncLoad").onclick = () => linkWith(true);
-    $("aiSyncUnlink").onclick = () => { saveLink(null); showSync(); syncStatus("This device no longer syncs. Your settings stay on the server."); };
-    $("aiSyncDelete").onclick = deleteSynced;
-    $("aiSyncShow").onclick = () => {
-      const show = $("aiSyncPass").type === "password";
-      $("aiSyncPass").type = show ? "text" : "password";
-      $("aiSyncShow").textContent = show ? "Hide" : "Show";
-      $("aiSyncShow").setAttribute("aria-pressed", show);
-    };
-    // Enter in the passphrase must not submit (and close) the dialog
-    $("aiSyncPass").addEventListener("keydown", (ev) => { if (ev.key === "Enter") ev.preventDefault(); });
     $("aiSave").onclick = saveDialog;
     $("aiForget").onclick = forget;
     $("btnAiSuggest").onclick = suggest;
@@ -455,7 +324,6 @@ const AI = (() => {
       if (ev.target.closest("[data-ai-open]")) { ev.preventDefault(); openDialog(); }
     });
     refresh();
-    pullLatest();
   }
 
   return { init, onProject, onStitched, payload };

@@ -29,11 +29,6 @@ pytest                            # pipeline, exports, API, editing, AI (mocked)
 AI is optional. Open **⚙ AI settings** in the app to add your own key, or set server-wide keys in `.env`
 (copy `.env.example`). See [AI assistant](#ai-assistant).
 
-To use the same AI settings on every device, choose a sync passphrase under **Use on all your devices** in
-AI settings. The browser encrypts the settings (AES-GCM, keys from PBKDF2-SHA256) before they are sent, so
-the server keeps only scrambled data in `DATA_DIR/ai_sync/` and never the key or the passphrase. Enter the
-same passphrase on another device and press **Load my settings**; the most recent save is used everywhere.
-
 ## AI assistant
 
 Every assistant feature works **without AI**. Built-in algorithms answer by default, and an AI service
@@ -308,7 +303,6 @@ tests/                pytest suite
 | POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn |
 | GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip`. For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet) |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
-| POST | `/api/ai/sync/save` · `load` · `delete` | `{id, write?, data?, iv?}`: encrypted AI settings shared between browsers (id and write token derived from the passphrase; only the same write token can replace or delete) |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
 | POST | `/api/projects/{id}/ai/clean` | `{ai, mode: redraw\|remove_background\|enhance, colors?}` (needs an image-capable AI) |
 | POST | `/api/projects/{id}/ai/revert` | back to the original picture |
