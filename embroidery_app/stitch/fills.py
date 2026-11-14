@@ -428,8 +428,9 @@ def cross_stitch(poly: Polygon, cell: float, start: Pt, passes: int = 2) -> Piec
 
 # --------------------------------------------------------------------------- shaded (accordion)
 
-def shaded_rows(spacing: float, factor: float = SHADE_MAX_FACTOR):
-    """Row positions from dense (``spacing``) to light (``factor`` x) across the shape."""
+def shaded_rows(spacing: float, factor: float = SHADE_MAX_FACTOR, reverse: bool = False):
+    """Row positions from dense (``spacing``) to light (``factor`` x) across the shape;
+    ``reverse`` puts the dense end at the other side."""
     def rows(lo: float, hi: float) -> np.ndarray:
         ys, y = [], lo + spacing / 2
         span = max(hi - lo, 1e-6)
@@ -437,8 +438,45 @@ def shaded_rows(spacing: float, factor: float = SHADE_MAX_FACTOR):
             ys.append(y)
             t = (y - lo) / span
             y += spacing * (1 + (factor - 1) * t)
-        return np.array(ys)
+        out = np.array(ys)
+        return (lo + hi) - out[::-1] if reverse else out
     return rows
+
+
+BLEND_FACTOR = 8.0  # a blend colour opens up to 8x its row gap at its light end
+
+
+def blend_rows(spacing: float, reverse: bool = False, factor: float = BLEND_FACTOR):
+    """Rows of one colour of a blend. Across the shape (t from 0 to 1) this colour sews
+    a share 1 - t of the full row density, the other colour the share t: the gap is
+    ``spacing / share``, so the two always add up to one full fill and the colours mix
+    evenly instead of leaving thin patches in the middle. A share never drops below
+    1 / ``factor``, so a few rows reach right across."""
+    def rows(lo: float, hi: float) -> np.ndarray:
+        ys, y = [], lo + spacing / 2
+        span = max(hi - lo, 1e-6)
+        while y < hi:
+            ys.append(y)
+            share = max(1.0 - (y - lo) / span, 1.0 / factor)
+            y += spacing / share
+        out = np.array(ys)
+        return (lo + hi) - out[::-1] if reverse else out
+    return rows
+
+
+def _blend(poly, angle, p, start, reverse=False):
+    """One colour of a blend: dense at one side, nearly gone at the other. The other
+    colour is the same shape shaded the opposite way, so together they cover it."""
+    return gen.tatami_fill(poly, angle, p.fill_spacing_mm, p.fill_stitch_length_mm, start, p.max_stitch_mm,
+                           row_ys=blend_rows(p.fill_spacing_mm, reverse=reverse))
+
+
+def _sew_blend_partner(item, angle, params, start):
+    """The second colour of a blend: no foundation of its own (the first colour's is
+    under it), shaded the opposite way."""
+    from .methods import _compensate  # noqa: PLC0415
+    poly = _compensate(item.geom, params)
+    return [Run("fill", p, item.oid) for p in _blend(poly, angle, params, start, reverse=True) if len(p) >= 2]
 
 
 # --------------------------------------------------------------------------- methods
@@ -481,11 +519,13 @@ FILL_STYLES = {
     "contour_fill": _dense(lambda poly, a, p, s: contour_fill(poly, p.fill_spacing_mm, p.running_stitch_length_mm, s)),
     "radial_fill": _dense(lambda poly, a, p, s: radial_fill(poly, p.fill_spacing_mm, p.fill_stitch_length_mm, s)),
     "shaded_fill": _dense(_shaded),
+    "blend_fill": _dense(_blend),
     "stipple_fill": _open(lambda poly, a, p, s: stipple_fill(poly, p.stipple_spacing_mm, 2.0, s)),
     "maze_fill": _open(lambda poly, a, p, s: maze_fill(poly, p.stipple_spacing_mm, 2.0, s)),
     "cross_stitch": _open(lambda poly, a, p, s: cross_stitch(poly, p.cross_cell_mm, s)),
 }
 
 for _name, _gen in FILL_STYLES.items():
-    register(StitchMethod(_name, _gen, directional=_name == "shaded_fill", density=_name in (
-        "offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill")))
+    register(StitchMethod(_name, _gen, directional=_name in ("shaded_fill", "blend_fill"), density=_name in (
+        "offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill", "blend_fill")))
+register(StitchMethod("blend_partner", _sew_blend_partner, directional=True, density=True))

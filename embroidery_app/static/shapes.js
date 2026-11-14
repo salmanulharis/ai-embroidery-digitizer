@@ -48,7 +48,7 @@ const Shapes = (() => {
   const layerOf = (o) => state.design?.layers.find((l) => l.index === o.layer);
   const layerOn = (o) => layerOf(o)?.enabled !== false;
   const isCustom = (o) => o.stitch_type != null || o.angle != null || o.enabled === false
-    || o.spacing_mm != null || o.pull_mm != null || o.bold != null || o.underlay_style != null || o.guide != null;
+    || o.spacing_mm != null || o.pull_mm != null || o.bold != null || o.underlay_style != null || o.guide != null || o.blend_to != null;
   // thickness presets = gap between fill rows / satin stitches (mm)
   const THICKNESS = [["light", 0.5, "Light"], ["normal", 0.4, "Normal"], ["dense", 0.33, "Dense"]];
   const thicknessName = (mm) => THICKNESS.find(([, v]) => Math.abs(v - mm) < 1e-6)?.[2].toLowerCase() || "custom";
@@ -316,6 +316,16 @@ const Shapes = (() => {
 
     const canEdit = step === 2 && chosen.some((o) => o.kind === "area");
     const guided = chosen.some((o) => GUIDED.includes(o.stitch_type || layerOf(o)?.stitch_type));
+    const blending = chosen.some((o) => (o.stitch_type || layerOf(o)?.stitch_type) === "blend_fill");
+    const ownBlend = same(chosen.map((o) => (o.blend_to == null ? "inherit" : String(o.blend_to))));
+    const others = (state.design?.layers || []).filter((l) => l.enabled && !chosen.every((o) => o.layer === l.index));
+    const blendHtml = blending ? `
+      <label class="sp-bold"><span class="lbl">Blend into colour ${Tip.icon("shape_blend")}</span>
+        <select data-action="blend" aria-label="Colour the selected shapes blend into">
+          ${ownBlend === undefined ? `<option value="" selected disabled>– different –</option>` : ""}
+          <option value="inherit" ${ownBlend === "inherit" ? "selected" : ""}>Fabric (fade out)</option>
+          ${others.map((l) => `<option value="${l.index}" ${ownBlend === String(l.index) ? "selected" : ""}>${esc(l.name)} (${l.hex})</option>`).join("")}
+        </select></label>` : "";
     const hasGuide = chosen.some((o) => o.guide);
     const guideHtml = guided || hasGuide ? `
       <div class="row sp-guide">
@@ -352,6 +362,7 @@ const Shapes = (() => {
       </div>
       ${followNote}
       ${guideHtml}
+      ${blendHtml}
       <div class="sp-grid sp-thickgrid">${thicknessHtml}</div>
       ${thickNote}
       <div class="row">
@@ -458,6 +469,11 @@ const Shapes = (() => {
         const v = t.value;
         if (!v) return;
         return update({ ids, bold: v === "inherit" ? "inherit" : v === "on" }, "Changing outline…");
+      }
+      if (action === "blend") {
+        const v = t.value;
+        if (!v) return;
+        return update({ ids, blend_to: v === "inherit" ? "inherit" : Number(v) }, "Changing blend…");
       }
       if (action === "underlay") {
         const v = t.value;

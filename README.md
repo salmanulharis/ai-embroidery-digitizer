@@ -105,6 +105,10 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
 
 ## How the stitch engine works
 
+0. **Blend fill** (Wilcom: Multi Blend): a shape set to "Blend fill" with "Blend into colour" chosen in the shape
+   editor is sewn in its own colour with rows that thin out across it, and again in the second colour shaded the
+   other way. At every point the two shares add up to one full fill (gap = row gap / share), so the colours mix
+   evenly. Without a second colour it fades into the fabric. The second half is sewn in that colour's turn.
 0. **Photo stitch** (step 3, off by default; Wilcom: Photo Flash): the whole picture in one dark thread, as rows
    that zigzag as wide as the picture is dark (auto contrast: the lightest shade thin, the darkest full). The shading
    comes from the shapes' colours, so extract a photo with several shades (e.g. 8 colours) and remove its background.

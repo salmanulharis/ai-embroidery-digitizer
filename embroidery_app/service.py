@@ -445,6 +445,7 @@ def update_objects(
     bold=None,
     underlay_style=None,
     guide=None,
+    blend_to=None,
 ) -> dict:
     """Set per-shape settings. ``None`` = leave unchanged, ``"inherit"`` = use the
     colour's / design's setting again. ``scope``: selected shapes, all shapes of their
@@ -455,6 +456,9 @@ def update_objects(
         raise ValueError("Bold outline must be on, off or same as design.")
     if underlay_style is not None and underlay_style != _INHERIT and underlay_style not in UNDERLAY_STYLES:
         raise ValueError("Unknown foundation type.")
+    if blend_to is not None and blend_to != _INHERIT:
+        if not isinstance(blend_to, int) or blend_to not in {l.index for l in load_design(pid).layers}:
+            raise ValueError("Choose one of the design's colours to blend into.")
     guide_line = None
     if guide is not None and guide != _INHERIT:
         guide_line = clean_guide(_simplified_guide(guide))
@@ -500,6 +504,8 @@ def update_objects(
             o.underlay_style = None if underlay_style == _INHERIT else underlay_style
         if guide is not None and o.kind == "area":  # lines follow their own path
             o.guide = None if guide == _INHERIT else guide_line
+        if blend_to is not None and o.kind == "area":
+            o.blend_to = None if blend_to == _INHERIT or blend_to == o.layer else blend_to
     _save_design(pid, design)
     return design_payload(design, pid)
 

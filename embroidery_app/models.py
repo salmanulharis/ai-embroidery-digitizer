@@ -97,6 +97,7 @@ STITCH_STYLES: tuple[tuple[str, str], ...] = (
     ("guided_satin", "Guided satin (follows a line you draw)"),
     ("florentine_fill", "Florentine fill (rows bend with a line you draw)"),
     ("carved_fill", "Carved fill (a line you draw pressed into the fill)"),
+    ("blend_fill", "Blend fill (fades into another colour)"),
 )
 STITCH_TYPES = tuple(k for k, _ in STITCH_STYLES)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
@@ -170,6 +171,7 @@ class DesignObject:
     bold: Optional[bool] = None  # outlines sewn 3x (True) / once (False)
     underlay_style: Optional[str] = None  # foundation type, see UNDERLAY_STYLES / stitch/underlay.py
     guide: Optional[tuple] = None  # guide line ((x, y), ...) in mm for the guided styles
+    blend_to: Optional[int] = None  # blend fill: the colour (layer index) it fades into
 
     @property
     def customised(self) -> bool:
@@ -179,11 +181,11 @@ class DesignObject:
         """All per-shape settings as one value. Merging, re-extract carry-over, reset
         and undo work on this tuple, so new settings only need adding here."""
         return (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style,
-                self.guide)
+                self.guide, self.blend_to)
 
     def apply_settings(self, settings: tuple) -> None:
         (self.stitch_type, self.angle, self.enabled, self.spacing_mm, self.pull_mm, self.bold, self.underlay_style,
-         self.guide) = settings
+         self.guide, self.blend_to) = settings
 
     def clear_settings(self) -> None:
         self.apply_settings(_DEFAULT_SETTINGS)
@@ -213,6 +215,8 @@ class DesignObject:
             d["underlay_style"] = self.underlay_style
         if self.guide is not None:
             d["guide"] = [list(p) for p in self.guide]
+        if self.blend_to is not None:
+            d["blend_to"] = self.blend_to
         return d
 
     @classmethod
@@ -235,10 +239,11 @@ class DesignObject:
             bold=bold if isinstance(bold, bool) else None,
             underlay_style=underlay if underlay in UNDERLAY_STYLES else None,
             guide=clean_guide(d.get("guide")),
+            blend_to=int(d["blend_to"]) if isinstance(d.get("blend_to"), int) else None,
         )
 
 
-_DEFAULT_SETTINGS = (None, None, True, None, None, None, None, None)
+_DEFAULT_SETTINGS = (None, None, True, None, None, None, None, None, None)
 
 
 _CONFLICT_WARNING = (

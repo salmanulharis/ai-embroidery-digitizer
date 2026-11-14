@@ -391,6 +391,12 @@ const HELP = {
     why: "You decide exactly how a curved satin turns or how a fill flows, where the automatic direction is not what you want.",
     eg: "Choose the stitch style first, then press “Draw guide line” and drag along the middle of a curved band (satin) or in the direction the rows should flow (fill).",
   },
+  shape_blend: {
+    t: "Blend into colour",
+    what: "With “Blend fill”, the shape is sewn in its own colour with rows that open up across it, and again in the colour chosen here, shaded the other way. Together they always cover the shape fully, so one colour fades into the other along the stitch direction.",
+    why: "A soft change from one thread colour to another - sunsets, skies, shading on petals - that separate colour areas cannot show.",
+    eg: "Set the direction across which the colours should change (for example vertical for a horizon). Choose “Fabric” to let the colour fade out into the fabric instead.",
+  },
   shape_underlay: {
     t: "Foundation",
     what: "The foundation stitches sewn under the selected shapes before their top stitching. The choices depend on how the shapes are sewn: fills and straight satin columns have their own lists; satin that follows a curve keeps its own foundation.",

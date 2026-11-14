@@ -121,6 +121,10 @@ def classify(obj: DesignObject, forced: str, params: StitchParams, satin_angle: 
         return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
     if forced in DECOR_AREA_STYLES:
         forced = "auto"  # a line has no area: sewn along its path as usual
+    if forced == "blend_fill" and obj.kind == "area":
+        return [_Item(-1, poly, "blend_fill") for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
+    if forced == "blend_fill":
+        forced = "auto"
     if forced in FILL_STYLE_NAMES and obj.kind == "area":
         return [_Item(-1, poly, forced) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
     if forced in FILL_STYLE_NAMES:
@@ -316,6 +320,7 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
             "bold": obj.bold,
             "underlay_style": obj.underlay_style,
             "guide": [list(p) for p in obj.guide] if obj.guide else None,
+            "blend_to": obj.blend_to,
             "method": method,  # a registered stitch method, or mixed | none
             "effective_angle": None if angle is None else round(angle % 180, 1),
             "effective_spacing_mm": spacing,
@@ -334,7 +339,8 @@ def describe_objects(design: Design, params: StitchParams) -> list[dict]:
 def _fill_like(method: str) -> bool:
     """Methods whose thickness is the fill row gap (tatami and the advanced dense fills)."""
     return method == "fill" or method in ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
-                                          "pattern_fill", "jagged_fill", "florentine_fill", "carved_fill")
+                                          "pattern_fill", "jagged_fill", "florentine_fill", "carved_fill",
+                                          "blend_fill", "blend_partner")
 
 
 # Methods that cover an area themselves (fills): a knockdown is not needed under them.
@@ -370,6 +376,29 @@ def knockdown_block(details: list[BaseGeometry], oid: int) -> ColorBlock:
                     block.runs.append(Run("fill", piece, oid))
                     cur = piece[-1]
     return block
+
+
+def blend_angle(obj: DesignObject, params: StitchParams) -> float:
+    """Both colours of a blend use the same row direction (the shape's own, else the
+    design's fill direction), so their rows interleave evenly."""
+    return obj.angle if obj.angle is not None else params.fill_angle
+
+
+def blend_partners(design: Design, layer: ColorLayer, params: StitchParams) -> list[tuple[DesignObject, Polygon]]:
+    """Shapes of *other* colours set to blend into ``layer``: they are sewn again in
+    this colour, shaded the opposite way (stitch/fills.py, Wilcom: Multi Blend)."""
+    out = []
+    for obj in design.objects:
+        if not obj.enabled or obj.kind != "area" or obj.blend_to != layer.index or obj.layer == layer.index:
+            continue
+        try:
+            source = design.layer(obj.layer)
+        except KeyError:
+            continue
+        if not source.enabled or (obj.stitch_type or source.stitch_type) != "blend_fill":
+            continue
+        out += [(obj, poly) for poly in iter_polygons(obj.geometry) if poly.area >= params.min_object_area_mm2]
+    return out
 
 
 def _entry_distance(item: _Item, pos: Pt) -> float:
@@ -453,6 +482,23 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
         enabled = []
     for position, layer in enumerate(enabled):
         items: list[_Item] = []
+
+        def take(it: _Item, obj: DesignObject, own: StitchParams) -> None:
+            nonlocal oid, min_fill_spacing
+            it.oid = oid
+            it.source_id = obj.id
+            it.params = own
+            if _fill_like(it.method):
+                min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
+            if registry.is_multi_piece(it.method):
+                stroke_oids.add(oid)
+            is_line = it.geom.geom_type in ("LineString", "MultiLineString")
+            geoms[oid] = it.geom.buffer(max(0.5, it.width / 2)) if is_line else it.geom
+            if params.knockdown and _needs_knockdown(it.method, geoms[oid]):
+                details.append(geoms[oid])
+            oid += 1
+            items.append(it)
+
         for obj in design.objects:
             if obj.layer != layer.index or not obj.enabled:
                 continue
@@ -461,19 +507,13 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
             found = classify(obj, forced, params, satin_angle)
             smart_fill_angles(found, obj, layer, fill_angle, params)
             for it in found:
-                it.oid = oid
-                it.source_id = obj.id
-                it.params = own
-                if _fill_like(it.method):
-                    min_fill_spacing = min(min_fill_spacing, own.fill_spacing_mm)
-                if registry.is_multi_piece(it.method):
-                    stroke_oids.add(oid)
-                is_line = it.geom.geom_type in ("LineString", "MultiLineString")
-                geoms[oid] = it.geom.buffer(max(0.5, it.width / 2)) if is_line else it.geom
-                if params.knockdown and _needs_knockdown(it.method, geoms[oid]):
-                    details.append(geoms[oid])
-                oid += 1
-                items.append(it)
+                if it.method == "blend_fill":
+                    it.angle = blend_angle(obj, params)
+                take(it, obj, own)
+        for obj, poly in blend_partners(design, layer, params):  # other colours blending into this one
+            it = _Item(-1, poly, "blend_partner")
+            it.angle = blend_angle(obj, params)
+            take(it, obj, shape_params(obj, params))
         if not items:
             continue
         if any(it.method in st.STROKE_METHODS for it in items):
