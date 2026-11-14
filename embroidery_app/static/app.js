@@ -52,27 +52,128 @@ function toast(msg, info = false) {
   $("toastClose").onclick = hideToast;
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !t.classList.contains("hidden")) hideToast(); });
 })();
-async function busy(text, fn) {
+async function busy(text, fn, { quiet = false } = {}) {
   $("busyText").textContent = text;
   $("busy").classList.remove("hidden");
   document.querySelector("main").setAttribute("aria-busy", "true");
   announce(text);
   Tip.hide();
-  try { return await fn(); } catch (e) { toast(e.message); throw e; } finally {
+  try { return await fn(); } catch (e) { if (!quiet) toast(e.message); throw e; } finally {
     $("busy").classList.add("hidden");
     document.querySelector("main").removeAttribute("aria-busy");
   }
 }
-function showStep(n) {
-  window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+
+// ------------------------------------------------------------------ steps
+// The steps in the header are buttons: any step already reached can be opened again.
+// Pages: 1 upload, 2 prepare, 3 stitches + download (steps 3 and 4 share a page).
+// Each page change adds a browser history entry, so Back returns to the previous step.
+const pageOf = (n) => Math.min(n, 3);
+let currentStep = 1;
+function stepReachable(s) {
+  if (s === 1) return true;
+  if (s === 2) return !!state.design;
+  if (s === 3) return !!state.design && !$("btnApprove").disabled;
+  return !!state.preview;
+}
+function updateSteps() {
+  document.querySelectorAll("#steps li").forEach((li) => {
+    const s = +li.dataset.step, b = li.querySelector("button");
+    li.classList.toggle("active", s === currentStep);
+    li.classList.toggle("done", s < currentStep);
+    b.disabled = s !== currentStep && !stepReachable(s);
+    if (s === currentStep) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+  });
+  $("btnNew").classList.toggle("hidden", !state.project || currentStep === 1);
+  $("openNote").classList.toggle("hidden", !state.project || currentStep !== 1);
+  if (state.project) $("openName").textContent = state.project.filename;
+}
+function showStep(n, { fromHistory = false } = {}) {
+  const pageChanged = pageOf(n) !== pageOf(currentStep);
+  if (pageChanged) window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+  currentStep = n;
   $("editActions").classList.toggle("hidden", n < 2);
   requestAnimationFrame(measureHeader);
-  ["step1", "step2", "step3"].forEach((id, i) => $(id).classList.toggle("hidden", (n >= 3 ? 3 : n) !== i + 1));
-  document.querySelectorAll("#steps li").forEach((li) => {
-    const s = +li.dataset.step;
-    li.classList.toggle("active", s === n);
-    li.classList.toggle("done", s < n);
+  ["step1", "step2", "step3"].forEach((id, i) => $(id).classList.toggle("hidden", pageOf(n) !== i + 1));
+  updateSteps();
+  if (pageChanged && !fromHistory) history.pushState({ step: n }, "");
+  saveSession();
+}
+// Step 3 from another page sews the (possibly edited) design again; step 4 then shows Download.
+async function goToStep(s, opts = {}) {
+  if (!stepReachable(s)) return;
+  if (s >= 3 && pageOf(currentStep) !== 3) {
+    showStep(3, opts);
+    await generate();
+  } else if (s !== 4) {
+    showStep(s, opts);
+  }
+  if (s === 4) revealDownload();
+}
+function revealDownload() {
+  $("exportBox").scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
+  $("downloadTitle").focus({ preventScroll: true });
+}
+$("steps").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-goto]");
+  if (!b || b.disabled) return;
+  const s = +b.dataset.goto;
+  if (s === currentStep && s !== 4) return;
+  goToStep(s).catch(() => {});
+});
+window.addEventListener("popstate", (ev) => {
+  const s = ev.state?.step || 1;
+  if (pageOf(s) === pageOf(currentStep)) return;
+  goToStep(stepReachable(s) ? s : 1, { fromHistory: true }).catch(() => {});
+});
+
+// ------------------------------------------------------------------ the open design survives a reload
+// Kept for this browser tab only: the project, the step and the form values. The design
+// itself stays on the server and is fetched again.
+const SESSION_KEY = "openDesign";
+function formSnapshot() {
+  const v = {};
+  document.querySelectorAll("#step2 aside input[id], #step2 aside select[id]").forEach((e) => (v["#" + e.id] = e.type === "checkbox" ? e.checked : e.value));
+  [...$("stitchForm").elements].forEach((e) => { if (e.name) v[e.name] = e.type === "checkbox" ? e.checked : e.value; });
+  return v;
+}
+function restoreForm(v) {
+  Object.entries(v).forEach(([k, val]) => {
+    const e = k.startsWith("#") ? $(k.slice(1)) : $("stitchForm").elements[k];
+    if (!e || !e.matches?.("input, select")) return;
+    if (e.type === "checkbox") e.checked = !!val; else e.value = val;
   });
+  showAdjustValues();
+  const fabric = $("stitchForm").elements.fabric;
+  if (fabric) showFabricNote(fabric.value);
+}
+function saveSession() {
+  try {
+    if (!state.project) sessionStorage.removeItem(SESSION_KEY);
+    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ meta: state.project, step: currentStep, form: formSnapshot() }));
+  } catch (_) {}
+}
+window.addEventListener("pagehide", saveSession);
+
+async function resumeDesign() {
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch (_) {}
+  if (!saved?.meta?.id) return;
+  try {
+    openProject(saved.meta);
+    restoreForm(saved.form || {});
+    await loadSource();
+    // a design that was never prepared (reload right after upload) is prepared now
+    const res = await busy("Opening your design again…", () => api(`/api/projects/${saved.meta.id}/design`), { quiet: true }).catch(() => null);
+    if (res) renderDesign(res); else await extract({ quiet: true });
+    showStep(2);
+    if (saved.step >= 3) await goToStep(3);
+    toast(`Welcome back – ${saved.meta.filename} is open again.`, true);
+  } catch (_) {
+    Object.assign(state, { project: null, design: null, preview: null });
+    showStep(1);
+    toast("Your last design could not be opened again. Please upload the file once more.", true);
+  }
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -97,6 +198,8 @@ async function init() {
   buildStitchForm();
   bindUpload();
   bindCanvas();
+  history.replaceState({ step: 1 }, "");
+  await resumeDesign();
 }
 
 // ------------------------------------------------------------------ picture adjustments + text detail
@@ -186,7 +289,14 @@ function aspect() {
 // ------------------------------------------------------------------ step 1: upload
 function bindUpload() {
   const drop = $("drop"), input = $("file");
-  input.onchange = () => input.files[0] && upload(input.files[0]);
+  input.onchange = () => {
+    const f = input.files[0];
+    input.value = ""; // choosing the same file again still uploads it
+    if (f) upload(f);
+  };
+  $("btnChoose").onclick = () => input.click();
+  $("btnNew").onclick = () => { showStep(1); $("btnChoose").focus(); };
+  $("btnBackToOpen").onclick = () => goToStep(state.preview ? 3 : 2).catch(() => {});
   ["dragenter", "dragover"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (ev) => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]));
@@ -196,21 +306,27 @@ async function upload(file) {
   const fd = new FormData();
   fd.append("file", file);
   const meta = await busy("Uploading…", () => api("/api/projects", { method: "POST", body: fd }));
-  state.project = meta;
-  state.preview = null;
+  openProject(meta);
+  await loadSource();
+  showStep(2);
+  await busy("Analysing your picture…", smartDefaults).catch(() => {});
+  await extract();
+}
+
+// A new or reopened project: forget the previous design, set up step 2 for this file.
+function openProject(meta) {
+  Object.assign(state, { project: meta, design: null, preview: null, smart: null });
   Shapes.reset();
   const raster = meta.kind === "raster";
   $("rasterOpts").classList.toggle("hidden", !raster);
   $("vectorOpts").classList.toggle("hidden", raster);
+  $("smartInfo").classList.add("hidden");
   AI.onProject(meta);
   $("fileInfo").textContent = `${meta.filename} · ${raster ? `picture, ${meta.info.width_px} × ${meta.info.height_px} pixels` : "artwork file"}`;
   $("layers").innerHTML = "";
   $("svgBox").innerHTML = "";
   $("btnApprove").disabled = true;
-  await loadSource();
-  showStep(2);
-  await busy("Analysing your picture…", smartDefaults).catch(() => {});
-  await extract();
+  $("exportBox").classList.add("hidden");
 }
 
 async function loadSource() {
@@ -240,8 +356,8 @@ function extractOptions() {
   return o;
 }
 
-async function extract() {
-  const res = await busy("Preparing your design…", () => api(`/api/projects/${state.project.id}/extract`, json("POST", { options: extractOptions() })));
+async function extract({ quiet = false } = {}) {
+  const res = await busy("Preparing your design…", () => api(`/api/projects/${state.project.id}/extract`, json("POST", { options: extractOptions() })), { quiet });
   renderDesign(res);
 }
 
@@ -263,6 +379,7 @@ function renderDesign(res) {
   $("btnUndo").disabled = !res.can_undo;
   $("btnRedo").disabled = !res.can_redo;
   Shapes.afterRender(res);
+  updateSteps();
 }
 
 // stitch styles for colours and shapes come from the server (models.STITCH_STYLES)
@@ -460,9 +577,10 @@ $("btnPin").onclick = () => setPinned(!document.body.classList.contains("pin"));
 window.addEventListener("resize", measureHeader);
 (() => { let on = false; try { on = localStorage.getItem("pinPreview") === "1"; } catch (_) {} setPinned(on); })();
 
-$("btnExtract").onclick = extract;
-$("btnApprove").onclick = async () => { showStep(3); await generate(); };
-$("btnBack").onclick = () => showStep(2);
+$("btnExtract").onclick = () => extract();
+$("btnApprove").onclick = () => goToStep(3).catch(() => {});
+$("btnBack").onclick = () => goToStep(2);
+$("btnToDownload").onclick = revealDownload;
 
 // AI assistant buttons live in ai.js
 

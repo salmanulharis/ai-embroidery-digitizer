@@ -10,13 +10,16 @@
 <body>
 <header>
   <h1><span class="logo" aria-hidden="true">&#10045;</span> Embroidery Digitizer</h1>
-  <ol class="steps" id="steps">
-    <li data-step="1" class="active"><span>Upload</span></li>
-    <li data-step="2"><span>Prepare design</span></li>
-    <li data-step="3"><span>Create stitches</span></li>
-    <li data-step="4"><span>Download</span></li>
-  </ol>
+  <nav aria-label="Steps" class="steps-nav">
+    <ol class="steps" id="steps">
+      <li data-step="1" class="active"><button type="button" data-goto="1" aria-label="Upload" aria-current="step"><span>Upload</span></button></li>
+      <li data-step="2"><button type="button" data-goto="2" aria-label="Prepare design" disabled><span>Prepare design</span></button></li>
+      <li data-step="3"><button type="button" data-goto="3" aria-label="Create stitches" disabled><span>Create stitches</span></button></li>
+      <li data-step="4"><button type="button" data-goto="4" aria-label="Download" disabled><span>Download</span></button></li>
+    </ol>
+  </nav>
   <div class="hdr-actions">
+    <button type="button" class="ghost hidden" id="btnNew" title="Upload another file" aria-label="New design">&#10010;<span class="hide-sm"> New design</span></button>
     <span class="edit-actions hidden" id="editActions">
       <button type="button" class="ghost" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;<span class="hide-sm"> Undo</span></button>
       <button type="button" class="ghost" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo">&#8631;<span class="hide-sm"> Redo</span></button>
@@ -32,12 +35,16 @@
   <!-- STEP 1 -->
   <section id="step1" class="panel" aria-labelledby="step1Title">
     <h2 id="step1Title" class="visually-hidden">Upload your design</h2>
+    <div class="open-note hidden" id="openNote">
+      <span>You have <b id="openName"></b> open. Uploading a new file starts a new design.</span>
+      <button type="button" class="small" id="btnBackToOpen">Back to my design</button>
+    </div>
     <label class="drop" id="drop">
       <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg,.ai,.pdf" hidden>
       <span class="drop-icon" aria-hidden="true">&#8682;</span>
       <strong>Drop your logo or picture here</strong>
       <span class="muted">or tap to choose a file</span>
-      <span class="btn primary-btn">Choose file</span>
+      <button type="button" class="btn primary-btn" id="btnChoose">Choose file</button>
       <span class="small muted">Pictures: PNG, JPG, WEBP &nbsp;·&nbsp; Artwork: SVG, Adobe Illustrator (.ai), PDF</span>
     </label>
     <ul class="features">
@@ -199,6 +206,7 @@
           </div><i data-help="variant" id="variantHelp" class="hidden"></i>
           <button id="btnFit" class="ghost">Fit to view</button>
           <label class="check"><input type="checkbox" id="showFabric"> Dark fabric</label>
+          <button type="button" class="ghost to-download" id="btnToDownload">&#8615; Download</button>
         </div>
         <div class="canvasWrap"><canvas id="canvas" aria-label="Stitch preview - scroll to zoom, drag to move"></canvas><div id="legend" class="legend"></div></div>
         <div class="player">
@@ -221,7 +229,7 @@
         <div id="sequence" class="sequence"></div>
 
         <div id="exportBox" class="hidden">
-          <h3>Download <i data-help="export"></i></h3>
+          <h3 id="downloadTitle" tabindex="-1">Download <i data-help="export"></i></h3>
           <fieldset class="exports-set">
             <legend class="visually-hidden">Files to download</legend>
             <div class="exports" id="exports"></div>

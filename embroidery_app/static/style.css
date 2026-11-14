@@ -35,19 +35,24 @@ header { position: sticky; top: 0; z-index: 15; display: flex; align-items: cent
   border-bottom: 1px solid var(--line); }
 .logo { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-size: 17px; }
-.steps { display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; counter-reset: s; flex-wrap: nowrap; order: 3; }
-.steps li { counter-increment: s; display: flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; border-radius: 999px; color: var(--muted); font-size: 13px; white-space: nowrap; }
-.steps li::before { content: counter(s); display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+.steps-nav { order: 3; }
+.steps { display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; counter-reset: s; flex-wrap: nowrap; }
+.steps li { counter-increment: s; display: flex; }
+.steps button { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 12px 5px 6px; border: none; border-radius: 999px;
+  background: transparent; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.steps button::before { content: counter(s); display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
   border-radius: 50%; border: 1px solid var(--line); background: var(--card); font-size: 12px; font-weight: 600; }
-.steps li.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.steps li.active::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.steps li.done { color: var(--ok); }
-.steps li.done::before { content: "\2713"; border-color: var(--ok); color: var(--ok); }
-@media (min-width: 900px) { .steps { order: 0; } }
-@media (max-width: 899px) { .steps { width: 100%; justify-content: space-between; } }
+.steps button:disabled { opacity: 1; } /* a step not reached yet looks as before, it just cannot be opened */
+.steps button:hover:not(:disabled):not([aria-current]) { background: var(--raised); color: var(--text); }
+.steps li.active button { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.steps li.active button::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.steps li.done button { color: var(--ok); }
+.steps li.done button::before { content: "\2713"; border-color: var(--ok); color: var(--ok); }
+@media (min-width: 900px) { .steps-nav { order: 0; } }
+@media (max-width: 899px) { .steps-nav { width: 100%; } .steps { justify-content: space-between; } }
 @media (max-width: 560px) {
   header { padding: 8px 12px; }
-  .steps li { padding: 4px; font-size: 12px; }
+  .steps button { padding: 4px; font-size: 12px; }
   .steps li:not(.active) span { display: none; }
   .hide-sm { display: none; }
 }
@@ -111,6 +116,8 @@ button.small, .btn.small { min-height: 30px; padding: 3px 10px; font-size: 12px;
 .drop-icon { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 16px; font-size: 26px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
 .drop .btn { margin: 6px 0; padding: 9px 22px; }
+.open-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 0 0 14px; padding: 10px 14px;
+  border-radius: var(--radius-sm); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
 .features { list-style: none; padding: 0; margin: 18px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .features li { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
 .features b { display: block; margin-bottom: 2px; }
@@ -154,6 +161,7 @@ table.layers tr.off td:not(:first-child) { opacity: .45; }
   .toolbar > .seg { display: flex; flex-wrap: wrap; width: calc(100% - 34px); overflow: visible; }
   .toolbar > .seg button { flex: 1 1 40%; }
 }
+.toolbar .to-download { margin-left: auto; border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .canvasWrap { position: relative; height: clamp(320px, 62vh, 680px); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; background: #fbfaf7; }
 .canvasWrap.dark { background: #22252b; }
 canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
