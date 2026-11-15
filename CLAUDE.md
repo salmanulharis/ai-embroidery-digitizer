@@ -4,6 +4,8 @@ AI Embroidery Digitizer: raster (PNG/JPG/WEBP) and vector (SVG/AI/PDF) artwork â
 (Tajima DST first; EXP, U01, PES, JEF, VP3), plus SVG/PNG/worksheet/ZIP. FastAPI backend, no-build vanilla JS
 front end, SQLite for accounts. `README.md` is the authoritative feature/API reference; read its
 "How the stitch engine works" and "Extending" sections before changing stitching.
+`docs/ROADMAP.md` is the editor redesign plan: status, how the editor code works, and detailed specs for the
+remaining phases (presets next). Browser smoke tests: `tools/smoke/`.
 
 ## Commands
 

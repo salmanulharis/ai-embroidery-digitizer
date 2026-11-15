@@ -1,0 +1,333 @@
+# Editor redesign: roadmap, status and plan
+
+The working plan for turning the editor into a professional embroidery workspace. It records what is done,
+how the new editor code works, the decisions taken, and detailed specs for every remaining phase, so the
+work can be picked up on any machine. Read `CLAUDE.md` and `README.md` ("The editor", "How the stitch
+engine works") first.
+
+Last updated: 15 Nov 2026 (after Phase 2, commit `cbb43a5` on `main`). Nothing of this has been deployed
+yet: deploys run on version tags only.
+
+---
+
+## 1. Status at a glance
+
+| Phase | Content | Status | Commit |
+|---|---|---|---|
+| 0 | Safety net + foundations: request queue, canvas renderer, server lock | **Done** (browser tests in CI still open, see §8) | `2fdefb4` |
+| 1 | One workspace: 3 panes, bottom bar, Shapes/Stitches, auto-update, export dialog, icons | **Done** | `2fdefb4` |
+| 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
+| 3 | Presets: built-in + custom, plan limits, admin | **Next** – needs 3 product decisions (§4.1) | – |
+| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | Planned | – |
+| 5 | Future: thread catalogs, more formats, machine speed, theme toggle | Planned | – |
+
+Before the first release tag:
+1. Click through on a real design (desktop, tablet, phone).
+2. Have someone with Wilcom EmbroideryStudio open a "Continue in Wilcom" ZIP (checklist in §7.4).
+3. `python -m pytest -q -W error::DeprecationWarning` and both smoke tests (§9) green.
+
+---
+
+## 2. What is done (Phases 0–2)
+
+### Workspace (Phase 1)
+- **Upload page** → **one editor** (`#editor`): left settings panel (Size, Colours, Picture or Artwork,
+  Stitches, Smart assistant), centre preview, right panel (Selection, Threads, Design info, Checks), fixed
+  bottom bar (undo/redo, preview style, Optimised/Original, dark fabric, sewing simulation, zoom, status,
+  Export). Steps 2–4 and the "Looks good – create stitches" gate are gone.
+- **Shapes / Stitches** view switch (`state.pane`). Selection is shared. Outline tools (paint, erase, lasso,
+  guide line, draw direction) switch to Shapes by themselves. **Original** overlays the uploaded picture in both
+  views, aligned in mm (`Shapes.reference()`).
+- **Auto-update**: settings changes re-extract or re-stitch after a short delay, one request at a time, newest
+  values win; designs slower than 3 s switch to a manual **Update** button; Auto-update can be turned off.
+  Edits never cover the screen (only upload/open/close and the AI tasks use the blocking overlay).
+- **Threads list** replaces the 10-column colour table (expand a row for style, direction, order, merge;
+  drag-merge kept).
+- **Export dialog**: grouped files, summary (size, hoop fit, stitches, time), checks, allowance note, plan
+  locks; flushes pending updates first so downloads always match the screen.
+- **Sheets**: right panel < 1200 px, left panel < 900 px; bottom bar wraps on phones.
+- **Canvas**: stitches drawn once per view into an off-screen canvas; quick per-colour Path2D version while
+  zooming/panning; sewing simulation draws only new stitches.
+- **Server**: `service.stitch` / `service.export` serialised per project (`_project_lock`).
+- Icons: inline SVG sprite in `index.html` (no emoji, no icon library).
+
+### Control quality (Phase 2)
+- **Undo/redo for everything** (`History` in `app.js`): design changes (server stack, 50 steps) and stitch
+  settings (client snapshots) in one timeline; an extract step also restores the picture/size settings; undo
+  button names the step; saved in `sessionStorage` (survives reload).
+- **Changed markers + reset**: compared with `state.baseline` (stitch defaults + picture settings after the
+  upload's smart analysis). Dot on the setting and its section, ↺ per setting, "Reset" per section, "Reset all".
+- **Style settings**: style-only parameters (`STYLE_PARAMS`) shown only when the design uses those styles;
+  "Show the settings of every stitch style" lists them all.
+- **Hoop outline** in both views, centred like the machine file (DST origin = design centre); red + Checks
+  warning when too large; Fit includes the hoop. Hoop width now uses the design's proportions (was the
+  picture's – a portrait logo did not fit).
+- **Continue in Wilcom** export (`service.wilcom_package`, `export/vector.design_to_eps`) – see §7.
+- Plan cache: 6 plans per design (3 setting states). Static files revalidated on every load (`no-cache` +
+  ETag) so a deploy never mixes a new page with cached old scripts.
+
+### Measured performance (dev box, `example-logo.png`)
+| Operation | 100 mm (~7.8k stitches) | 250 mm (~35k stitches) |
+|---|---|---|
+| Extract (prepare design) | 1.3 s | 1.4 s |
+| Stitch, optimisation on (2 plans + coverage check) | 0.9–1.4 s | 2.3 s (4.0 s smart direction) |
+| Same settings again (cache) | 0.1 s | 0.26 s |
+| Preview JSON (ops + original_ops) | 0.3 MB | 1.3 MB |
+
+---
+
+## 3. How the new editor code works (read before changing it)
+
+All in `embroidery_app/static/` (plain scripts, load order: help, auth, charts, account, admin, shapes, ai, app).
+
+| Piece | Where | Job |
+|---|---|---|
+| `work(label, fn)` | app.js | Serialises every server call that changes the design; non-blocking; drives the status bar. Never call `work()` inside another `work()` (deadlock). |
+| `Jobs` | app.js | Keeps the preview current: `Jobs.extract()`, `Jobs.stitch({report, force})`, `flush()`, `idle()`, `reset()`, manual mode (`SLOW_STITCH_MS`). Extract runs before stitch. |
+| `History` | app.js | Undo timeline. Call `History.designChange(label)` after a successful design save, `History.stitchChange(label?)` after changing stitch-form values in code. Extracts record themselves (`History.extracted`). |
+| Baseline / markers | app.js | `state.baseline`, `setBaseline()`, `markModified()`, `resetSettings(keys)`, `EXTRACT_IDS`, reset buttons added by `addResetButtons()`. |
+| `STYLE_PARAMS`, `updateStyleParams()` | app.js | Which stitch setting belongs to which style (mapping taken from stitch/*.py). |
+| `Render` | app.js | Canvas: `request(moving)`, `reset()`, `thumbnail(canvas)`, `now()`; `fit()`, `fitView()`, `stitchBounds()`, hoop helpers. |
+| `Export` | app.js | Export dialog; the Wilcom package is exclusive (a ZIP of its own). |
+| `setPane()`, sheets, zoom | app.js | Shapes/Stitches, side sheets, 100 % = 96 px/inch (approximate). |
+| `Shapes` | shapes.js | Selection + shape panel (right panel), edit tools, SVG view, `reference()`, `fit()`, `zoomBy()`, `pxPerMm()`, `objects()`. |
+| Help | help.js | Every new control needs a `HELP` entry (`modified`, `style_settings`, `hoop_outline`, `auto_update`, `view_switch` exist). |
+
+Rules kept: entitlements only via `entitlements.effective`; every project route owner-checked; DB changes
+appended to `db.MIGRATIONS`; deterministic stitching (golden plans untouched by UI work); AI optional.
+
+---
+
+## 4. Phase 3 – Presets (next, about 2–3 weeks)
+
+Goal: reusable settings. Built-in presets everyone (by plan) can apply; custom presets paying plans can save.
+
+### 4.1 Decisions needed before starting (defaults in brackets)
+1. **Built-in preset access**: by tier – `presets_basic` / `presets_premium` features – plus an admin
+   override moving one preset between tiers **[recommended]**, or a full preset × plan matrix?
+2. **Custom preset limits per plan**: **[Free 0, Basic 5, Pro 25]** – existing plans must get values in the
+   migration.
+3. **Downgrade**: presets above the new limit or without `custom_presets` – **[kept and can still be applied,
+   renamed, deleted; no new ones]**, read-only, or hidden?
+4. (Smaller) One preset type with optional sections **[recommended]** vs separate image/stitch presets;
+   built-in values maintained in code + tests **[recommended]** vs admin-editable.
+
+### 4.2 Model
+A preset is a **partial** settings record: only the keys it contains are applied (like `fabrics.py`).
+```json
+{ "schema": 1,
+  "sections": {
+    "stitch":  { "fill_spacing_mm": 0.40, "satin_spacing_mm": 0.35, "smart_direction": true },
+    "fabric":  { "fabric": "pique", "thread_weight": 60, "pull_compensation_mm": 0.30 },
+    "image":   { "background": "auto", "sharpen": 1, "min_feature_mm": 0.2 },
+    "size":    { "width_mm": 90 }
+  } }
+```
+- Sections map to the left-panel sections. `size` / colour count are off by default when saving.
+- Validation on save **and** apply: whitelist of `StitchParams` / `RasterOptions` keys the UI exposes,
+  clamped through `StitchParams.from_dict` / `_options(RasterOptions, …)`; unknown keys dropped and reported.
+- Never in presets: per-shape settings, layer colours/names, guide lines, geometry.
+- Not applicable: an image section on a vector design is skipped with a note; style settings for unused
+  styles are applied silently.
+- A preset with `fabric` applies the fabric's values first, then its own values.
+
+### 4.3 Storage (DB migration, appended to `db.MIGRATIONS`)
+```sql
+CREATE TABLE user_presets (
+  id          INTEGER PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,              -- 1..60 chars
+  description TEXT NOT NULL DEFAULT '',   -- 0..300 chars
+  settings    TEXT NOT NULL,              -- validated JSON (above), <= 16 KB
+  schema      INTEGER NOT NULL DEFAULT 1,
+  created_at  REAL NOT NULL,
+  updated_at  REAL NOT NULL,
+  UNIQUE (user_id, name)
+);
+CREATE INDEX user_presets_user ON user_presets(user_id);
+ALTER TABLE plans ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE entitlement_overrides ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+```
+JSON column (not key/value rows): settings mirror `StitchParams`, which grows often; presets are always read
+and written whole. Privacy: only settings + name + description; admin views show counts only; deleted with
+the account.
+
+### 4.4 Entitlements (extend `entitlements.py`, no separate system)
+| Name | Kind | Default | Enforced in |
+|---|---|---|---|
+| `presets_basic` | feature | on | `GET /api/presets` (settings only for allowed tiers) |
+| `presets_premium` | feature | off | same |
+| `custom_presets` | feature | off | `POST/PUT/DELETE /api/me/presets` |
+| `max_custom_presets` | **limit (new concept)** | 0 | create + duplicate, in one write transaction |
+
+- New `LIMITS: dict[str, Limit]` next to `FEATURES` (key, label, help, default, min, max). `effective_many`
+  merges limits like features: default → plan → override → role (Super Admin = unlimited, `None`).
+  `Entitlement.limits` + `limit(name)`.
+- Admin plan dialog and override editor get a "Limits" fieldset generated from `LIMITS` (no hardcoded numbers
+  in the front end); every change `audit.record`.
+- Count enforcement: `BEGIN IMMEDIATE`, count, compare, insert (same pattern as `usage.generation`). Error:
+  `EntitlementError(code="preset_limit")`.
+- Premium built-in **values** are never sent to accounts without the tier (list shows name/description + lock).
+- Optional (decision 1): `app_settings.preset_access = {preset_id: tier}` to move a preset between tiers.
+
+### 4.5 API
+```
+GET    /api/presets                   built-ins: [{id, label, description, tier, kinds, locked, sections?}]
+GET    /api/me/presets                [{id, name, description, sections, schema, updated_at}] + {count, limit}
+POST   /api/me/presets                {name, description, sections}  -> 201 | 403 preset_limit / feature_unavailable
+PUT    /api/me/presets/{id}           {name?, description?, sections?}   (owner-checked)
+POST   /api/me/presets/{id}/duplicate                                     (counts toward the limit)
+DELETE /api/me/presets/{id}                                               (owner-checked)
+```
+Pydantic bodies with length limits; rate-limited like the other account routes.
+
+### 4.6 Built-in presets (code: new `embroidery_app/presets.py`, beside `fabrics.py`)
+Starting values – all inside the UI ranges; **not production values until tests + sew-outs pass (§4.8)**.
+"Transparent background" was dropped (it is one setting); "Mixed stitch" folded into Standard.
+
+| Preset | Tier | Sets | Use |
+|---|---|---|---|
+| Standard | basic | fill 0.40, satin 0.40, pull 0.20, fill length 3.5, smart direction on, underlay edge_tatami / edge, optimise on | most logos, woven |
+| Small text & logos | basic | 60 wt, satin 0.35, pull 0.15, running length 2.0, satin underlay center; image: text mode sharp (min feature 0.2, min area 0.3) | left chest, lettering < 6 mm |
+| Fine detail | premium | fill 0.38, fill length 3.0, satin 0.36, smart direction; image: sharpen 1, min feature 0.2 | detailed art 80–150 mm |
+| Dense coverage | premium | fill 0.35, satin 0.35, fill underlay double_tatami, pull 0.25 | dark / textured fabric |
+| Lightweight | basic | fill 0.50, satin 0.45, fill underlay edge, pull 0.15 | thin fabric, fewer stitches |
+| Large design | premium | fill 0.45, fill length 4.0, vary direction on, trim threshold 3.0 | > 200 mm backs |
+| Satin-forward | premium | satin max width 12, smart direction on | bold lettering / columns |
+| Fill-forward | premium | satin max width 5, smart direction off | flat textured look |
+| Clean logo (image) | basic | background auto, sharpen 1, denoise 2, min area 1.5 | scanned / JPEG logos |
+| High contrast (image) | basic | contrast +30, sharpen 1, denoise 2 | faded pictures |
+| Soft colours (image) | premium | contrast −10, denoise 3, min area 2.0 | pastel art |
+| Photo (image + stitch) | premium | background none, denoise 1, photo stitch on, style rows, row gap 1.0 (also needs `photo_stitch`) | portraits |
+
+The smart analysis after upload stays the baseline; it may *suggest* a preset, never auto-apply it.
+
+### 4.7 UI
+- **Preset bar** fixed at the top of the left panel: picker (built-in groups, "My presets · 3 of 10", Reset to
+  app defaults, Manage…), "modified" badge when settings differ from the applied preset, "Save as preset…".
+- Applying: fill the controls (reuse `setStitchValues` / `setExtractValues`), one `History` step, the baseline
+  becomes the preset (markers then show changes from the preset), toast "Applied *X* · 6 settings changed ·
+  Undo", `Jobs.extract()` / `Jobs.stitch()` as needed. No hover preview (would trigger stitching).
+- **Save dialog**: name, description, include sections (stitch, fabric & thread on; image; size & colours off),
+  summary (settings, changed from defaults, "3 of 10"), "Only settings are saved, never your picture or design".
+- **Manage**: list (built-in, then mine), Apply, Rename/Edit, Update from current settings, Duplicate,
+  Delete (inline confirm); name clash → Replace / Keep both.
+- **Restriction states**: locked built-ins show a plan badge + popover ("included in Pro; ask your
+  administrator"); Save shows a lock when `custom_presets` is off; at the limit Save is disabled with
+  "You have 10 of 10 presets"; all read from `/api/me/account`, enforced again on the server.
+- `account.js`: "My presets" card on the account page. `admin.js`: limits fieldset in plan + override dialogs.
+- New help entries in `help.js`.
+
+### 4.8 Tests and acceptance
+- API tests (`tests/accounts.py`, `real_login`): free account cannot create (403 `feature_unavailable`);
+  limited account cannot exceed N with parallel requests; premium values absent for basic accounts;
+  downgrade keeps presets usable; account deletion deletes presets; admin changes audited; existing plans
+  migrate to presets_basic on, rest off.
+- Preset regression tests: each built-in on fixtures (`logo_rgba`, `svg_text` + new small-lettering, large and
+  photo samples): no stitch > 7 mm, machine-check risks ≤ Standard's, stitch count in an expected band.
+  Separate golden file – never touch `tests/golden/plans.json.gz`.
+- Physical sew-out per built-in preset before calling it production-ready (product owner).
+- Schema versioning: `schema` per record, upgrade on read, unknown keys skipped and reported.
+
+---
+
+## 5. Phase 4 – Professional extras (about 2–3 weeks; each item ships on its own)
+
+| Item | Spec | Notes |
+|---|---|---|
+| Objects list | Tab in Threads: every shape grouped by colour, keyboard navigable, selects on click (keyboard path to every shape – accessibility) | data: `Shapes.objects()` |
+| Context menu | Right-click / long-press on a shape: Stitch style ▸, Direction ▸, Select same colour, Don't stitch, Reset | reuse shape-panel actions |
+| Floating selection toolbar | Next to the selection box: style, direction, thickness, don't stitch, "Details →"; repositions to stay on screen; hidden while panning | bounding box from `paths3` / SVG bbox |
+| Grid + rulers | mm rulers on two edges, grid 10 mm (1 mm when zoomed in); toggles in the overlay toolbar | exact (canvas works in 0.1 mm) |
+| Density view | Fifth preview mode: needle points per mm² on a grid, colour scale; exact counts, visual interpretation | client-side from ops |
+| Stitch type distribution | Design info: fill / satin / running / underlay / travel / tie counts (exact, from `kind`) | client-side |
+| Resizable / collapsible panels | Drag inner edge (240–420 px), `[` / `]` to collapse, remembered in localStorage, "Reset workspace" | keyboard-operable separators |
+| Full screen | Fullscreen API toggle (feature-detected) | |
+| Keyboard shortcuts | F fit, 1 = 100 %, 2 = 200 %, +/−, Space-drag pan (both views), S / A panes, O original, V B E L G tools, Enter = Update (manual mode), Ctrl+E export, ? sheet; only when focus is not in a field | |
+| Merge similar colours | Server suggests pairs below a CIEDE2000 threshold; preview list; apply via existing merge (undoable) | new service fn + test |
+| Split before/after | Draggable split: original picture vs stitches, aligned via `reference_info` | reuse Original overlay |
+| 100 % calibration | Optional: match a card on screen, stored per browser | approximate otherwise |
+| Lazy `original_ops` | Send the original stitches only when Compare is opened (`GET …/stitch/original`) – halves the preview payload | API + test |
+
+---
+
+## 6. Phase 5 – Future
+
+- **Thread catalogs** (Madeira, Isacord, Robison-Anton): nearest match per colour, brand + number in worksheet
+  and PES/VP3 metadata. Check colour-chart licensing first.
+- **More machine formats**: pystitch already writes `pec xxx sew tbf qcc pmv edr inf col csv json gcode plt`
+  besides the six used. Add on demand, each after a test sew-out on a real machine.
+- **Machine speed** setting for time estimates (now fixed 750 spm, 10 s per trim, 15 s per colour change);
+  bobbin estimate (≈ ⅓ of top thread).
+- **Theme toggle** (light / dark / system) and textured fabric backgrounds (cosmetic).
+- **EMB via Wilcom's Embroidery Web API** only with a business case (paid, cloud, no better fidelity) – §7.
+
+---
+
+## 7. Wilcom findings (researched Nov 2026)
+
+### 7.1 Finding
+The app **cannot write Wilcom's editable EMB**: closed, unpublished format; pyembroidery / pystitch /
+Ink/Stitch / libembroidery don't write it. The only official way is Wilcom's paid cloud **Embroidery Web API
+(EWA)**, which converts machine files to EMB and builds designs from "recipes" – it does not digitize
+arbitrary shapes. Never label DST (or anything else) as an editable Wilcom project.
+
+### 7.2 What Wilcom does with what we can write
+| Format | Category | Wilcom on open | Kept | Lost |
+|---|---|---|---|---|
+| DST | machine | object recognition (on by default) rebuilds Satin, Tatami, Program Split; rest = manual stitch blocks (scale ±10 %) | stitches, trims, stops | colours (Wilcom default palette), objects, settings |
+| PES / VP3 | machine + colours | recognition | + thread RGB (whether Wilcom uses it: **unverified**) | objects |
+| EXP / U01 / JEF | machine | recognition | stitches | colours (JEF palette index only) |
+| EPS / DXF | vector artwork | Import Graphic, then Convert / Auto-Digitize → fully editable objects | shapes, colours | stitch settings |
+| SVG / AI / PDF | vector artwork | probably via bundled CorelDRAW (**unverified**) | shapes | stitch settings |
+| DST extended header (`TC`) / INF | colour info | **unverified**, probably ignored | – | – |
+
+### 7.3 What was built
+`GET /api/projects/{id}/export/wilcom` → `<name>_for_wilcom.zip`: `<name>.dst`, `<name>_artwork.eps`,
+`<name>_artwork.svg`, `artwork_by_colour/NN_<colour>_<style>_<angle>.eps`, `<name>_worksheet.txt`,
+`Open in Wilcom - read me.txt` (states clearly it is not EMB). Counts as one design download; allowed on
+DST-only plans; not combinable into the normal ZIP.
+
+### 7.4 Verification checklist (needs a Wilcom licence, e4 or later)
+1. Open the DST: recognition on, objects editable, size correct, centred.
+2. Import `_artwork.eps`: correct size in mm, colours, holes (even-odd), lines.
+3. Convert / Auto-Digitize the imported artwork.
+4. Open the PES of the same design: are thread colours kept?
+5. Only after 1–4: consider DST extended header / INF.
+Fix wording in `FORMATS` notes, `help.js` and the read-me with what is confirmed.
+
+Sources: docs.wilcom.com (formats-5, convert-3, convert-4, Insert_vector_graphics, automatic-7),
+help.wilcom.com (machine-files-colors, default colour palette, ewa-capabilities, supported-formats),
+github.com/EmbroidePy/pyembroidery, inkstitch.org/docs/file-formats.
+
+---
+
+## 8. Open items and risks
+
+- **Browser tests in CI**: only the manual smoke scripts exist (§9). Proposal: `pytest-playwright` as a
+  CI-only dependency (needs approval; Chromium download in CI).
+- **Server load**: auto-update multiplies stitch runs (two plans each with optimisation). Watch EC2 CPU after
+  release; an admin switch to disable auto-update globally would be the fallback.
+- **History vs server**: if a design change reaches the server but the reply is lost, the client timeline
+  misses one step; `History` falls back to the server's undo stack and drops steps the server no longer has.
+- **AI tasks** still use the blocking overlay (explicit, long, rare) – fine, but could move to inline progress.
+- **100 % zoom** is approximate (96 px/inch); labelled in the tooltip.
+- **Static caching**: scripts are revalidated every load; if a CDN is added later, use versioned file names.
+
+---
+
+## 9. How to test
+
+```bash
+python -m pytest -q -W error::DeprecationWarning      # everything CI runs (423 tests at cbb43a5)
+```
+
+Browser smoke tests (no dependencies; Node 22+ and Chrome or Edge), see `tools/smoke/README.md`:
+```bash
+# 1. a throwaway server with its own data folder and admin login
+DATA_DIR=/tmp/smokedata SUPER_ADMIN_EMAIL=smoke@example.com SUPER_ADMIN_PASSWORD=SmokeTest-12345 PORT=8765 python run.py
+# 2. in another shell
+node tools/smoke/workspace.mjs ./smoke-out     # Phase 1: 45 checks, screenshots in ./smoke-out/shots
+node tools/smoke/controls.mjs  ./smoke-out     # Phase 2: 26 checks
+```
+Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.
