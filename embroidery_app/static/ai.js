@@ -18,6 +18,7 @@ const AI = (() => {
   let saved = defaults(); // copy to go back to when the dialog is closed without saving
   const loaded = {}; // provider id -> {models, recommended}
   let picked = ""; // provider shown in the dialog
+  let access = { allowed: true, server_providers: [] }; // what this account's plan allows (server decides)
 
   // ------------------------------------------------------------------ storage: the account
   function defaults() { return { vision: "builtin", edit: "", providers: {} }; }
@@ -48,8 +49,10 @@ const AI = (() => {
     const p = prov(id);
     if (!p) return false;
     const c = cfg.providers[id] || {};
-    if (p.server_configured) return true;
-    return p.needs_key ? !!(c.has_key || c.api_key) : !!(c.base_url || p.default_base_url);
+    if (!access.allowed) return false;
+    if (access.server_providers.includes(id)) return true; // the app's key, if the plan includes it
+    if (access.server_ai && !p.needs_key) return true; // the server's local service (e.g. Ollama)
+    return p.needs_key ? !!(c.has_key || c.api_key) : !!c.base_url;
   }
   /** The ``ai`` block for an API request, or null for the built-in algorithms. Only the
    *  service and model: the server adds this account's saved key and address. */
@@ -91,11 +94,12 @@ const AI = (() => {
   function showProvider(id) {
     picked = id;
     const p = prov(id), c = cfg.providers[id] || {};
-    $("aiProviderHelp").textContent = (p.help || "") + (p.server_configured ? " Already set up on this server - a key here is optional." : "");
+    const shared = access.server_providers.includes(id) || (access.server_ai && !p.needs_key);
+    $("aiProviderHelp").textContent = (p.help || "") + (shared ? " Your plan includes the app's own access to this service - a key of your own is optional." : "");
     $("aiKeyRow").classList.toggle("hidden", !p.needs_key && id !== "custom" && id !== "ollama");
     $("aiKey").value = c.api_key || ""; // only a key typed now; a saved one is never sent back
     $("aiKey").placeholder = c.has_key && !c.remove_key ? `Saved – ends in ${c.key_hint || "••••"}. Paste a new key to replace it`
-      : p.needs_key && !p.server_configured ? "Paste your key" : "Optional";
+      : p.needs_key && !shared ? "Paste your key" : "Optional";
     $("aiKeyLink").classList.toggle("hidden", !p.key_help_url);
     if (p.key_help_url) $("aiKeyLink").href = p.key_help_url;
     $("aiKeyLink").textContent = id === "ollama" ? "Find vision models" : "Get a key";
@@ -133,7 +137,8 @@ const AI = (() => {
   async function loadModels() {
     readForm();
     const p = prov(picked), c = cfg.providers[picked] || {};
-    if (p.needs_key && !p.server_configured && !c.api_key && !c.has_key) return status("Paste your API key first.", true);
+    if (!access.allowed) return status("AI services are not included in your plan. The built-in assistant works without them.", true);
+    if (p.needs_key && !access.server_providers.includes(picked) && !c.api_key && !c.has_key) return status("Paste your API key first.", true);
     status("Connecting…");
     try {
       // a key typed now is tried for this request; otherwise the server uses the saved one
@@ -154,12 +159,13 @@ const AI = (() => {
 
   function openDialog() {
     cfg = clone(saved);
-    $("aiProviderPick").innerHTML = catalog.map((p) => `<option value="${p.id}">${esc(p.label)}${p.server_configured ? " ✓" : ""}</option>`).join("");
+    $("aiProviderPick").innerHTML = catalog.map((p) => `<option value="${p.id}">${esc(p.label)}${access.server_providers.includes(p.id) ? " ✓" : ""}</option>`).join("");
     const first = (cfg.vision !== "builtin" && cfg.vision) || cfg.edit || catalog[0]?.id;
     $("aiProviderPick").value = first;
     showProvider(first);
     fillUse();
     $("aiDialog").showModal();
+    if (!access.allowed) status("AI services are not included in your plan. The built-in assistant works without them - ask your administrator if you need AI.", true);
   }
   function closeDialog() {
     cfg = clone(saved);
@@ -180,6 +186,7 @@ const AI = (() => {
     }
     $("aiDialog").close();
     refresh();
+    document.dispatchEvent(new CustomEvent("ai-saved"));
     toast(cfg.vision === "builtin" && !cfg.edit ? "Saved – using the built-in smart processing." : "AI settings saved to your account.", true);
   }
 
@@ -202,6 +209,7 @@ const AI = (() => {
     fillUse();
     refresh();
     status(`${label} and its key were removed from your account.`);
+    document.dispatchEvent(new CustomEvent("ai-saved"));
   }
 
   // ------------------------------------------------------------------ assistant (step 2)
@@ -352,8 +360,13 @@ const AI = (() => {
       if (ev.target.closest("[data-ai-open]")) { ev.preventDefault(); openDialog(); }
     });
     await load().catch(() => {}); // not logged in yet or offline: built-in until it loads
+    await loadAccess();
     refresh();
   }
 
-  return { init, onProject, onStitched, payload };
+  async function loadAccess() {
+    try { access = await api("/api/me/ai/status"); } catch (_) {}
+  }
+
+  return { init, onProject, onStitched, payload, open: openDialog, reloadAccess: async () => { await loadAccess(); refresh(); } };
 })();

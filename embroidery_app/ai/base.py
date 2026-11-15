@@ -123,9 +123,17 @@ class Provider:
     def _reachable(self, creds: Credentials) -> bool:
         return True
 
-    def resolve(self, user: Optional[Credentials]) -> Credentials:
-        """User-supplied values win; the server's .env fills the gaps."""
-        server = self.server_credentials()
+    def uses_server(self, user: Optional[Credentials]) -> bool:
+        """True when a request with these user values would rely on the server's own
+        resources: its API key, or - for keyless services such as Ollama - a service the
+        server reaches without an address from the user (its .env address or localhost)."""
+        user = user or Credentials()
+        return not user.api_key if self.needs_key else not user.base_url
+
+    def resolve(self, user: Optional[Credentials], allow_server: bool = True) -> Credentials:
+        """User-supplied values win; the server's .env fills the gaps - only when
+        ``allow_server`` (the account is entitled to the app's AI keys)."""
+        server = self.server_credentials() if allow_server else Credentials()
         user = user or Credentials()
         creds = Credentials(
             api_key=user.api_key or server.api_key,
@@ -197,17 +205,51 @@ def request(
             last = f"Could not reach the AI service ({type(exc).__name__})."
         else:
             if resp.status_code < 400:
+                if method == "POST":
+                    _meter_tokens(resp)
                 return resp
             if resp.status_code in (401, 403):
                 raise AIError("The API key was rejected - check it in AI settings.")
             if resp.status_code == 404:
                 raise AIError(creds.redact(f"Not found - check the model name. {_error_text(resp)}"))
-            last = creds.redact(f"{resp.status_code}: {_error_text(resp)}")
+            if resp.status_code == 402:
+                raise AIError("The AI provider refused the request for billing reasons - check the credit or plan of your key.")
+            if resp.status_code == 429:
+                last = creds.redact("The AI provider is limiting your key (too many requests, or its quota is used up). "
+                                    f"Wait a moment or check your plan with the provider. {_error_text(resp)}".strip())
+            else:
+                last = creds.redact(f"{resp.status_code}: {_error_text(resp)}")
             if resp.status_code not in (408, 409, 429, 500, 502, 503, 504):
                 break
         if attempt < retries:
             time.sleep(1.5 * (attempt + 1))
     raise AIError(last or "The AI service failed.")
+
+
+def _meter_tokens(resp: httpx2.Response) -> None:
+    """Token counts from the answer, for usage analytics (only the numbers are kept).
+    Covers OpenAI-style ``usage``, Anthropic ``usage``, Gemini ``usageMetadata`` and
+    Ollama ``prompt_eval_count`` / ``eval_count``."""
+    try:
+        data = resp.json()
+    except Exception:
+        return
+    if not isinstance(data, dict):
+        return
+    u = data.get("usage") or data.get("usageMetadata") or {}
+    if not isinstance(u, dict):
+        u = {}
+    tin = u.get("prompt_tokens") or u.get("input_tokens") or u.get("promptTokenCount") or data.get("prompt_eval_count")
+    tout = (u.get("completion_tokens") or u.get("output_tokens") or u.get("candidatesTokenCount")
+            or data.get("eval_count"))
+    if tin is None and tout is None:
+        return
+    from ..usage import add_tokens  # noqa: PLC0415 (the AI package stays importable on its own)
+
+    def num(v):
+        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 else None
+
+    add_tokens(num(tin), num(tout))
 
 
 def _error_text(resp: httpx2.Response) -> str:

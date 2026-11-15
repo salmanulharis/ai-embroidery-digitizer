@@ -3,15 +3,19 @@
 - Passwords are hashed with scrypt (salted, memory-hard); only the hash is stored.
 - A login creates a random session token. The browser gets it in an HttpOnly cookie, the
   database keeps only its SHA-256, so a copy of the database cannot be used to log in.
-- "Remember me" keeps the session for ``SESSION_DAYS``; otherwise the cookie ends with
-  the browser session and the server forgets it after a day at most.
+- A sign-in lasts for the browser session (the server forgets it after a day at most) or
+  for a chosen number of days (``DAY_CHOICES``, up to the ``session_max_days`` setting).
+  Each session has a public id (``sid``) so it can be listed and revoked; ending a session
+  also deletes the temporary projects opened in it (temp_projects.py).
 - There is no sign-up. The Super Admin (from SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD)
   is created at startup and creates every other account. Its username comes only from
   SUPER_ADMIN_USERNAME (applied at every start); other accounts get theirs from the admin.
 - A username is optional, unique in any letter case and never contains "@", so the one
   sign-in field tells an email from a username.
 - Roles: ``super_admin`` manages accounts; ``user`` only uses the app. Every rule is
-  enforced here, on the server.
+  enforced here, on the server. The Super Admin from the secrets cannot be demoted.
+- New accounts get the default plan in the same transaction (subscriptions.py), so the
+  same ``create_user`` can serve a public sign-up later without other changes.
 
 Command line (on the server, for a lost password):
     python -m embroidery_app.auth reset-password someone@example.com   (or a username)
@@ -30,8 +34,9 @@ import time
 
 from fastapi import Depends, HTTPException, Request, Response
 
-from . import db, service
+from . import app_settings, db, subscriptions, temp_projects
 from .config import settings
+from .service import NotFound as NotFoundError
 
 log = logging.getLogger("embroidery")
 
@@ -39,7 +44,10 @@ COOKIE = "emb_session"
 SUPER_ADMIN, USER = "super_admin", "user"
 MIN_PASSWORD = 10
 MAX_PASSWORD = 256
-SHORT_SESSION_S = 24 * 3600  # without "Remember me"
+SHORT_SESSION_S = 24 * 3600  # "this browser session": the server forgets it after a day at most
+DAY_CHOICES = (1, 7, 15, 30)  # "keep me signed in" choices, capped by the session_max_days setting
+SEEN_EVERY_S = 60  # last-seen / activity is written at most this often per session
+MAX_DISPLAY_NAME = 80
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
 _USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
 
@@ -103,20 +111,38 @@ def _username_free(c, username: str | None, uid: int | None = None) -> None:
 
 # --------------------------------------------------------------------------- users
 
+def check_display_name(name: str | None) -> str | None:
+    name = re.sub(r"\s+", " ", (name or "")).strip()
+    if len(name) > MAX_DISPLAY_NAME:
+        raise ValueError(f"The name can have at most {MAX_DISPLAY_NAME} characters.")
+    if any(ord(ch) < 32 for ch in name):
+        raise ValueError("The name contains characters that are not allowed.")
+    return name or None
+
+
 def _public(row) -> dict:
+    keys = row.keys()
     return {"id": row["id"], "email": row["email"], "username": row["username"], "role": row["role"], "active": bool(row["active"]),
-            "created_at": row["created_at"], "last_login_at": row["last_login_at"]}
+            "display_name": row["display_name"] if "display_name" in keys else None,
+            "created_at": row["created_at"], "last_login_at": row["last_login_at"],
+            "last_active_at": row["last_active_at"] if "last_active_at" in keys else None,
+            "env_admin": row["role"] == SUPER_ADMIN and row["email"] == settings.super_admin_email}
 
 
-def create_user(email: str, password: str, role: str = USER, username: str | None = None) -> dict:
+def create_user(email: str, password: str, role: str = USER, username: str | None = None, display_name: str | None = None,
+                actor_id: int | None = None) -> dict:
     email, password, username = check_email(email), check_password_rules(password), check_username(username)
+    display_name = check_display_name(display_name)
+    if role not in (USER, SUPER_ADMIN):
+        raise ValueError("Unknown role.")
     now = time.time()
     with db.tx() as c:
         if c.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
             raise ValueError("An account with this email already exists.")
         _username_free(c, username)
-        cur = c.execute("INSERT INTO users (email, username, password_hash, role, active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
-                        (email, username, hash_password(password), role, now, now))
+        cur = c.execute("INSERT INTO users (email, username, display_name, password_hash, role, active, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, 1, ?, ?)", (email, username, display_name, hash_password(password), role, now, now))
+        subscriptions.assign_default(c, cur.lastrowid, actor_id)  # every account starts on the default (Free) plan
         return _public(c.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
@@ -143,26 +169,40 @@ def find_user(login: str):
         return c.execute(f"SELECT * FROM users WHERE {column} = ?", (login,)).fetchone()
 
 
-def update_user(uid: int, email: str | None = None, active: bool | None = None, username: str | None = None) -> dict:
-    """``username``: None leaves it, "" removes it."""
+def update_user(uid: int, email: str | None = None, active: bool | None = None, username: str | None = None,
+                display_name: str | None = None, role: str | None = None, actor_id: int | None = None) -> dict:
+    """``username`` / ``display_name``: None leaves it, "" removes it. The Super Admin from
+    the deployment secrets keeps its email, username, role and active state; nobody can
+    change their own role or deactivate themselves."""
     target = get_user(uid)
-    if target["role"] == SUPER_ADMIN and (active is False or (email is not None and check_email(email) != target["email"])
-                                          or (username is not None and check_username(username) != target["username"])):
-        raise ValueError("The Super Admin account cannot be deactivated or renamed here (its email and username are set in the deployment secrets).")
+    if target["env_admin"] and (active is False or (email is not None and check_email(email) != target["email"])
+                                or (username is not None and check_username(username) != target["username"])
+                                or (role is not None and role != SUPER_ADMIN)):
+        raise ValueError("The Super Admin account cannot be deactivated, demoted or renamed here "
+                         "(its email and username are set in the deployment secrets).")
+    if actor_id == uid and (active is False or (role is not None and role != target["role"])):
+        raise ValueError("You cannot deactivate your own account or change your own role.")
+    if role is not None and role not in (USER, SUPER_ADMIN):
+        raise ValueError("Unknown role.")
+    now = time.time()
     with db.tx() as c:
         if username is not None:
             username = check_username(username)
             _username_free(c, username, uid)
-            c.execute("UPDATE users SET username = ?, updated_at = ? WHERE id = ?", (username, time.time(), uid))
+            c.execute("UPDATE users SET username = ?, updated_at = ? WHERE id = ?", (username, now, uid))
+        if display_name is not None:
+            c.execute("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?", (check_display_name(display_name), now, uid))
         if email is not None:
             email = check_email(email)
             if c.execute("SELECT 1 FROM users WHERE email = ? AND id != ?", (email, uid)).fetchone():
                 raise ValueError("An account with this email already exists.")
-            c.execute("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", (email, time.time(), uid))
+            c.execute("UPDATE users SET email = ?, updated_at = ? WHERE id = ?", (email, now, uid))
+        if role is not None and role != target["role"]:
+            c.execute("UPDATE users SET role = ?, updated_at = ? WHERE id = ?", (role, now, uid))
         if active is not None:
-            c.execute("UPDATE users SET active = ?, updated_at = ? WHERE id = ?", (int(active), time.time(), uid))
-            if not active:
-                c.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))  # signed out everywhere
+            c.execute("UPDATE users SET active = ?, updated_at = ? WHERE id = ?", (int(active), now, uid))
+    if active is False or (role is not None and role != target["role"]):
+        end_sessions(uid)  # signed out everywhere; a new role takes effect at the next sign-in
     return get_user(uid)
 
 
@@ -172,7 +212,7 @@ def set_password(uid: int, password: str, keep_session: str | None = None) -> No
     get_user(uid)
     with db.tx() as c:
         c.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?", (hash_password(password), time.time(), uid))
-        c.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", (uid, keep_session or ""))
+    end_sessions(uid, keep_token_hash=keep_session)
 
 
 def change_own_password(uid: int, current: str, new: str, session_token: str | None) -> None:
@@ -184,12 +224,17 @@ def change_own_password(uid: int, current: str, new: str, session_token: str | N
     set_password(uid, new, keep_session=_token_hash(session_token) if session_token else None)
 
 
-def delete_user(uid: int) -> None:
-    if get_user(uid)["role"] == SUPER_ADMIN:
+def delete_user(uid: int, actor_id: int | None = None) -> dict:
+    target = get_user(uid)
+    if target["env_admin"]:
         raise ValueError("The Super Admin account cannot be deleted.")
+    if actor_id == uid:
+        raise ValueError("You cannot delete your own account.")
+    temp_projects.delete_for_user(uid)  # files first: the registry rows go with the account
     with db.tx() as c:
-        c.execute("DELETE FROM users WHERE id = ?", (uid,))  # sessions and AI settings go with it
-    service.delete_projects_of(uid)
+        # sessions, AI settings, subscription, overrides, usage and project rows go with it (ON DELETE CASCADE)
+        c.execute("DELETE FROM users WHERE id = ?", (uid,))
+    return target
 
 
 def ensure_super_admin() -> None:
@@ -273,9 +318,36 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def login(name: str, password: str, remember: bool, ip: str) -> tuple[dict, str, float]:
-    """Sign in with an email or a username. (user, session token, expiry), or a 401/403/429
-    error with a plain message."""
+def session_choices() -> list[int]:
+    """Days a user may choose on the sign-in screen (0 = this browser session only)."""
+    most = app_settings.get("session_max_days")
+    return [0] + sorted({d for d in DAY_CHOICES if d < most} | {most})
+
+
+def _session_days(days: int | None, remember: bool) -> int:
+    choices = session_choices()
+    if days is None:
+        return choices[-1] if remember else 0
+    if isinstance(days, bool) or days not in choices:
+        raise ValueError("Choose how long to stay signed in from the list.")
+    return int(days)
+
+
+def _device(user_agent: str | None) -> str:
+    """A short, non-identifying label ("Chrome on Windows") so a user can tell sessions apart."""
+    ua = user_agent or ""
+    browser = next((b for k, b in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"), ("Chrome/", "Chrome"),
+                                   ("Safari/", "Safari")) if k in ua), "Browser")
+    system = next((s for k, s in (("Windows", "Windows"), ("Android", "Android"), ("iPhone", "iPhone"), ("iPad", "iPad"),
+                                  ("Mac OS", "macOS"), ("Linux", "Linux")) if k in ua), "")
+    return f"{browser} on {system}" if system else browser
+
+
+def login(name: str, password: str, remember: bool, ip: str, days: int | None = None,
+          user_agent: str | None = None) -> tuple[dict, str, float, int]:
+    """Sign in with an email or a username. (user, session token, expiry, days - 0 for a
+    browser session), or a 401/403/429 error with a plain message."""
+    days = _session_days(days, remember)
     row = find_user(name)
     # failures count per account, whether its email or its username was typed
     account = f"#{row['id']}" if row else (name or "").strip().lower()
@@ -289,33 +361,71 @@ def login(name: str, password: str, remember: bool, ip: str) -> tuple[dict, str,
     _clear_failures(ip, account)
     token = secrets.token_urlsafe(32)
     now = time.time()
-    expires = now + (settings.session_days * 86400 if remember else SHORT_SESSION_S)
+    expires = now + (days * 86400 if days else SHORT_SESSION_S)
     with db.tx() as c:
         c.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
-        c.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, remember) VALUES (?, ?, ?, ?, ?)",
-                  (_token_hash(token), row["id"], now, expires, int(remember)))
-        c.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now, row["id"]))
-    return _public(row), token, expires
+        c.execute("INSERT INTO sessions (token_hash, sid, user_id, created_at, expires_at, remember, last_seen_at, user_agent) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                  (_token_hash(token), secrets.token_hex(9), row["id"], now, expires, int(bool(days)), now, _device(user_agent)))
+        c.execute("UPDATE users SET last_login_at = ?, last_active_at = ? WHERE id = ?", (now, now, row["id"]))
+        c.execute("INSERT OR IGNORE INTO daily_activity (day, user_id) VALUES (?, ?)", (int(now // 86400), row["id"]))
+    return _public(row), token, expires, days
 
 
 def logout(token: str | None) -> None:
-    if token:
-        with db.tx() as c:
-            c.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
+    """End this session and delete the temporary projects opened in it."""
+    if not token:
+        return
+    with db.tx() as c:
+        row = c.execute("SELECT sid FROM sessions WHERE token_hash = ?", (_token_hash(token),)).fetchone()
+        c.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
+    if row:
+        temp_projects.delete_for_session(row["sid"])
+
+
+def end_sessions(uid: int, keep_token_hash: str | None = None, sid: str | None = None) -> int:
+    """Sign an account out: every session, every session but one, or one (``sid``). The
+    temporary projects of the ended sessions are deleted."""
+    with db.tx() as c:
+        if sid:
+            rows = c.execute("SELECT sid FROM sessions WHERE user_id = ? AND sid = ?", (uid, sid)).fetchall()
+        else:
+            rows = c.execute("SELECT sid FROM sessions WHERE user_id = ? AND token_hash != ?", (uid, keep_token_hash or "")).fetchall()
+        for r in rows:
+            c.execute("DELETE FROM sessions WHERE user_id = ? AND sid = ?", (uid, r["sid"]))
+    for r in rows:
+        temp_projects.delete_for_session(r["sid"])
+    return len(rows)
+
+
+def list_sessions(uid: int, current_sid: str | None = None) -> list[dict]:
+    with db.tx() as c:
+        rows = c.execute("SELECT sid, created_at, expires_at, remember, last_seen_at, user_agent FROM sessions "
+                         "WHERE user_id = ? AND expires_at > ? ORDER BY last_seen_at DESC", (uid, time.time())).fetchall()
+    return [{"id": r["sid"], "device": r["user_agent"] or "Browser", "created_at": r["created_at"], "expires_at": r["expires_at"],
+             "kept": bool(r["remember"]), "last_seen_at": r["last_seen_at"], "current": r["sid"] == current_sid} for r in rows]
 
 
 def session_user(token: str | None) -> dict | None:
+    """The account of a valid session (with ``sid`` = the session's public id), or None.
+    Notes the activity (last seen, daily active users) at most once a minute."""
     if not token:
         return None
+    now = time.time()
+    th = _token_hash(token)
     with db.tx() as c:
-        row = c.execute("SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id "
-                        "WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1", (_token_hash(token), time.time())).fetchone()
-    return _public(row) if row else None
+        row = c.execute("SELECT u.*, s.sid AS session_sid, s.last_seen_at AS session_seen FROM sessions s JOIN users u ON u.id = s.user_id "
+                        "WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1", (th, now)).fetchone()
+        if row and (row["session_seen"] or 0) < now - SEEN_EVERY_S:
+            c.execute("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", (now, th))
+            c.execute("UPDATE users SET last_active_at = ? WHERE id = ?", (now, row["id"]))
+            c.execute("INSERT OR IGNORE INTO daily_activity (day, user_id) VALUES (?, ?)", (int(now // 86400), row["id"]))
+    return _public(row) | {"sid": row["session_sid"]} if row else None
 
 
-def set_cookie(response: Response, request: Request, token: str, remember: bool) -> None:
+def set_cookie(response: Response, request: Request, token: str, days: int) -> None:
     secure = settings.cookie_secure == "1" or (settings.cookie_secure == "auto" and request.url.scheme == "https")
-    response.set_cookie(COOKIE, token, max_age=settings.session_days * 86400 if remember else None,
+    response.set_cookie(COOKIE, token, max_age=days * 86400 if days else None,
                         httponly=True, secure=secure, samesite="lax", path="/")
 
 
@@ -332,8 +442,8 @@ def require_user(request: Request) -> dict:
     if not user:
         raise HTTPException(401, "Please log in.")
     pid = request.path_params.get("pid")
-    if pid is not None and not service.owned_by(pid, user["id"]):
-        raise service.NotFound(pid)
+    if pid is not None and not temp_projects.touch(pid, user["id"]):  # ownership check + "in use"
+        raise NotFoundError(pid)
     request.state.user = user
     return user
 

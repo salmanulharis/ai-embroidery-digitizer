@@ -157,6 +157,30 @@ function saveSession() {
   } catch (_) {}
 }
 window.addEventListener("pagehide", saveSession);
+// Privacy: projects are temporary. When the page goes away the server is told; it deletes
+// the project after a short grace period unless the page comes back (a reload reopens it).
+// Browsers do not always send this, so the server also deletes idle projects on its own.
+window.addEventListener("pagehide", () => {
+  if (state.project && Auth.user()) try { navigator.sendBeacon(`/api/projects/${state.project.id}/release`); } catch (_) {}
+});
+window.addEventListener("pageshow", (ev) => { // back/forward cache: the page is back, keep the project
+  if (ev.persisted && state.project) api(`/api/projects/${state.project.id}/quota`).catch(() => {});
+});
+/** Forget the open design in this tab (after it was closed or removed on the server). */
+function forgetDesign() {
+  Object.assign(state, { project: null, design: null, preview: null });
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (_) {}
+  showStep(1);
+}
+async function closeDesign() {
+  if (!state.project) return;
+  if (!confirm(`Close ${state.project.filename}?
+
+It is removed from the server. Download your files first if you still need them.`)) return;
+  await busy("Closing…", () => api(`/api/projects/${state.project.id}`, { method: "DELETE" })).catch(() => {});
+  forgetDesign();
+  toast("The design was closed and removed from the server.", true);
+}
 
 async function resumeDesign() {
   let saved = null;
@@ -175,7 +199,8 @@ async function resumeDesign() {
   } catch (_) {
     Object.assign(state, { project: null, design: null, preview: null });
     showStep(1);
-    toast("Your last design could not be opened again. Please upload the file once more.", true);
+    toast("Your last design is no longer on the server (designs are removed when they are closed, after a while without use, "
+      + "or when you sign out). Please upload the file again.", true);
   }
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -187,6 +212,7 @@ async function init() {
   Tip.init();
   Shapes.init();
   Auth.init();
+  Admin.init();
   state.config = await api("/api/config");
   const hoop = $("hoop");
   hoop.innerHTML = '<option value="">Custom size</option>' + state.config.hoops.map((h, i) => `<option value="${i}">${esc(h.name)}</option>`).join("");
@@ -204,6 +230,7 @@ async function init() {
   await Auth.start(state.config); // the sign-in screen until someone is signed in
   document.body.classList.remove("booting", "signed-out");
   await AI.init(state.config); // this account's AI settings
+  Account.init(state.config); // plan + usage chip, account page, admin console
   history.replaceState({ step: 1 }, "");
   await resumeDesign();
 }
@@ -312,6 +339,7 @@ function bindUpload() {
   };
   $("btnNew").onclick = () => { showStep(1); $("btnChoose").focus(); };
   $("btnBackToOpen").onclick = () => goToStep(state.preview ? 3 : 2).catch(() => {});
+  $("btnCloseDesign").onclick = () => closeDesign().catch(() => {});
   ["dragenter", "dragover"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (ev) => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]));
@@ -859,6 +887,7 @@ function renderExports() {
     `<span><b>${label}${rec ? " ★ recommended" : ""}</b><span>${esc(note)}</span></span></label>`).join("");
   updateDownload();
   $("exportBox").classList.remove("hidden");
+  Account.quotaNote(state.project.id); // "counts as 1 of your N designs" / "already counted"
 }
 function updateDownload() {
   const items = exportItems();
@@ -887,12 +916,8 @@ $("btnDownload").onclick = () => {
   const chosen = exportItems().map(([k]) => k).filter((k) => exportPick.has(k));
   if (!chosen.length) return;
   const base = `/api/projects/${state.project.id}/export/`;
-  const a = document.createElement("a"); // the server names the file (Content-Disposition)
-  a.href = chosen.length === 1 ? base + chosen[0] : `${base}zip?formats=${chosen.join(",")}`;
-  a.download = "";
-  document.body.append(a);
-  a.click();
-  a.remove();
+  // fetched (not a plain link) so a used-up allowance or a plan limit shows a clear message
+  Account.download(chosen.length === 1 ? base + chosen[0] : `${base}zip?formats=${chosen.join(",")}`, state.project.id);
 };
 
 // ------------------------------------------------------------------ preview canvas

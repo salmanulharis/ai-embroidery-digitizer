@@ -27,7 +27,8 @@ pytest                            # pipeline, exports, API, editing, AI (mocked)
 **Deploy to AWS EC2 with GitHub Actions** (deploys on version tags only): see [deploy/ec2/README.md](deploy/ec2/README.md).
 
 **Sign in:** set `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` (in `.env`, copy `.env.example`) before the first
-start; that account is created at startup and adds everyone else. See [Accounts](#accounts).
+start; that account is created at startup and adds everyone else. See [Accounts](#accounts),
+[Plans, allowance and usage](#plans-allowance-and-usage) and [Privacy](#privacy-temporary-designs-and-what-is-stored).
 
 AI is optional. Open **⚙ AI settings** in the app to add your own key, or set server-wide keys in `.env`.
 See [AI assistant](#ai-assistant).
@@ -35,20 +36,85 @@ See [AI assistant](#ai-assistant).
 ## Accounts
 
 - **Sign in** with email or username and password. There is no public sign-up: the **Super Admin** creates accounts
-  under *Account menu → Manage users* (add, edit email and username, activate / deactivate, reset password, delete),
-  with a generated password to copy. Usernames are optional and unique in any letter case (3-32 letters, digits,
-  `.` `_` `-`, never `@`). The Super Admin comes from `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` (GitHub secrets
-  in production) and is created at startup when no account has that email; its username comes only from
-  `SUPER_ADMIN_USERNAME`, applied at every start.
-- **Sessions:** "Keep me signed in" lasts `SESSION_DAYS` (default 30); otherwise the session ends with the
-  browser. *Sign out* ends it on the server. Users can change their own password; deactivating, resetting
-  or deleting an account signs it out everywhere.
+  in the *Admin console → Users* (add, edit name / email / username / role, activate / deactivate, reset password, sign out
+  everywhere, delete), with a generated password to copy. Usernames are optional and unique in any letter case (3-32
+  letters, digits, `.` `_` `-`, never `@`). The Super Admin comes from `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD`
+  (GitHub secrets in production) and is created at startup when no account has that email; its username comes only from
+  `SUPER_ADMIN_USERNAME`, applied at every start. That account cannot be demoted, deactivated or deleted in the app;
+  other accounts can be given the Super Admin role.
+- **Sessions:** at sign-in the user picks *until I close the browser* (the server forgets it after a day at most) or
+  1 / 7 / 15 / 30 days (capped by the *Longest "keep me signed in"* setting, default `SESSION_DAYS`). *My account* lists
+  every signed-in device and can sign out the others; the admin can sign a user out everywhere. Deactivating,
+  resetting a password, changing a role or deleting an account ends its sessions.
 - **Each account sees only its own designs and AI settings.** Every API request is checked on the server:
-  projects belong to the account that uploaded them, and admin functions need the Super Admin role.
+  projects belong to the account (and browser session) that uploaded them, and admin functions need the Super Admin role.
 - **Security:** passwords hashed with scrypt; session tokens random, kept in an HttpOnly SameSite cookie
-  (Secure over HTTPS) and stored only as a hash; failed sign-ins are rate-limited; cross-site requests are
-  refused. Data lives in `DATA_DIR/app.db` (SQLite, upgraded automatically on start).
+  (Secure over HTTPS) and stored only as a hash; failed sign-ins are rate-limited, and so is work per account
+  (uploads and edits, downloads, AI requests); cross-site requests are refused; sensitive admin actions go to an
+  audit log. Data lives in `DATA_DIR/app.db` (SQLite, upgraded automatically on start).
 - Lost Super Admin password: `python -m embroidery_app.auth reset-password <email or username>` on the server.
+- Public sign-up can be added later by calling `auth.create_user` from a sign-up route: it already assigns the default
+  plan in the same transaction.
+
+## Plans, allowance and usage
+
+- **What counts:** one *design* = one uploaded file whose stitch output is downloaded. The first download of a machine
+  file, the stitch preview PNG, the worksheet or a ZIP with any of them counts once; re-downloads, other formats and edits
+  of the same upload are free. Uploading, preparing, previewing, creating stitches and the artwork SVG never count.
+- **Plans** (*Admin console → Subscription plans*): Free (default, 10 designs per month), Basic (100 per month) and Pro
+  (unlimited) are created on the first start; all values are editable and plans can be added, disabled or deleted (when
+  unused). A plan has an allowance (a number per calendar month in UTC, a number in total, or **unlimited** - a state
+  of its own, never a big number), and feature switches: own AI service, the app's AI keys, all machine formats, ZIP
+  downloads, photo stitch. Every new account gets the default plan.
+- **Per account** (*Users → Details*): change the plan (upgrade / downgrade), set or remove an end date, give a custom
+  allowance or unlimited downloads, switch single features on or off, reset the usage counter. Overrides win over the
+  plan; an ended subscription falls back to the default plan; the Super Admin always has everything.
+- **Safety:** the allowance is checked and the design reserved in one database transaction, and a unique index allows
+  only one charge per design, so parallel or repeated requests cannot overspend or double-charge. A failed download is
+  never charged; an interrupted one is released after 10 minutes.
+- **Users see** their plan, allowance and end date in the header chip and on *My account*; the download box says
+  whether the next download counts. At the limit, downloads of new designs are refused with an explanation (and the
+  admin is named as the way to get more); everything else keeps working.
+- **Payments are not processed.** The data model is ready for it (subscription status, start and end dates, plan
+  history, payment provider references, payment status, a transactions table, plan prices), but nothing in the app
+  takes or pretends to take a payment.
+
+## Privacy: temporary designs and what is stored
+
+The app processes designs; it is not a storage service. A design (the upload and everything made from it) lives in a
+temporary folder `DATA_DIR/projects/<random id>` and is deleted when:
+
+- the same browser session uploads a new file, or the user clicks *Close design*;
+- the user signs out, or the session ends (expired, signed out elsewhere, password reset, account deactivated);
+- the page is closed: it tells the server (`pagehide` beacon), and the design is deleted after a 2-minute grace period
+  unless the page comes back (a reload reopens it);
+- nobody has used it for 2 hours, or it is older than 24 hours (both settings), whatever the browser did.
+
+The server checks every 5 minutes (no external scheduler needed); the systemd timer from `deploy/ec2/setup.sh` stays
+as a backstop.
+
+| Stored permanently (SQLite) | How long |
+|---|---|
+| Accounts: email, username, name, role, scrypt password hash, active flag, sign-in times | until the account is deleted |
+| Sessions: token hash, device label ("Chrome on Windows"), times | until they end |
+| Plans, subscriptions, plan history, per-account overrides | until the account / plan is deleted |
+| AI settings, keys encrypted with AES-GCM | until removed or the account is deleted |
+| Usage metadata: what was done, when, success, AI service and model, duration, token counts | `usage_retention_days` (default 730) |
+| Daily activity (account id + day) for active-user counts | same as usage |
+| Audit log of admin actions (no passwords, keys or content) | `audit_retention_days` (default 730) |
+
+Never stored in the database: uploaded files, designs, stitch files, file names, prompts or AI answers. Deleting an
+account deletes all of the above for it.
+
+## Admin console
+
+*Account menu → Admin console* (Super Admin only): **Overview** (health at a glance), **Users** (search, filter by plan,
+status and usage; create, edit, details), **Subscription plans**, **User usage** (allowance per account, reset),
+**Analytics** (today / 7 / 30 / 90 days / custom: accounts, daily and monthly active users, designs per day with failures
+and refusals, top users, most used features, plan distribution, accounts near or at their limit, AI requests by service,
+model and task with time and tokens), **AI overview** (services, accounts using them, no keys), **Settings** (clean-up
+times, session length, retention) and the **Audit log**. Charts aggregate in SQL; the browser never receives raw
+records.
 
 ## AI assistant
 
@@ -72,10 +138,12 @@ refines the result when configured.
 **How it works:**
 - **Models are listed live** from each provider with the user's key and filtered by capability (image
   editing or image understanding). A recommended model is preselected, so no model names go stale in the code.
-- **Keys belong to an account.** Each user saves their own services, keys and models in AI settings. They are
-  stored encrypted (AES-GCM with `APP_SECRET_KEY`, bound to the account) and never sent back to the browser,
-  which only sees "saved, ends in 1234". AI requests always use the signed-in account's own settings; keys are
-  removed from error messages and never logged. Server-wide keys in `.env` are optional defaults for everyone.
+- **Keys belong to an account.** Each user saves their own services, keys and models in AI settings and can test
+  the connection. Keys are stored encrypted (AES-GCM with `APP_SECRET_KEY`, bound to the account) and never sent back
+  to the browser, which only sees "saved, ends in 1234". AI requests always use the signed-in account's own settings;
+  keys are removed from error messages and never logged or recorded. Server-wide keys in `.env` are used **only** for
+  accounts whose plan (or override) includes *The app's AI keys* (off by default); everyone else gets a setup message.
+  The same applies to keyless local services (Ollama) at the server's address.
 - **Safety:**
   - AI answers are validated and clamped to safe ranges, and unknown settings are ignored.
   - Any AI failure falls back to the built-in result with a note.
@@ -306,10 +374,19 @@ embroidery_app/
     builtin.py        non-AI picture analysis + stitch review (the default)
     prompts.py        prompts per task
     tasks.py          suggest / clean-up / review: built-in first, AI on top, validated
-  auth.py             accounts: passwords (scrypt), sessions, roles, Super Admin from the secrets
-  db.py               SQLite (DATA_DIR/app.db): users, sessions, AI settings; migrations on start
+  admin_api.py        the Super Admin console API (/api/admin/...), audited
+  auth.py             accounts: passwords (scrypt), sessions (revocable, chosen length), roles, Super Admin from the secrets
+  db.py               SQLite (DATA_DIR/app.db); append-only migrations on start; nested transactions via savepoints
+  entitlements.py     what an account may do now: plan + overrides + status + usage + features (the one place to ask)
+  subscriptions.py    plans, subscriptions, plan history, per-account overrides (payment-ready, no payments)
+  usage.py            the design allowance (atomic, idempotent charges), usage records, AI metering, rate limits
+  temp_projects.py    temporary designs: registry, ownership, deletion rules, sweep
+  maintenance.py      background clean-up every 5 minutes (designs, sessions, expiries, retention)
+  analytics.py        admin analytics aggregated in SQL
+  app_settings.py     settings the admin can change (validated), audit.py: audit log
   user_ai.py          each account's AI settings, encrypted; used for that account's AI requests
-  static/             index.html, app.js, auth.js, shapes.js, ai.js, help.js, style.css (no build step)
+  static/             index.html, app.js, auth.js, account.js (plan chip, My account, downloads), admin.js (console),
+                      charts.js (small SVG charts), shapes.js, ai.js, help.js, style.css (no build step)
 tests/                pytest suite
 ```
 
@@ -319,15 +396,28 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/config` | formats, defaults, AI provider availability, hoops (public) |
-| POST | `/api/auth/login` · `logout` | `{login (email or username), password, remember}` → session cookie (public) |
+| GET | `/api/config` | formats, defaults, AI provider availability, hoops, `session_choices` (public) |
+| POST | `/api/auth/login` · `logout` | `{login (email or username), password, days (0 = browser session; or remember)}` → session cookie (public); logout deletes the session's designs |
 | GET | `/api/auth/me` | the signed-in account |
 | POST | `/api/auth/password` | `{current, password}`: change your own password |
+| GET | `/api/me/account` · `/api/me/usage` | your plan, allowance, features, AI status and sessions · just the allowance |
+| PATCH | `/api/me/profile` | `{display_name}` |
+| DELETE · POST | `/api/me/sessions/{id}` · `/api/me/sessions/revoke-others` | sign out another device · all other devices |
 | GET · PUT | `/api/me/ai` | your AI settings (keys only as `has_key` / `key_hint`); PUT keeps a saved key unless a new `api_key` or `remove_key` is sent |
-| GET · POST | `/api/admin/users` | Super Admin: list / create `{email, password, username?}` |
-| PATCH · DELETE | `/api/admin/users/{id}` | Super Admin: `{email?, username? ("" removes), active?}` / delete (with the account's designs and AI settings) |
-| POST | `/api/admin/users/{id}/password` | Super Admin: set a new password (signs the user out) |
-| POST | `/api/projects` | upload (multipart `file`) |
+| GET | `/api/me/ai/status` | which service and model you use, and whether it is ready (no keys) |
+| GET · POST | `/api/admin/users` | Super Admin: list (`q, plan, status, usage_status, sort, page`) / create `{email, password, username?, display_name?, role?, plan_id?}` |
+| GET · PATCH · DELETE | `/api/admin/users/{id}` | Super Admin: usage details / `{email?, username?, display_name?, active?, role?}` / delete |
+| POST | `/api/admin/users/{id}/password` · `/sessions/revoke` · `/usage/reset` | new password · sign out everywhere · reset the usage counter |
+| PUT | `/api/admin/users/{id}/subscription` · `/expiry` · `/overrides` | `{plan_id, keep_expiry, expires_at}` · `{expires_at}` · `{limit_type, generation_limit, features, note}` |
+| GET · POST · PATCH · DELETE | `/api/admin/plans[/{id}]` | plans and the feature catalogue |
+| GET | `/api/admin/analytics` · `/api/admin/ai` | `?start=YYYY-MM-DD&end=…` aggregated analytics · AI overview |
+| GET · PUT | `/api/admin/settings` | application settings (validated ranges) |
+| GET | `/api/admin/audit` | `?q, before, user_id` |
+| POST | `/api/admin/maintenance/run` | run the clean-up now |
+| POST | `/api/projects` | upload (multipart `file`); replaces this browser session's previous design |
+| DELETE | `/api/projects/{id}` | close the design: delete it now |
+| POST | `/api/projects/{id}/release` | the page went away (beacon): delete after the grace period unless reopened |
+| GET | `/api/projects/{id}/quota` | `{charged, usage, features}` before a download |
 | POST | `/api/projects/{id}/extract` | `{options:{width_mm, num_colors, background, min_feature_mm, …}}` |
 | PUT | `/api/projects/{id}/layers` | edit layers: enabled, thread color, stitch type, angle, order |
 | POST | `/api/projects/{id}/layers/merge` | `{source, target}` |
@@ -335,7 +425,7 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | POST | `/api/projects/{id}/objects/reset` | `{ids}` back to colour settings (empty = all shapes) |
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |
 | POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn |
-| GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip`. For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet) |
+| GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip`. For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet). The first stitch-output download of a design counts against the allowance (403 `quota_exceeded` / `feature_unavailable` with an explanation) |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
 | POST | `/api/projects/{id}/ai/clean` | `{ai, mode: redraw\|remove_background\|enhance, colors?}` (needs an image-capable AI) |

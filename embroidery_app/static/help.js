@@ -80,6 +80,12 @@ const HELP = {
     what: "Checks the generated stitches for problems such as stitching that is too dense, thin shapes that may look broken, too many thread cuts or missing foundation stitches – and suggests setting changes you can apply with one click.",
     why: "Catches problems before you sew on real fabric. Works without AI; with an AI service it also looks at the preview picture like a digitizer would.",
   },
+  quota: {
+    t: "Design downloads",
+    what: "Each new design you download stitch files for counts once: the first download of a machine file, preview picture or worksheet for an uploaded file.",
+    why: "Downloading the same design again, in other formats or after small edits, is free. Uploading, preparing and previewing never count.",
+    eg: "Download a logo as DST, then as PES and as a ZIP: that is one design.",
+  },
   ai_keys: {
     t: "Your API keys",
     what: "AI services need a key from your own account with them. It is saved with your account here, encrypted, and used only for your own requests - nobody else can see or use it, and it is never shown again (only its last four characters).",

@@ -86,7 +86,7 @@ account under **Account menu → Manage users**.
 | 🟥 | `SUPER_ADMIN_PASSWORD` | at least 10 characters (avoid `"` `'` and `\`) |
 | 🟥 | `SUPER_ADMIN_USERNAME` | optional: a username to sign in with instead of the email (3-32 letters, digits, `.` `_` `-`). Set only here - the app cannot change it; a new value applies at the next deploy |
 | 🟥 | `APP_SECRET_KEY` | recommended: a long random string, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Encrypts the users' saved AI keys. Never change it afterwards, or saved AI keys can no longer be read (users then add them again). Without it a random key is created on the server in `/var/lib/embroidery/secret.key` |
-| 🟦 | `SESSION_DAYS` | how long "Keep me signed in" lasts, default 30 |
+| 🟦 | `SESSION_DAYS` | longest "Keep me signed in" choice on the first start, default 30 (then: Admin console > Settings) |
 
 The deployment stops if `SUPER_ADMIN_EMAIL` or `SUPER_ADMIN_PASSWORD` is missing. The account is created
 on the first start only; changing the secrets later does not change an existing account.

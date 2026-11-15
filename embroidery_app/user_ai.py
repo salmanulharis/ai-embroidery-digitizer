@@ -18,8 +18,9 @@ import time
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from . import db
-from .ai import catalog
+from . import db, entitlements
+from .ai import catalog, registry
+from .ai.base import Credentials
 from .config import settings
 
 FIELDS = ("api_key", "base_url", "vision_model", "edit_model")
@@ -112,25 +113,46 @@ def save(uid: int, body: dict) -> dict:
     return view(uid)
 
 
+def _server_allowed(uid: int, pid: str, user_values: dict) -> bool:
+    """May this request fall back to the server's own AI configuration? Only with the
+    ``server_ai`` entitlement; otherwise a user without their own key gets a setup message
+    instead of silently using the app's (or anyone else's) credentials."""
+    provider = registry.PROVIDERS.get(pid)
+    if provider is None:
+        return False
+    if not provider.uses_server(Credentials.from_request(user_values)):
+        return True  # the user's own key / address; the server's values only fill model defaults
+    return entitlements.effective(uid).has("server_ai")
+
+
 def resolve(uid: int, requested: dict | None) -> dict | None:
     """The ``ai`` settings for a request of this user, or None for the built-in algorithms.
     The browser only names the service (and may pick a model); the key and address always
-    come from this user's saved settings."""
+    come from this user's saved settings, never from another account."""
     if not requested or requested.get("provider") in (None, "", "builtin"):
         return None
     pid = requested["provider"]
     info = _providers().get(pid)
     if not info:
         raise ValueError(f"Unknown AI service: {pid}")
+    ent = entitlements.effective(uid)
+    if not ent.has("ai_services"):
+        raise entitlements.EntitlementError(
+            f"AI services are not included in your {ent.plan['name']} plan. The built-in assistant still works; "
+            "ask your administrator if you need AI.", "feature_unavailable")
     saved = _load(uid)["providers"].get(pid, {})
-    if info["needs_key"] and not saved.get("api_key") and not info["server_configured"]:
+    allow_server = _server_allowed(uid, pid, saved)
+    if info["needs_key"] and not saved.get("api_key") and not (allow_server and info["server_configured"]):
         raise ValueError(f"{info['label']} is not set up for your account yet. Open AI settings and add your API key.")
+    if not info["needs_key"] and not saved.get("base_url") and not allow_server:
+        raise ValueError(f"{info['label']} is not set up for your account yet. Open AI settings and enter its address.")
     return {
         "provider": pid,
         "api_key": saved.get("api_key"),
         "base_url": saved.get("base_url"),
         "vision_model": requested.get("vision_model") or saved.get("vision_model"),
         "edit_model": requested.get("edit_model") or saved.get("edit_model"),
+        "allow_server": allow_server,
     }
 
 
@@ -140,6 +162,50 @@ def for_models(uid: int, requested: dict | None) -> dict | None:
     if not requested or requested.get("provider") in (None, "", "builtin"):
         return None
     saved = _load(uid)["providers"].get(requested["provider"], {})
-    return {"provider": requested["provider"],
-            "api_key": requested.get("api_key") or saved.get("api_key"),
-            "base_url": requested.get("base_url") or saved.get("base_url")}
+    values = {"api_key": requested.get("api_key") or saved.get("api_key"),
+              "base_url": requested.get("base_url") or saved.get("base_url")}
+    return {"provider": requested["provider"], **values,
+            "allow_server": _server_allowed(uid, requested["provider"], values)}
+
+
+def status(uid: int) -> dict:
+    """Short, key-free summary for the account page: which service and model are in use."""
+    cfg = _load(uid)
+    known = _providers()
+    ent = entitlements.effective(uid)
+
+    def use(choice: str, model_field: str) -> dict | None:
+        if choice in ("", "builtin") or choice not in known:
+            return None
+        p = cfg["providers"].get(choice, {})
+        own = bool(p.get("api_key")) if known[choice]["needs_key"] else bool(p.get("base_url"))
+        server = ent.has("server_ai") and (known[choice]["server_configured"] or not known[choice]["needs_key"])
+        return {"provider": choice, "label": known[choice]["label"], "model": p.get(model_field) or "automatic",
+                "own_key": own, "ready": ent.has("ai_services") and (own or server)}
+
+    return {"advice": use(cfg["vision"], "vision_model"), "cleanup": use(cfg["edit"], "edit_model"),
+            "allowed": ent.has("ai_services"), "server_ai": ent.has("server_ai"),
+            "server_providers": [p["id"] for p in known.values() if p["server_configured"]] if ent.has("server_ai") else []}
+
+
+def summary_counts() -> dict:
+    """For the admin's AI overview: how many accounts set up which service. Reads only the
+    choice of service (decrypting each row in memory); keys are never returned."""
+    with db.tx() as c:
+        uids = [r["user_id"] for r in c.execute("SELECT user_id FROM ai_settings")]
+    counts: dict[str, dict] = {}
+    n_configured = 0
+
+    def entry(pid: str) -> dict:
+        return counts.setdefault(pid, {"accounts_with_key": 0, "used_for_advice": 0, "used_for_cleanup": 0})
+
+    for uid in uids:
+        cfg = _load(uid)
+        n_configured += int(configured(cfg))
+        for pid, p in cfg["providers"].items():
+            entry(pid)["accounts_with_key"] += int(bool(p.get("api_key")) or bool(p.get("base_url")))
+        if cfg["vision"] not in ("", "builtin"):
+            entry(cfg["vision"])["used_for_advice"] += 1
+        if cfg["edit"] not in ("", "builtin"):
+            entry(cfg["edit"])["used_for_cleanup"] += 1
+    return {"accounts_configured": n_configured, "providers": counts}

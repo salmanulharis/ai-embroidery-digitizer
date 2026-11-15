@@ -19,7 +19,8 @@
     <label><span class="lbl">Password</span>
       <span class="row nowrap-row"><input type="password" id="loginPassword" autocomplete="current-password" required>
       <button type="button" class="ghost small" id="loginShow" aria-pressed="false" aria-label="Show password">Show</button></span></label>
-    <label class="check"><input type="checkbox" id="loginRemember"> <span>Keep me signed in for <span id="loginDays">30</span> days</span></label>
+    <label><span class="lbl">Keep me signed in</span>
+      <select id="loginKeep"><option value="0">Until I close the browser</option></select></label>
     <button type="submit" class="primary" id="loginSubmit">Sign in</button>
     <p class="muted small login-foot">Forgot your password? Ask your administrator to reset it.</p>
   </form>
@@ -44,13 +45,15 @@
       <button type="button" class="ghost" id="btnPin" aria-pressed="false" aria-label="Pin preview" title="Keep the preview in view while you scroll the settings">&#128204;<span class="hide-lg"> Pin preview</span></button>
       <i data-help="pin"></i>
     </span>
+    <button type="button" class="ghost usage-chip hidden" id="usageChip"><span class="meter-dot" aria-hidden="true"></span><span id="usageChipText"></span></button>
     <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog">&#9881; <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
     <div class="user-menu">
       <button type="button" class="ghost" id="btnUser" aria-expanded="false" aria-controls="userMenu" aria-label="Account">
         <span class="avatar" id="userAvatar" aria-hidden="true">?</span><span class="user-email" id="userEmail"></span></button>
       <div class="user-pop hidden" id="userMenu">
         <p class="small muted user-pop-head"><span><span id="userMenuEmail"></span><span class="user-pop-name" id="userMenuName"></span></span><span class="badge" id="userRole"></span></p>
-        <button type="button" class="ghost" id="btnUsers">&#128101; Manage users</button>
+        <button type="button" class="ghost" id="btnAccount">&#128100; My account</button>
+        <button type="button" class="ghost" id="btnAdmin">&#128202; Admin console</button>
         <button type="button" class="ghost" id="btnMyPassword">&#128273; Change password</button>
         <button type="button" class="ghost" id="btnLogout">&#8618; Sign out</button>
       </div>
@@ -64,7 +67,8 @@
     <h2 id="step1Title" class="visually-hidden">Upload your design</h2>
     <div class="open-note hidden" id="openNote">
       <span>You have <b id="openName"></b> open. Uploading a new file starts a new design.</span>
-      <button type="button" class="small" id="btnBackToOpen">Back to my design</button>
+      <span class="row nowrap-row"><button type="button" class="small" id="btnBackToOpen">Back to my design</button>
+      <button type="button" class="small ghost" id="btnCloseDesign">Close design</button></span>
     </div>
     <label class="drop" id="drop">
       <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg,.ai,.pdf" hidden>
@@ -266,6 +270,7 @@
             <legend class="visually-hidden">Files to download</legend>
             <div class="exports" id="exports"></div>
           </fieldset>
+          <p class="quota-note small hidden" id="quotaNote" role="status"></p>
           <div class="row between export-actions">
             <button type="button" class="ghost small" id="btnExportAll">Select all</button>
             <button type="button" class="primary" id="btnDownload">Download</button>
@@ -280,20 +285,38 @@
     </div>
   </section>
 
-  <!-- USERS (Super Admin only; the server checks the role on every request) -->
-  <section id="usersView" class="panel hidden" aria-labelledby="usersTitle">
-    <div class="card">
-      <div class="row between users-head">
-        <div>
-          <h2 id="usersTitle">Users</h2>
-          <p class="muted small" id="usersCount"></p>
-        </div>
-        <div class="row">
-          <button type="button" class="ghost" id="btnUsersBack">&larr; Back to the app</button>
-          <button type="button" class="primary" id="btnAddUser">&#10010; Add user</button>
-        </div>
-      </div>
-      <div class="tableWrap"><table class="users" id="usersTable"></table></div>
+  <!-- MY ACCOUNT (every signed-in user) -->
+  <section id="accountView" class="panel hidden" aria-labelledby="accountTitle">
+    <div class="view-head">
+      <div><h2 id="accountTitle" tabindex="-1">Welcome</h2><p class="muted small" id="accountSub"></p></div>
+      <button type="button" class="ghost" data-view-close>&larr; Back to my design</button>
+    </div>
+    <div class="dash-grid">
+      <div class="card" id="accPlan"></div>
+      <div class="card" id="accAi"></div>
+      <div class="card" id="accProfile"></div>
+      <div class="card" id="accSessions"></div>
+    </div>
+  </section>
+
+  <!-- ADMIN CONSOLE (Super Admin only; the server checks the role on every request) -->
+  <section id="adminView" class="panel hidden" aria-labelledby="adminTitle">
+    <div class="view-head">
+      <div><h2 id="adminTitle" tabindex="-1">Admin console</h2><p class="muted small">Accounts, plans, usage and settings</p></div>
+      <button type="button" class="ghost" data-view-close>&larr; Back to the app</button>
+    </div>
+    <div class="admin-layout">
+      <nav class="admin-nav" aria-label="Admin console" id="adminNav">
+        <button type="button" data-tab="overview">Overview</button>
+        <button type="button" data-tab="users">Users</button>
+        <button type="button" data-tab="plans">Subscription plans</button>
+        <button type="button" data-tab="usage">User usage</button>
+        <button type="button" data-tab="analytics">Analytics</button>
+        <button type="button" data-tab="ai">AI overview</button>
+        <button type="button" data-tab="settings">Settings</button>
+        <button type="button" data-tab="audit">Audit log</button>
+      </nav>
+      <div class="admin-main" id="adminMain"></div>
     </div>
   </section>
 </main>
@@ -329,7 +352,7 @@
     <label id="aiUrlRow"><span class="lbl">Address <i data-help="ai_base_url"></i></span>
       <input type="url" id="aiUrl" spellcheck="false" placeholder="https://"></label>
     <div class="row">
-      <button type="button" id="aiLoadModels">Connect &amp; load models</button>
+      <button type="button" id="aiLoadModels">Test connection &amp; load models</button>
       <span class="small" id="aiStatus" aria-live="polite"></span>
     </div>
     <label id="aiVisionModelRow"><span class="lbl">Model for advice &amp; checks <i data-help="ai_model"></i></span>
@@ -351,6 +374,8 @@
     </div>
     <p class="small muted" id="userDialogNote"></p>
     <label id="userEmailRow"><span class="lbl">Email</span><input type="email" id="userFormEmail" autocomplete="off" spellcheck="false" inputmode="email"></label>
+    <label id="userDisplayRow"><span class="lbl">Name <span class="muted">(optional)</span></span>
+      <input type="text" id="userFormDisplay" autocomplete="off" maxlength="80"></label>
     <div id="userNameRow">
       <label><span class="lbl">Username <span class="muted">(optional)</span></span>
         <input type="text" id="userFormName" autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off" maxlength="32"
@@ -363,6 +388,10 @@
         <button type="button" class="ghost small" id="userGenerate">Generate</button>
         <button type="button" class="ghost small" id="userCopy">Copy</button></span></label>
       <p class="small muted">At least 10 characters. Share it with the user privately - it is not shown again.</p>
+    </div>
+    <div class="form-2" id="userRolePlanRow">
+      <label><span class="lbl">Role</span><select id="userFormRole"><option value="user">User</option><option value="super_admin">Super Admin</option></select></label>
+      <label id="userPlanRow"><span class="lbl">Plan</span><select id="userFormPlan"></select></label>
     </div>
     <p class="small" id="userDialogStatus" role="status"></p>
     <div class="row end">
@@ -390,6 +419,66 @@
   </form>
 </dialog>
 
+<dialog id="detailDialog" class="form-dialog wide-dialog" aria-labelledby="detailTitle">
+  <div class="ai-dialog">
+    <div class="row between">
+      <h2 id="detailTitle">Account</h2>
+      <button type="button" class="ghost" data-close aria-label="Close">&times;</button>
+    </div>
+    <div id="detailBody"></div>
+  </div>
+</dialog>
+
+<dialog id="planDialog" class="form-dialog" aria-labelledby="planDialogTitle">
+  <form method="dialog" class="ai-dialog" id="planForm" novalidate>
+    <div class="row between">
+      <h2 id="planDialogTitle">Plan</h2>
+      <button type="button" class="ghost" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="form-2">
+      <label><span class="lbl">Name</span><input type="text" id="planName" maxlength="60" required></label>
+      <label><span class="lbl">Code</span><input type="text" id="planCode" maxlength="32" spellcheck="false" autocapitalize="none" aria-describedby="planCodeHint"></label>
+    </div>
+    <p class="small muted" id="planCodeHint">Lower-case letters, digits, dash or underscore. Used in reports and for a future payment integration.</p>
+    <label><span class="lbl">Description</span><input type="text" id="planDesc" maxlength="300"></label>
+    <fieldset class="group"><legend>Designs allowed</legend>
+      <div class="form-2">
+        <label><span class="lbl">Allowance</span><select id="planLimitType"><option value="limited">A fixed number</option><option value="unlimited">Unlimited</option></select></label>
+        <label id="planLimitRow"><span class="lbl">Number of designs</span><input type="number" id="planLimit" min="0" max="1000000" step="1"></label>
+      </div>
+      <label id="planPeriodRow"><span class="lbl">Counted</span><select id="planPeriod"><option value="month">Per calendar month (resets on the 1st, UTC)</option><option value="total">In total, while the plan is assigned</option></select></label>
+    </fieldset>
+    <fieldset class="group"><legend>Features</legend><div id="planFeatures" class="feature-list"></div></fieldset>
+    <div class="form-2">
+      <label class="check"><input type="checkbox" id="planEnabled"> Can be assigned (enabled)</label>
+      <label class="check"><input type="checkbox" id="planDefault"> Default plan for new accounts</label>
+    </div>
+    <label><span class="lbl">Order <span class="muted">(higher = upgrade)</span></span><input type="number" id="planOrder" min="0" max="1000" step="1"></label>
+    <details class="group"><summary>For a future payment integration</summary>
+      <p class="small muted">Stored only. No payment is taken, and users see no price until a payment provider is connected.</p>
+      <div class="form-2">
+        <label><span class="lbl">Price (cents)</span><input type="number" id="planPrice" min="0" step="1"></label>
+        <label><span class="lbl">Currency</span><input type="text" id="planCurrency" maxlength="3" placeholder="USD"></label>
+      </div>
+      <label><span class="lbl">Payment provider price id</span><input type="text" id="planPriceRef" maxlength="200" spellcheck="false"></label>
+    </details>
+    <p class="small" id="planStatus" role="status"></p>
+    <div class="row end">
+      <button type="button" class="ghost danger hidden" id="planDelete">Delete plan</button>
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary" id="planSave">Save plan</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="quotaDialog" class="form-dialog" aria-labelledby="quotaTitle">
+  <form method="dialog" class="ai-dialog">
+    <h2 id="quotaTitle">You have reached your limit</h2>
+    <div id="quotaBody"></div>
+    <div class="row end"><button type="submit" class="primary">OK</button></div>
+  </form>
+</dialog>
+
 <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 <div id="toast" class="toast hidden"><span id="toastText"></span><button type="button" class="toast-close" id="toastClose" aria-label="Close message">&times;</button></div>
 <div id="busy" class="busy hidden"><div class="spinner" aria-hidden="true"></div><span id="busyText">Working…</span></div>
@@ -397,6 +486,9 @@
 <div id="srAlert" class="visually-hidden" role="alert"></div>
 <script src="/static/help.js"></script>
 <script src="/static/auth.js"></script>
+<script src="/static/charts.js"></script>
+<script src="/static/account.js"></script>
+<script src="/static/admin.js"></script>
 <script src="/static/shapes.js"></script>
 <script src="/static/ai.js"></script>
 <script src="/static/app.js"></script>

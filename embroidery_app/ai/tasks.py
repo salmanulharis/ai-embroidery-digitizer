@@ -41,7 +41,9 @@ def _provider_and_creds(ai: Optional[dict]):
     if not ai or not ai.get("provider") or ai.get("provider") == "builtin":
         return None, None
     provider = registry.get(str(ai["provider"]))
-    return provider, provider.resolve(Credentials.from_request(ai))
+    # user_ai.resolve sets allow_server from the account's entitlement; direct callers
+    # (tests, scripts) without it keep the old behaviour
+    return provider, provider.resolve(Credentials.from_request(ai), allow_server=bool(ai.get("allow_server", True)))
 
 
 # --------------------------------------------------------------------------- clean-up (AI only)

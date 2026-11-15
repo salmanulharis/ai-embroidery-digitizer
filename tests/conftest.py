@@ -17,11 +17,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Tests of the design workflow run as one logged-in account; tests/test_auth.py switches
 # this off to exercise the real login, sessions, roles and project ownership.
-from embroidery_app import auth  # noqa: E402
+from embroidery_app import auth, subscriptions  # noqa: E402
 from embroidery_app.api import app  # noqa: E402
 
 TEST_USER = auth.create_user("tester@example.com", "tester-password-123")
+# the workflow tests download far more designs than a Free plan allows; allowances are
+# tested on their own in tests/test_plans_usage.py
+subscriptions.set_override(TEST_USER["id"], None, limit_type="unlimited")
 app.dependency_overrides[auth.require_user] = lambda: TEST_USER
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Per-account request limits are per minute; each test starts with a clean slate."""
+    from embroidery_app import usage
+
+    usage.reset_rate_limits()
+    yield
 
 
 def make_logo() -> np.ndarray:

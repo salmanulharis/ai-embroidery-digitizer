@@ -1,6 +1,7 @@
-"""Workflow orchestration + on-disk project storage.
+"""Workflow orchestration + temporary on-disk project storage.
 
-Each project lives in ``data/projects/<id>/``:
+Projects are temporary working folders, deleted when no longer in use (see
+temp_projects.py for when). Each project lives in ``data/projects/<id>/``:
   meta.json     filename, kind, options, stitch params
   source.*      the original upload (never modified)
   work.png      current raster working image (original or AI-cleaned)
@@ -188,6 +189,14 @@ def owned_by(pid: str, user_id: int) -> bool:
         return _meta(pid).get("owner") == user_id
     except (NotFound, FileNotFoundError, ValueError):
         return False
+
+
+def delete_project(pid: str) -> None:
+    """Remove a project's files and its cached stitch plans (temp_projects.py decides when)."""
+    with _lock:
+        _plan_cache.pop(pid, None)
+    if _ID_RE.match(pid or ""):
+        shutil.rmtree(PROJECTS / pid, ignore_errors=True)
 
 
 def delete_projects_of(user_id: int) -> int:
@@ -827,6 +836,11 @@ def _dense_on_tiny_shapes(design: Design) -> bool:
         if area < 3 or 2 * area / max(perimeter, 1e-6) < 1.5:
             return True
     return False
+
+
+def saved_stitch_params(pid: str) -> StitchParams:
+    """The stitch settings the design is exported with (the last "Create stitches")."""
+    return StitchParams.from_dict(_meta(pid).get("stitch_params"))
 
 
 EXTRA_EXPORTS = ("svg", "png", "txt")  # besides the machine formats in FORMATS
