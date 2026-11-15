@@ -340,7 +340,10 @@ def stitch(pid: str, body: StitchBody, user: dict = Depends(auth.require_user)):
     return service.stitch(pid, body.params)
 
 
-STITCH_OUTPUT = set(FORMATS) | {"png", "txt"}  # downloads that are a generation (svg = artwork only)
+# downloads that are a generation (svg = artwork only); "wilcom" = the package for continuing
+# in Wilcom (DST + artwork, see service.wilcom_package): its machine file is DST, so it needs no
+# "all_formats", and it is one download, so it needs no "zip_export"
+STITCH_OUTPUT = set(FORMATS) | {"png", "txt", service.WILCOM_PACKAGE}
 
 
 def _check_export_features(user_id: int, pid: str, files: list[str]) -> bool:
@@ -554,4 +557,15 @@ def index():
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+class _RevalidatedStatic(StaticFiles):
+    """Scripts and styles are checked with the server on every load (ETag: a short "not
+    modified" answer when unchanged), like index.html: after an update the browser never
+    runs the new page with old scripts from its cache."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
+app.mount("/static", _RevalidatedStatic(directory=STATIC), name="static")

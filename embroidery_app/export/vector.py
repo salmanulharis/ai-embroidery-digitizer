@@ -1,7 +1,9 @@
-"""Design -> SVG (clean, mm-scaled vector artwork for Wilcom / Illustrator / Inkscape)."""
+"""Design -> SVG / EPS (clean, mm-scaled vector artwork for Illustrator, Inkscape and
+embroidery software that imports vector graphics, such as Wilcom)."""
 
 from __future__ import annotations
 
+import math
 from xml.sax.saxutils import escape
 
 from shapely.geometry import Polygon
@@ -30,6 +32,74 @@ def object_d(obj) -> str:
     return "".join(
         "M" + "L".join("{:.3f},{:.3f}".format(*p[:2]) for p in line.coords) for line in iter_lines(obj.geometry)
     )
+
+
+PT_PER_MM = 72 / 25.4
+
+
+def _ps_name(text: str) -> str:
+    """Text safe inside a PostScript comment (one line, printable ASCII)."""
+    return "".join(c if 32 <= ord(c) < 127 else "?" for c in str(text)).strip()[:80]
+
+
+def design_to_eps(design: Design, layers: list[int] | None = None, title: str = "design") -> str:
+    """Design -> EPS (vector artwork at real size, for embroidery software that imports
+    EPS graphics, such as Wilcom's "Import Graphic"). Switched-off colours and shapes are
+    left out; ``layers`` limits the file to those colour indexes. Areas keep their holes
+    (even-odd fill); lines are stroked at their own width. Units: 1 mm, y up."""
+    w, h = design.width_mm, design.height_mm
+    wanted = None if layers is None else set(layers)
+    out = [
+        "%!PS-Adobe-3.0 EPSF-3.0",
+        "%%Creator: AI Embroidery Digitizer",
+        f"%%Title: {_ps_name(title)}",
+        f"%%BoundingBox: 0 0 {math.ceil(w * PT_PER_MM)} {math.ceil(h * PT_PER_MM)}",
+        f"%%HiResBoundingBox: 0 0 {w * PT_PER_MM:.3f} {h * PT_PER_MM:.3f}",
+        "%%LanguageLevel: 2",
+        "%%DocumentData: Clean7Bit",
+        "%%Pages: 1",
+        "%%EndComments",
+        "%%BeginProlog",
+        "/m {moveto} bind def /l {lineto} bind def /z {closepath} bind def",
+        "%%EndProlog",
+        "%%Page: 1 1",
+        "gsave",
+        f"{PT_PER_MM:.6f} dup scale",  # 1 unit = 1 mm
+        f"0 {h:.3f} translate 1 -1 scale",  # the design's y points down
+        "1 setlinejoin 1 setlinecap",
+    ]
+    for layer in design.layers:
+        if not layer.enabled or (wanted is not None and layer.index not in wanted):
+            continue
+        r, g, b = (c / 255 for c in layer.rgb)
+        body: list[str] = []
+        for obj in design.objects:
+            if obj.layer != layer.index or not obj.enabled:
+                continue
+            if obj.kind == "area":
+                for poly in iter_polygons(obj.geometry):
+                    path = []
+                    for ring in (poly.exterior, *poly.interiors):
+                        pts = list(ring.coords)
+                        if len(pts) < 4:
+                            continue
+                        path.append("{:.3f} {:.3f} m".format(*pts[0][:2]))
+                        path += ["{:.3f} {:.3f} l".format(*p[:2]) for p in pts[1:-1]]
+                        path.append("z")
+                    if path:
+                        body += ["newpath", *path, "eofill"]
+            else:
+                for line in iter_lines(obj.geometry):
+                    pts = list(line.coords)
+                    if len(pts) < 2:
+                        continue
+                    body += ["newpath", "{:.3f} {:.3f} m".format(*pts[0][:2]),
+                             *("{:.3f} {:.3f} l".format(*p[:2]) for p in pts[1:]),
+                             f"{max(obj.stroke_width_mm, 0.1):.3f} setlinewidth stroke"]
+        if body:
+            out += [f"% colour {layer.index}: {_ps_name(layer.name)} {layer.hex}", f"{r:.4f} {g:.4f} {b:.4f} setrgbcolor", *body]
+    out += ["grestore", "showpage", "%%EOF"]
+    return "\n".join(out) + "\n"
 
 
 def design_to_svg(design: Design, only_enabled: bool = False, interactive: bool = False) -> str:

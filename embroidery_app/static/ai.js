@@ -262,6 +262,8 @@ const AI = (() => {
       if (e.min_feature_mm != null) $("min_feature_mm").value = e.min_feature_mm;
       if (e.denoise != null) { $("denoise").value = e.denoise; showAdjustValues(); }
       if (r.stitch && r.stitch.thread_weight && $("stitchForm").elements.thread_weight) $("stitchForm").elements.thread_weight.value = String(r.stitch.thread_weight);
+      History.stitchChange("suggested settings"); // one undo step (the picture settings go with the design)
+      markModified();
       $("aiSuggestResult").innerHTML = `<p class="small good">Suggested settings applied.</p>`;
       await extract();
     };
@@ -329,6 +331,9 @@ const AI = (() => {
         if (!el) continue;
         if (el.type === "checkbox") el.checked = !!v; else el.value = v;
       }
+      History.stitchChange("suggested changes"); // one undo step
+      markModified();
+      updateStyleParams();
       await generate({ keepView: true });
       toast("Suggestions applied – stitches recreated.", true);
     });

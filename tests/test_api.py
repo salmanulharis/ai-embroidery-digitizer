@@ -25,6 +25,15 @@ def test_config():
     assert set(body["ai_clean_modes"]) == {"redraw", "remove_background", "enhance"}
 
 
+def test_page_and_scripts_are_revalidated():
+    """After an update the browser must not mix the new page with cached old scripts."""
+    for path in ("/", "/static/app.js", "/static/style.css"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
+    etag = client.get("/static/app.js").headers["etag"]
+    assert client.get("/static/app.js", headers={"If-None-Match": etag}).status_code == 304
+
+
 def test_full_raster_workflow(logo_png):
     meta = _upload("logo.png", logo_png)
     pid = meta["id"]
@@ -121,6 +130,56 @@ def test_overlapping_stitch_requests_compute_once(svg_text, monkeypatch):
     # an export waits for the stitch run and uses the same plan
     assert client.get(f"/api/projects/{pid}/export/dst").status_code == 200
     assert len(calls) == 2
+
+
+def test_wilcom_package(logo_png):
+    """DST + EPS / SVG artwork (all colours and one file per colour) + worksheet + read-me.
+    Never presented as a Wilcom EMB project."""
+    import re
+
+    pid = _upload("logo.png", logo_png)["id"]
+    design = client.post(f"/api/projects/{pid}/extract", json={"options": {"width_mm": 80}}).json()["design"]
+    assert client.post(f"/api/projects/{pid}/stitch", json={"params": {}}).status_code == 200
+    r = client.get(f"/api/projects/{pid}/export/wilcom")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    assert 'filename="logo_for_wilcom.zip"' in r.headers["content-disposition"]
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    names = z.namelist()
+    assert {"logo.dst", "logo_artwork.eps", "logo_artwork.svg", "logo_worksheet.txt", "Open in Wilcom - read me.txt"} <= set(names)
+    assert z.read("logo.dst") == client.get(f"/api/projects/{pid}/export/dst").content  # the same stitches
+    sewn = [l for l in design["layers"] if l["enabled"]]
+    per_colour = sorted(n for n in names if n.startswith("artwork_by_colour/"))
+    assert len(per_colour) == len(sewn)
+    assert per_colour[0].startswith("artwork_by_colour/01_")
+    eps = z.read("logo_artwork.eps").decode("ascii")
+    assert eps.startswith("%!PS-Adobe-3.0 EPSF-3.0") and eps.rstrip().endswith("%%EOF")
+    w, h = map(float, re.search(r"%%HiResBoundingBox: 0 0 ([\d.]+) ([\d.]+)", eps).groups())
+    assert abs(w / 72 * 25.4 - design["width_mm"]) < 0.01 and abs(h / 72 * 25.4 - design["height_mm"]) < 0.01
+    assert eps.count("setrgbcolor") == len(sewn) and "eofill" in eps
+    readme = z.read("Open in Wilcom - read me.txt").decode()
+    assert "not a Wilcom .EMB project" in readme
+    assert client.get(f"/api/projects/{pid}/export/zip?formats=wilcom").status_code == 400  # a download of its own
+
+
+def test_eps_keeps_holes_lines_and_skips_switched_off_colours():
+    from shapely.geometry import LineString, box
+
+    from embroidery_app.export import design_to_eps
+    from embroidery_app.models import ColorLayer, Design, DesignObject
+
+    ring = box(0, 0, 40, 20).difference(box(10, 5, 20, 15))
+    design = Design(40, 20, [ColorLayer(0, (255, 0, 0), "Red"), ColorLayer(1, (0, 0, 255), "Blue", enabled=False),
+                             ColorLayer(2, (0, 0, 0), "Black")],
+                    [DesignObject(0, ring), DesignObject(1, box(25, 2, 35, 8)),
+                     DesignObject(2, LineString([(0, 19), (40, 19)]), kind="line", stroke_width_mm=0.8)])
+    eps = design_to_eps(design)
+    assert eps.count("setrgbcolor") == 2 and "Blue" not in eps  # switched-off colour left out
+    red = eps.split("% colour 0")[1].split("% colour 2")[0]
+    assert red.count("\nz\n") == 2 and "eofill" in red  # outline + hole, filled even-odd
+    assert "0.800 setlinewidth stroke" in eps
+    assert "%%BoundingBox: 0 0 114 57" in eps  # 40 x 20 mm in points, rounded up
+    only = design_to_eps(design, layers=[2])
+    assert only.count("setrgbcolor") == 1 and "eofill" not in only
 
 
 def test_ai_file_via_pdf_compat():

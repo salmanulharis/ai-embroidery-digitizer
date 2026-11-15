@@ -152,11 +152,13 @@ function restoreForm(v) {
   showAdjustValues();
   const fabric = $("stitchForm").elements.fabric;
   if (fabric) showFabricNote(fabric.value);
+  updateStyleParams();
 }
 function saveSession() {
   try {
     if (!state.project) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ uid: Auth.user()?.id, meta: state.project, page: currentPage, pane: state.pane, form: formSnapshot() }));
+    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ uid: Auth.user()?.id, meta: state.project, page: currentPage, pane: state.pane,
+      form: formSnapshot(), baseline: state.baseline || null, history: History.save() }));
   } catch (_) {}
 }
 window.addEventListener("pagehide", saveSession);
@@ -193,6 +195,10 @@ async function resumeDesign() {
   try {
     openProject(saved.meta);
     restoreForm(saved.form || {});
+    $("hoopToggle").classList.toggle("hidden", !chosenHoop());
+    // what the design started with and the undo steps of this tab (earlier versions: none)
+    setBaseline(saved.baseline || { extract: extractValues(), stitch: { ...defaultStitch } });
+    History.reset(saved.history);
     await loadSource();
     // a design that was never prepared (reload right after upload) is prepared now
     const res = await busy("Opening your design again…", () => api(`/api/projects/${saved.meta.id}/design`), { quiet: true }).catch(() => null);
@@ -228,15 +234,20 @@ async function init() {
   hoop.innerHTML = '<option value="">Custom size</option>' + state.config.hoops.map((h, i) => `<option value="${i}">${esc(h.name)}</option>`).join("");
   hoop.onchange = () => {
     const h = state.config.hoops[hoop.value];
-    if (!h) return;
-    $("width_mm").value = Math.round(Math.min(h.width, h.height * aspect()) * 0.9);
-    if (state.project) Jobs.extract();
+    if (h) {
+      // the design's own proportions once it is prepared (a removed background changes them)
+      const a = state.design ? state.design.width_mm / state.design.height_mm : aspect();
+      $("width_mm").value = Math.round(Math.min(h.width, h.height * a) * 0.9);
+      if (state.project) Jobs.extract();
+    }
+    hoopChanged();
   };
   const nc = $("num_colors");
   for (let i = 1; i <= 15; i++) nc.insertAdjacentHTML("beforeend", `<option value="${i}">${i}</option>`);
   bindAdjustments();
 
   buildStitchForm();
+  bindSettingsMarkers();
   bindUpload();
   bindEditor();
   bindCanvas();
@@ -370,6 +381,8 @@ async function upload(file) {
   await loadSource();
   showPage("editor");
   await busy("Analysing your picture…", smartDefaults).catch(() => {});
+  setBaseline(); // what this design starts with: marks and resets compare with it
+  History.reset();
   await Jobs.extract({ delay: 0 }); // the stitches follow by themselves
 }
 
@@ -377,9 +390,12 @@ async function upload(file) {
 function openProject(meta) {
   Jobs.reset();
   if (state.playing) togglePlay();
-  Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true });
+  Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true, baseline: null });
   Shapes.reset();
   Render.reset();
+  History.reset();
+  document.querySelectorAll("#leftPanel label.mod, #leftPanel .ed-sec.mod").forEach((n) => n.classList.remove("mod"));
+  $("modSummary").classList.add("hidden");
   const raster = meta.kind === "raster";
   $("rasterOpts").classList.toggle("hidden", !raster);
   $("vectorOpts").classList.toggle("hidden", raster);
@@ -443,9 +459,9 @@ function renderDesign(res) {
       g.classList.toggle("layer-off", !l.enabled);
     }
   });
-  $("btnUndo").disabled = !res.can_undo;
-  $("btnRedo").disabled = !res.can_redo;
+  History.setServer(res.can_undo, res.can_redo);
   Shapes.afterRender(res);
+  updateStyleParams();
   renderStatus();
 }
 
@@ -531,6 +547,7 @@ async function saveLayers() {
   const layers = state.design.layers.map(({ index, hex, name, enabled, stitch_type, angle }) => ({ index, hex, name, enabled, stitch_type, angle }));
   const res = await work("Saving thread colours…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers }))).catch(() => null);
   if (res) {
+    History.designChange("thread colours");
     renderDesign(res);
     Jobs.stitch();
   }
@@ -546,6 +563,7 @@ async function mergeColours(source, target) {
   const from = layerName(source), to = layerName(target);
   const res = await work(`Merging ${from} into ${to}…`, () => api(`/api/projects/${state.project.id}/layers/merge`, json("POST", { source, target })));
   openThreads.delete(source);
+  History.designChange(`merge ${from} into ${to}`);
   renderDesign(res);
   Jobs.stitch();
   toast(`${from} merged into ${to}. Use Undo to separate them again.`, true);
@@ -631,26 +649,15 @@ const ColourDrag = (() => {
 })();
 ColourDrag.init();
 
-// Undo / redo: many steps, kept on the server per project (every design change).
-async function historyStep(kind) {
-  const btn = kind === "undo" ? $("btnUndo") : $("btnRedo");
-  if (btn.disabled || !state.project) return;
-  const res = await work(kind === "undo" ? "Undoing…" : "Redoing…", () => api(`/api/projects/${state.project.id}/${kind}`, { method: "POST" })).catch(() => null);
-  if (!res) return;
-  renderDesign(res);
-  Jobs.stitch();
-}
-const undoLast = () => historyStep("undo");
-const redoLast = () => historyStep("redo");
-$("btnUndo").onclick = undoLast;
-$("btnRedo").onclick = redoLast;
+$("btnUndo").onclick = () => History.undo().catch(() => {});
+$("btnRedo").onclick = () => History.redo().catch(() => {});
 document.addEventListener("keydown", (ev) => {
   // Ctrl/Cmd+Z = undo, Ctrl+Y or Ctrl/Cmd+Shift+Z = redo - never while typing in a field
   if (!(ev.ctrlKey || ev.metaKey) || ev.target.matches("input, select, textarea") || !state.project || currentPage !== "editor"
     || document.querySelector("dialog[open]") || document.body.matches(".view-account, .view-admin")) return;
   const k = ev.key.toLowerCase();
-  if (k === "z" && !ev.shiftKey) { ev.preventDefault(); undoLast(); }
-  else if (k === "y" || (k === "z" && ev.shiftKey)) { ev.preventDefault(); redoLast(); }
+  if (k === "z" && !ev.shiftKey) { ev.preventDefault(); History.undo().catch(() => {}); }
+  else if (k === "y" || (k === "z" && ev.shiftKey)) { ev.preventDefault(); History.redo().catch(() => {}); }
 });
 
 // AI assistant buttons live in ai.js
@@ -718,12 +725,28 @@ const CHECKS = [
   ["photo_stitch", "Photo stitch: the whole picture as a photo texture"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
 ];
+// Settings that only matter for some stitch styles (see stitch/outlines.py, fills.py,
+// decorative.py, guided.py): shown under "Style settings" when the design uses one of
+// those styles ("@photo": photo stitch is on). "Show the settings of every stitch style"
+// shows them all.
+const STYLE_PARAMS = {
+  border_width_mm: ["zigzag", "estitch"], border_spacing_mm: ["zigzag", "estitch"],
+  stipple_spacing_mm: ["stipple_fill", "maze_fill"], cross_cell_mm: ["cross_stitch"],
+  motif: ["motif_fill", "paired_motif_fill", "motif_run", "motif_column"],
+  motif_size_mm: ["motif_fill", "paired_motif_fill", "motif_run"], motif_warp: ["motif_fill", "paired_motif_fill"],
+  pattern: ["pattern_fill", "flexi_split"], pattern_size_mm: ["pattern_fill", "flexi_split"],
+  jagged_mm: ["jagged_fill"], photo_style: ["@photo"], photo_row_mm: ["@photo"],
+};
+const isStyleParam = (k) => k in STYLE_PARAMS;
+let defaultStitch = null; // the stitch settings as the form was built (= the app's defaults)
+
 function buildStitchForm() {
   const d = state.config.stitch_defaults;
   UNDERLAY_LABELS.motif = state.config.motifs || [["wave", "Wave"]];
+  const styled = (k) => (isStyleParam(k) ? ` data-styles="${STYLE_PARAMS[k].join(" ")}"` : "");
   const checkbox = ([k, label]) => {
     const on = k === "triple_run" ? d.running_repeats >= 3 : !!d[k];
-    return `<label class="check"><input type="checkbox" name="${k}" ${on ? "checked" : ""}> ${label} ${Tip.icon(k)}</label>`;
+    return `<label class="check"${styled(k)}><input type="checkbox" name="${k}" ${on ? "checked" : ""}> ${label} ${Tip.icon(k)}</label>`;
   };
   const tw = d.thread_weight === 60 ? 60 : 40;
   const fabrics = state.config.fabrics || [];
@@ -733,7 +756,11 @@ function buildStitchForm() {
       `</select><span class="muted small hint" id="fabricNote"></span></label>`
     : "";
   const field = ([k, label, min, max, step]) =>
-    `<label><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
+    `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
+  const select = ([k, kind, label]) =>
+    `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}">` +
+    UNDERLAY_LABELS[kind].map(([v, l]) => `<option value="${v}" ${v === d[k] ? "selected" : ""}>${l}</option>`).join("") +
+    `</select></label>`;
   $("stitchForm").innerHTML =
     fabricField +
     CHECKS.slice(0, 1).map(checkbox).join("") +
@@ -742,22 +769,183 @@ function buildStitchForm() {
     `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
     PARAMS.filter((p) => !p[5]).map(field).join("") +
     CHECKS.slice(1, 4).map(checkbox).join("") +
+    `<div class="style-params full" id="styleParams" hidden><p class="style-title">Style settings ${Tip.icon("style_settings")}</p>` +
+    UNDERLAY_FIELDS.filter(([k]) => isStyleParam(k)).map(select).join("") +
+    PARAMS.filter((p) => isStyleParam(p[0])).map(field).join("") +
+    CHECKS.filter(([k]) => isStyleParam(k)).map(checkbox).join("") +
+    `</div>` +
     `<details class="group full"><summary>Advanced stitch settings</summary><div class="params">` +
-    UNDERLAY_FIELDS.map(([k, kind, label]) =>
-      `<label><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}">` +
-      UNDERLAY_LABELS[kind].map(([v, l]) => `<option value="${v}" ${v === d[k] ? "selected" : ""}>${l}</option>`).join("") +
-      `</select></label>`).join("") +
-    PARAMS.filter((p) => p[5]).map(field).join("") +
-    CHECKS.slice(4).map(checkbox).join("") +
+    UNDERLAY_FIELDS.filter(([k]) => !isStyleParam(k)).map(select).join("") +
+    PARAMS.filter((p) => p[5] && !isStyleParam(p[0])).map(field).join("") +
+    CHECKS.slice(4).filter(([k]) => !isStyleParam(k)).map(checkbox).join("") +
+    `<label class="check"><input type="checkbox" id="styleShowAll"> Show the settings of every stitch style</label>` +
     `</div></details>`;
   const sel = $("stitchForm").elements.fabric;
   if (sel) {
     sel.onchange = () => applyFabric(sel.value);
     showFabricNote(sel.value);
   }
-  // a changed setting updates the stitches by itself (or marks them out of date, see Jobs)
-  $("stitchForm").addEventListener("change", () => { if (state.design) Jobs.stitch(); });
+  defaultStitch = stitchValues();
+  addResetButtons($("stitchForm"));
+  // a changed setting is recorded for undo and updates the stitches by itself (or marks
+  // them out of date, see Jobs); "show every style" only changes what is listed
+  $("stitchForm").addEventListener("change", (ev) => {
+    updateStyleParams();
+    if (!ev.target.name) return;
+    History.stitchChange();
+    if (state.design) Jobs.stitch();
+  });
   $("stitchForm").addEventListener("submit", (ev) => ev.preventDefault());
+}
+
+// which special stitch styles the design uses (colours and single shapes that are sewn)
+function usedStyles() {
+  const used = new Set();
+  const layers = state.design?.layers || [];
+  const on = new Set(layers.filter((l) => l.enabled).map((l) => l.index));
+  layers.forEach((l) => l.enabled && used.add(l.stitch_type));
+  Shapes.objects().forEach((o) => { if (on.has(o.layer) && o.enabled !== false && o.stitch_type) used.add(o.stitch_type); });
+  if ($("stitchForm").elements.photo_stitch?.checked) used.add("@photo");
+  return used;
+}
+function updateStyleParams() {
+  const box = $("styleParams");
+  if (!box) return;
+  const all = $("styleShowAll")?.checked, used = usedStyles();
+  let shown = 0;
+  box.querySelectorAll("[data-styles]").forEach((l) => {
+    const on = all || l.dataset.styles.split(" ").some((s) => used.has(s));
+    l.hidden = !on;
+    if (on) shown++;
+  });
+  box.hidden = !shown;
+}
+
+// ------------------------------------------------------------------ settings: defaults, changed markers, reset
+// The baseline is what the design started with: the app's stitch defaults, and the picture
+// settings as set after the upload (including the smart analysis). A setting that differs
+// is marked; it can be reset on its own, per section or all at once.
+const EXTRACT_IDS = ["width_mm", "num_colors", "background", "text_mode", "brightness", "contrast", "sharpen", "denoise", "min_feature_mm", "min_area_mm2", "knockout"];
+const valueOf = (el) => (el.type === "checkbox" ? el.checked : el.value);
+function setValue(el, v) { if (el.type === "checkbox") el.checked = !!v; else el.value = v; }
+function extractValues() { const v = {}; EXTRACT_IDS.forEach((id) => (v[id] = valueOf($(id)))); return v; }
+function stitchValues() {
+  const v = {};
+  [...$("stitchForm").elements].forEach((e) => { if (e.name && e.matches("input, select")) v[e.name] = valueOf(e); });
+  return v;
+}
+function setExtractValues(v) {
+  Object.entries(v || {}).forEach(([k, val]) => { if ($(k)) setValue($(k), val); });
+  showAdjustValues();
+  markModified();
+}
+function setStitchValues(v) {
+  const f = $("stitchForm");
+  Object.entries(v || {}).forEach(([k, val]) => { if (f.elements[k]) setValue(f.elements[k], val); });
+  showFabricNote(f.elements.fabric?.value);
+  updateStyleParams();
+  markModified();
+}
+const changedKeys = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].filter((k) => String(a?.[k]) !== String(b?.[k]));
+
+/** The settings a fresh design starts from (after the upload and its smart analysis). */
+function setBaseline(saved = null) {
+  const tw = state.smart?.stitch?.thread_weight;
+  state.baseline = saved || { extract: extractValues(), stitch: { ...defaultStitch, ...(tw ? { thread_weight: String(tw) } : {}) } };
+  markModified();
+}
+
+// plain text of a setting's label (without help, value and reset buttons)
+function labelText(label) {
+  const t = label.cloneNode(true);
+  t.querySelectorAll(".help, output, input, select, textarea, .hint, .reset-one, .sec-reset").forEach((n) => n.remove());
+  return t.textContent.replace(/\s+/g, " ").trim();
+}
+const settingKey = (el) => (el.closest("#stitchForm") ? el.name : EXTRACT_IDS.includes(el.id) ? el.id : "");
+const settingEl = (key) => (EXTRACT_IDS.includes(key) ? $(key) : $("stitchForm").elements[key]);
+const settingName = (key) => { const l = settingEl(key)?.closest("label"); return l ? labelText(l) : key; };
+
+function addResetButtons(root) {
+  root.querySelectorAll("input, select").forEach((el) => {
+    const key = settingKey(el), label = el.closest("label");
+    if (!key || !label || label.querySelector(".reset-one")) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "reset-one";
+    b.dataset.reset = key;
+    b.title = "Back to the starting value";
+    b.setAttribute("aria-label", `Reset ${labelText(label)}`);
+    b.textContent = "↺";
+    (label.querySelector(".lbl") || label).append(b);
+  });
+  root.querySelectorAll?.(".ed-sec[data-sec] > summary").forEach((s) => {
+    if (s.querySelector(".sec-reset")) return;
+    s.insertAdjacentHTML("beforeend", `<button type="button" class="ghost small sec-reset" aria-label="Reset the ${esc(s.textContent.trim())} settings">Reset</button>`);
+  });
+}
+
+function markModified() {
+  const b = state.baseline;
+  if (!b || !defaultStitch) return;
+  let n = 0;
+  const mark = (el, mod) => {
+    el.closest("label")?.classList.toggle("mod", mod);
+    if (mod) n++;
+  };
+  EXTRACT_IDS.forEach((id) => {
+    const el = $(id);
+    mark(el, !el.closest(".hidden") && String(valueOf(el)) !== String(b.extract[id]));
+  });
+  [...$("stitchForm").elements].forEach((e) => { if (e.name && e.name in b.stitch) mark(e, String(valueOf(e)) !== String(b.stitch[e.name])); });
+  document.querySelectorAll(".ed-sec[data-sec]").forEach((s) => s.classList.toggle("mod", !!s.querySelector("label.mod")));
+  $("modSummary").classList.toggle("hidden", !n);
+  $("modCount").textContent = `${n} setting${n === 1 ? "" : "s"} changed`;
+}
+
+/** Back to the baseline: ``keys`` (one setting or a section) or everything (null). */
+function resetSettings(keys) {
+  const b = state.baseline;
+  if (!b) return;
+  const want = (k) => !keys || keys.includes(k);
+  let ex = false, st = false;
+  EXTRACT_IDS.forEach((id) => {
+    const el = $(id);
+    if (want(id) && !el.closest(".hidden") && String(valueOf(el)) !== String(b.extract[id])) { setValue(el, b.extract[id]); ex = true; }
+  });
+  const f = $("stitchForm");
+  Object.entries(b.stitch).forEach(([k, v]) => {
+    const el = f.elements[k];
+    if (want(k) && el && String(valueOf(el)) !== String(v)) { setValue(el, v); st = true; }
+  });
+  if (!ex && !st) return;
+  showAdjustValues();
+  showFabricNote(f.elements.fabric?.value);
+  updateStyleParams();
+  markModified();
+  const what = keys?.length === 1 ? settingName(keys[0]) : keys ? "these settings" : "all settings";
+  if (st) {
+    History.stitchChange(`reset ${what}`);
+    if (state.design) Jobs.stitch();
+  }
+  if (ex && state.project) Jobs.extract();
+  announce(`Reset ${what}.`);
+}
+const keysIn = (root) => [...root.querySelectorAll("input, select")].map(settingKey).filter(Boolean);
+
+function bindSettingsMarkers() {
+  addResetButtons($("leftPanel"));
+  ["input", "change"].forEach((t) => $("leftPanel").addEventListener(t, markModified));
+  // capture: the reset buttons sit inside labels and summaries - they must not also tick the
+  // box or open / close the section
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest?.(".reset-one, .sec-reset, #btnResetAll");
+    if (!b) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (b.matches(".reset-one")) resetSettings([b.dataset.reset]);
+    else if (b.matches(".sec-reset")) resetSettings(keysIn(b.closest(".ed-sec")));
+    else resetSettings(null);
+  }, true);
 }
 // A fabric preset fills in the stitch settings it is about; every value stays editable.
 function applyFabric(id) {
@@ -851,9 +1039,10 @@ const Jobs = (() => {
         if (wantExtract) {
           wantExtract = false;
           try {
-            const pid = state.project.id;
+            const pid = state.project.id, had = !!state.design, used = extractValues();
             const res = await work("Preparing your design…", () => api(`/api/projects/${pid}/extract`, json("POST", { options: extractOptions() })));
             if (state.project?.id !== pid) continue;
+            History.extracted(used, had);
             renderDesign(res);
             error = "";
             if (autoOn() || !state.preview) wantStitch = true;
@@ -924,6 +1113,110 @@ const Jobs = (() => {
   };
 })();
 
+// ------------------------------------------------------------------ undo / redo: design and settings together
+// One timeline in the order things happened. Design changes are kept on the server (its
+// undo stack, up to 50 steps); stitch settings are snapshots kept here. Preparing the design
+// again (Size, Colours, Picture) is a design change that also remembers those settings, so
+// undoing it puts both back. Ctrl+Z after a density change undoes the density change.
+const History = (() => {
+  let undo = [], redo = [];
+  let lastStitch = null, lastExtract = null; // the settings at the last recorded step
+  let serverUndo = false, serverRedo = false;
+  const MAX = 100, MERGE_MS = 1500;
+
+  function sync() {
+    const u = undo[undo.length - 1], r = redo[redo.length - 1];
+    $("btnUndo").disabled = !(undo.length || serverUndo);
+    $("btnRedo").disabled = !redo.length;
+    $("btnUndo").title = `Undo${u ? `: ${u.label}` : ""} (Ctrl+Z)`;
+    $("btnRedo").title = `Redo${r ? `: ${r.label}` : ""} (Ctrl+Y)`;
+  }
+  function push(entry) {
+    undo.push(entry);
+    if (undo.length > MAX) undo.shift();
+    redo = [];
+    sync();
+  }
+  /** A fresh design (or one opened again): nothing to undo in this tab yet. */
+  function reset(saved = null) {
+    undo = saved?.undo || [];
+    redo = saved?.redo || [];
+    lastStitch = saved?.lastStitch || stitchValues();
+    lastExtract = saved?.lastExtract || extractValues();
+    sync();
+  }
+  function setServer(canUndo, canRedo) { serverUndo = !!canUndo; serverRedo = !!canRedo; sync(); }
+  /** A design change saved on the server (shapes, threads, merge). */
+  function designChange(label) { push({ type: "design", label: label || "design change" }); }
+  /** The design was prepared again with these settings; ``had``: a design existed before
+   *  (only then the server keeps a step to go back to). */
+  function extracted(used, had) {
+    if (had) {
+      const keys = changedKeys(lastExtract, used);
+      push({ type: "design", label: keys.length ? keys.slice(0, 2).map(settingName).join(", ") : "prepare design", ext: { before: lastExtract, after: used } });
+    }
+    lastExtract = used;
+  }
+  /** The stitch settings changed (a field, a fabric, a reset). Quick repeats of the same
+   *  setting (number arrows) become one step. */
+  function stitchChange(label = "") {
+    const now = stitchValues();
+    const keys = changedKeys(lastStitch, now);
+    if (!keys.length) return;
+    const top = undo[undo.length - 1];
+    if (top?.type === "settings" && Date.now() - top.t < MERGE_MS && !redo.length
+      && keys.every((k) => changedKeys(top.before, top.after).includes(k))) {
+      top.after = now;
+      top.t = Date.now();
+    } else {
+      push({ type: "settings", label: label || keys.slice(0, 2).map(settingName).join(", "), before: lastStitch, after: now, t: Date.now() });
+    }
+    lastStitch = now;
+    sync();
+  }
+
+  async function step(back) {
+    if (!state.project) return;
+    await Jobs.flush(); // changes still waiting are recorded first
+    const from = back ? undo : redo, to = back ? redo : undo;
+    for (;;) {
+      const server = back ? serverUndo : serverRedo;
+      let e = from.pop();
+      if (!e) {
+        if (!back || !server) break;
+        e = { type: "design", label: "design change" }; // a step from before this tab (reload)
+      }
+      if (e.type === "settings") {
+        const v = back ? e.before : e.after;
+        setStitchValues(v);
+        lastStitch = v;
+        to.push(e);
+        sync();
+        announce(`${back ? "Undone" : "Redone"}: ${e.label}`);
+        Jobs.stitch();
+        return;
+      }
+      if (!server) continue; // the server no longer has this step: skip it
+      const res = await work(back ? "Undoing…" : "Redoing…", () => api(`/api/projects/${state.project.id}/${back ? "undo" : "redo"}`, { method: "POST" })).catch(() => null);
+      if (!res) { from.push(e); sync(); return; }
+      if (e.ext) {
+        const v = back ? e.ext.before : e.ext.after;
+        setExtractValues(v);
+        lastExtract = v;
+      }
+      to.push(e);
+      renderDesign(res);
+      announce(`${back ? "Undone" : "Redone"}: ${e.label}`);
+      Jobs.stitch();
+      return;
+    }
+    sync();
+  }
+
+  const save = () => ({ undo: undo.slice(-30), redo: redo.slice(-30), lastStitch, lastExtract });
+  return { reset, setServer, designChange, extracted, stitchChange, undo: () => step(true), redo: () => step(false), save };
+})();
+
 // The bottom bar's status: what the preview shows right now.
 function renderStatus() {
   let level = "", text = "";
@@ -962,6 +1255,7 @@ function applyPreview(prev) {
   Render.reset();
   Shapes.setStitchShapes(prev.shapes);
   Shapes.setObjects(prev.objects); // stitch style and direction as they were really sewn
+  updateStyleParams();
   const canCompare = !!(prev.comparison && !prev.comparison.reverted && prev.original_ops);
   $("variant").classList.toggle("hidden", !canCompare);
   $("variantHelp")?.classList.toggle("hidden", !canCompare);
@@ -1037,7 +1331,10 @@ function renderStats() {
   ];
   $("statsEmpty").classList.add("hidden");
   $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
-  $("warnings3").innerHTML = state.preview.warnings.map((w) => `<div>${esc(w)}</div>`).join("");
+  const warnings = [...state.preview.warnings];
+  const hf = hoopFit(s.width_mm, s.height_mm);
+  if (hf && !hf.fits && !hf.turned) warnings.push(`The design (${s.width_mm} × ${s.height_mm} mm) is larger than the ${hf.hoop.name} hoop. Choose a smaller width or a bigger hoop.`);
+  $("warnings3").innerHTML = warnings.map((w) => `<div>${esc(w)}</div>`).join("");
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span></div>`).join("");
   renderStatus();
@@ -1122,6 +1419,9 @@ function bindEditor() {
   $("autoUpdate").onchange = () => Jobs.setAuto($("autoUpdate").checked);
   $("btnExport").onclick = () => Export.open();
   $("btnFit").onclick = () => (state.pane === "stitches" ? fit() : Shapes.fit());
+  try { $("showHoop").checked = localStorage.getItem("showHoop") !== "0"; } catch (_) {}
+  $("hoopToggle").classList.toggle("hidden", !chosenHoop());
+  $("showHoop").onchange = hoopChanged;
   $("btnZoomIn").onclick = () => zoomBy(1.25);
   $("btnZoomOut").onclick = () => zoomBy(1 / 1.25);
   $("zoomPct").onclick = () => zoomTo(ACTUAL_PX_PER_MM);
@@ -1150,6 +1450,37 @@ function zoomTo(ppm) {
   if (cur) zoomBy(ppm / cur);
 }
 
+// ------------------------------------------------------------------ hoop
+// The hoop chosen under Size, drawn around the design (centred, like the machine file: the
+// centre of the design is the centre of the hoop) and checked against the design's size.
+function chosenHoop() { return state.config?.hoops[$("hoop").value] || null; }
+/** Does a design of w × h mm fit the chosen hoop (also turned 90°)? null without a hoop. */
+function hoopFit(w, h) {
+  const hp = chosenHoop();
+  if (!hp) return null;
+  const fits = w <= hp.width && h <= hp.height;
+  return { hoop: hp, fits, turned: !fits && w <= hp.height && h <= hp.width };
+}
+const hoopShown = () => !!chosenHoop() && $("showHoop").checked;
+/** The hoop outline in design mm (shapes view), or null. */
+function hoopRectMm() {
+  const hp = hoopShown() && chosenHoop();
+  if (!hp || !state.design) return null;
+  const W = state.design.width_mm, H = state.design.height_mm, f = hoopFit(W, H);
+  return { x: W / 2 - hp.width / 2, y: H / 2 - hp.height / 2, w: hp.width, h: hp.height, name: hp.name, bad: !f.fits && !f.turned };
+}
+function hoopChanged() {
+  try { localStorage.setItem("showHoop", $("showHoop").checked ? "1" : "0"); } catch (_) {}
+  $("hoopToggle").classList.toggle("hidden", !chosenHoop());
+  Shapes.fit();
+  Shapes.refresh();
+  if (state.preview) {
+    renderStats();
+    if (state.pane === "stitches") fit();
+  }
+  if ($("exportDialog").open) Export.refresh();
+}
+
 // ------------------------------------------------------------------ export dialog
 // Choose the files, see a summary and the checks, download. The dialog first brings the
 // stitches up to date, so a download always matches the settings on screen. One file
@@ -1158,12 +1489,15 @@ const Export = (() => {
   const pick = new Set(["dst"]); // kept while the page is open, across re-stitching
   let quota = null; // /api/projects/{id}/quota: charged, usage, features
   let downloading = false;
-  const STITCH_FILES = () => new Set([...Object.keys(state.config.formats), "png", "txt"]);
+  const WILCOM = "wilcom"; // a package of its own (DST + artwork), downloaded on its own
+  const STITCH_FILES = () => new Set([...Object.keys(state.config.formats), "png", "txt", WILCOM]);
 
   function items() {
     const machine = Object.entries(state.config.formats).map(([k, f]) => ({ key: k, group: "Machine files", label: `${f.label} (.${k})`, note: f.note, rec: k === "dst" }));
     return machine.concat([
-      { key: "svg", group: "Artwork for editing", label: "Artwork (SVG)", note: "The cleaned-up design as a vector file for Illustrator, Inkscape or embroidery software that imports vector artwork. Free: not counted as a design download" },
+      { key: WILCOM, group: "For editing in other software", label: "Continue in Wilcom (ZIP)",
+        note: "The stitches as DST, the artwork as EPS and SVG (also one file per thread), the worksheet and a short how-to. Wilcom rebuilds editable objects from the stitches or the artwork. Not a Wilcom .EMB project. Downloads on its own" },
+      { key: "svg", group: "For editing in other software", label: "Artwork (SVG)", note: "The cleaned-up design as a vector file for Illustrator, Inkscape or embroidery software that imports vector artwork. Free: not counted as a design download" },
       { key: "txt", group: "For the operator and customer", label: "Worksheet (TXT)", note: "Thread order, stitch count and time for the machine operator" },
       { key: "png", group: "For the operator and customer", label: "Preview picture (PNG)", note: "A realistic picture of the embroidery – handy for customer approval" },
     ]);
@@ -1191,16 +1525,11 @@ const Export = (() => {
     if (p) {
       const s = shownStats();
       facts.push(["Size", `${s.width_mm} × ${s.height_mm} mm`]);
-      const h = state.config.hoops[$("hoop").value];
-      if (h) {
-        const fits = s.width_mm <= h.width && s.height_mm <= h.height;
-        const turned = !fits && s.width_mm <= h.height && s.height_mm <= h.width;
-        facts.push(["Hoop", `${h.name} · ${fits ? "fits" : turned ? "fits turned 90°" : "too large"}`]);
-        if (!fits && !turned) checks.push(`The design is larger than the ${h.name} hoop. Choose a smaller width or a bigger hoop.`);
-      }
+      const hf = hoopFit(s.width_mm, s.height_mm);
+      if (hf) facts.push(["Hoop", `${hf.hoop.name} · ${hf.fits ? "fits" : hf.turned ? "fits turned 90°" : "too large"}`]);
       facts.push(["Stitches", s.stitches.toLocaleString()], ["Colours · changes", `${s.colors} · ${s.color_changes}`],
         ["Thread cuts", String(s.trims)], ["Sewing time (est.)", `${s.est_minutes} min`]);
-      p.warnings.forEach((w) => checks.push(w));
+      $("warnings3").querySelectorAll("div").forEach((d) => checks.push(d.textContent)); // the same checks as the Checks panel
       if (pick.has("dst") && !pick.has("txt")) checks.push("DST files carry no thread colours: add the worksheet to know which colour goes on which needle.");
     }
     $("expFacts").innerHTML = facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
@@ -1218,7 +1547,7 @@ const Export = (() => {
     const btn = $("btnDownload");
     btn.disabled = !n || notReady || zipLocked || downloading;
     btn.textContent = downloading ? "Preparing…" : !n ? "Choose a file to download" : n === 1 ? `Download ${chosen[0].label}` : `Download ${n} files (.zip)`;
-    $("btnExportAll").textContent = items().filter((i) => !lockOf(i.key)).every((i) => pick.has(i.key)) ? "Clear all" : "Select all";
+    $("btnExportAll").textContent = items().filter((i) => !lockOf(i.key) && i.key !== WILCOM).every((i) => pick.has(i.key)) ? "Clear all" : "Select all";
     let msg = "";
     if (needStitches && busyNow) msg = "Bringing the stitches up to date…";
     else if (needStitches && Jobs.error()) msg = `The stitches could not be updated: ${Jobs.error()}`;
@@ -1263,13 +1592,21 @@ const Export = (() => {
     $("exports").addEventListener("change", (ev) => {
       const box = ev.target.closest("input[type=checkbox]");
       if (!box) return;
-      if (box.checked) pick.add(box.value); else pick.delete(box.value);
-      box.closest("label").classList.toggle("on", box.checked);
+      if (box.checked) {
+        // the Wilcom package is a ZIP of its own: it is not combined with other files
+        if (box.value === WILCOM) pick.clear(); else pick.delete(WILCOM);
+        pick.add(box.value);
+      } else pick.delete(box.value);
+      // the boxes stay where they are (focus, screen readers): only their state follows
+      $("exports").querySelectorAll("input[type=checkbox]").forEach((b) => {
+        b.checked = pick.has(b.value);
+        b.closest("label").classList.toggle("on", b.checked);
+      });
       summary();
       update();
     });
     $("btnExportAll").onclick = () => {
-      const free = items().filter((i) => !lockOf(i.key));
+      const free = items().filter((i) => !lockOf(i.key) && i.key !== WILCOM);
       const all = free.every((i) => pick.has(i.key));
       pick.clear();
       if (!all) free.forEach((i) => pick.add(i.key));
@@ -1460,6 +1797,11 @@ const Render = (() => {
       ctx.fillStyle = "#e03131";
       st.trims.forEach(([a, b]) => { ctx.beginPath(); ctx.arc(X(a), Y(b), 3, 0, 7); ctx.fill(); });
     }
+    const hr = hoopRectUnits(ops);
+    if (hr) {
+      const s = shownStats(), hf = hoopFit(s.width_mm, s.height_mm);
+      drawHoop(ctx, X, Y, v.scale, hr, hf && !hf.fits && !hf.turned);
+    }
     if (st.px !== null && upto < total) {
       ctx.strokeStyle = "#e03131"; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(X(st.px), Y(st.py), 6, 0, 7); ctx.stroke();
@@ -1500,15 +1842,35 @@ const Render = (() => {
 /** Redraw the stitch preview (on the next frame). */
 function draw() { Render.request(); }
 
-// view that shows every stitch, with a margin (in stitch units, 0.1 mm)
-function fitView(ops, w, h, margin = 20) {
+// the box around every stitch (stitch units, 0.1 mm), kept for the stitches last asked for
+let boundsCache = { ops: null, b: null };
+function stitchBounds(ops) {
+  if (boundsCache.ops === ops) return boundsCache.b;
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (let i = 0; i < ops.length; i += 4) {
     if (ops[i] !== 0) continue;
     minx = Math.min(minx, ops[i + 1]); maxx = Math.max(maxx, ops[i + 1]);
     miny = Math.min(miny, ops[i + 2]); maxy = Math.max(maxy, ops[i + 2]);
   }
-  if (!Number.isFinite(minx)) return { scale: 1, x: 0, y: 0 };
+  boundsCache = { ops, b: Number.isFinite(minx) ? { minx, miny, maxx, maxy } : null };
+  return boundsCache.b;
+}
+/** The hoop outline in stitch units, centred on the stitches like the machine file, or null. */
+function hoopRectUnits(ops) {
+  const hp = hoopShown() && chosenHoop(), b = stitchBounds(ops);
+  if (!hp || !b) return null;
+  const cx = (b.minx + b.maxx) / 2, cy = (b.miny + b.maxy) / 2;
+  return { x: cx - hp.width * 5, y: cy - hp.height * 5, w: hp.width * 10, h: hp.height * 10, hoop: hp };
+}
+// view that shows every stitch (and ``extra``, e.g. the hoop), with a margin in stitch units
+function fitView(ops, w, h, margin = 20, extra = null) {
+  const b = stitchBounds(ops);
+  if (!b) return { scale: 1, x: 0, y: 0 };
+  let { minx, miny, maxx, maxy } = b;
+  if (extra) {
+    minx = Math.min(minx, extra.x); miny = Math.min(miny, extra.y);
+    maxx = Math.max(maxx, extra.x + extra.w); maxy = Math.max(maxy, extra.y + extra.h);
+  }
   const s = Math.min(w / (maxx - minx + 2 * margin), h / (maxy - miny + 2 * margin));
   return { scale: s, x: (w - (maxx + minx) * s) / 2, y: (h - (maxy + miny) * s) / 2 };
 }
@@ -1516,8 +1878,23 @@ function fit() {
   const c = $("canvas"), p = state.preview;
   if (!p || !c.clientWidth || !c.clientHeight) return; // not on screen
   state.viewMoved = false;
-  state.view = fitView(activeOps(), c.clientWidth, c.clientHeight);
+  const ops = activeOps();
+  state.view = fitView(ops, c.clientWidth, c.clientHeight, 20, hoopRectUnits(ops));
   draw();
+}
+function drawHoop(ctx, X, Y, scale, r, bad) {
+  const x = X(r.x), y = Y(r.y), w = r.w * scale, h = r.h * scale;
+  ctx.save();
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = ctx.fillStyle = bad ? "#e03131" : "rgba(108, 117, 132, .95)";
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, Math.min(w, h) * 0.06); else ctx.rect(x, y, w, h);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "11px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillText(`Hoop ${r.hoop.name}${bad ? " – the design does not fit" : ""}`, x + 8, y + 16);
+  ctx.restore();
 }
 
 // ------------------------------------------------------------------ stitch preview: zoom, move, select, play

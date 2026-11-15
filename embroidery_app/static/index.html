@@ -114,6 +114,8 @@
       <div class="ed-scroll">
         <p class="muted small ed-file" id="fileInfo"></p>
         <div id="smartInfo" class="smart hidden" aria-live="polite"></div>
+        <p class="ed-mods hidden" id="modSummary"><span id="modCount"></span> <i data-help="modified"></i>
+          <button type="button" class="ghost small" id="btnResetAll">Reset all</button></p>
 
         <details class="ed-sec" data-sec="size" open>
           <summary>Size</summary>
@@ -221,6 +223,7 @@
         <div class="ed-float ed-overlays">
           <label class="check small shapes-only"><input type="checkbox" id="showDirections"> Directions <i data-help="show_directions"></i></label>
           <label class="check small"><input type="checkbox" id="showRef"> Original <i data-help="reference"></i></label>
+          <label class="check small" id="hoopToggle"><input type="checkbox" id="showHoop" checked> Hoop <i data-help="hoop_outline"></i></label>
         </div>
         <div class="ed-float ed-tools">
           <div class="refbar hidden" id="refBar">

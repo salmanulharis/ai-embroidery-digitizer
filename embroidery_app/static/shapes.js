@@ -118,15 +118,16 @@ const Shapes = (() => {
   // themselves and a note tells how the stitch count changed.
   async function update(body, label = "Saving…") {
     const res = await work(label, () => api(`/api/projects/${state.project.id}/objects`, json("PUT", body)));
-    applied(res);
+    applied(res, label);
   }
 
   async function resetShapes(ids) {
     const res = await work("Resetting…", () => api(`/api/projects/${state.project.id}/objects/reset`, json("POST", { ids })));
-    applied(res);
+    applied(res, "Reset shape settings");
   }
 
-  function applied(res) {
+  function applied(res, label = "") {
+    History.designChange(label.replace(/…$/, "").toLowerCase()); // one undo step
     const focusKey = document.activeElement?.dataset?.action;
     const panelId = document.activeElement?.closest?.(".shapepanel")?.id;
     if (Array.isArray(res.selected)) { // the server merged / split the edited areas: keep them selected
@@ -140,21 +141,21 @@ const Shapes = (() => {
 
   async function recolor(body, label) {
     const res = await work(label, () => api(`/api/projects/${state.project.id}/objects/recolor`, json("POST", body)));
-    applied(res);
+    applied(res, label);
   }
 
   async function setLayerHex(index, hex) {
     const layers = state.design.layers.map(({ index: i, hex: h, name, enabled, stitch_type, angle }) =>
       ({ index: i, hex: i === index ? hex : h, name, enabled, stitch_type, angle }));
     const res = await work("Changing thread colour…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers })));
-    applied(res);
+    applied(res, "Changing thread colour");
   }
 
   async function sendEdit(body, label = "Editing shape…") {
     const ids = editable().map((o) => o.id);
     if (!ids.length) return toast("Select a filled shape to edit.");
     const res = await work(label, () => api(`/api/projects/${state.project.id}/objects/edit`, json("POST", { ids, ...body })));
-    applied(res);
+    applied(res, label);
   }
 
   // ------------------------------------------------------------------ colours: select every area of a thread colour
@@ -508,8 +509,13 @@ const Shapes = (() => {
   function applyViewBox() {
     const svg = svgEl();
     if (!svg) return;
-    const [, , w, h] = (svg.getAttribute("viewBox") || "0 0 100 100").split(/\s+/).map(Number);
-    if (!vb) { const m = Math.max(w, h) * 0.03; vb = { x: -m, y: -m, w: w + 2 * m, h: h + 2 * m }; }
+    if (!vb) { // fit: the whole design (and the hoop when it is shown)
+      let x0 = 0, y0 = 0, x1 = state.design?.width_mm || 100, y1 = state.design?.height_mm || 100;
+      const hr = hoopRectMm();
+      if (hr) { x0 = Math.min(x0, hr.x); y0 = Math.min(y0, hr.y); x1 = Math.max(x1, hr.x + hr.w); y1 = Math.max(y1, hr.y + hr.h); }
+      const m = Math.max(x1 - x0, y1 - y0) * 0.03;
+      vb = { x: x0 - m, y: y0 - m, w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m };
+    }
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     if (!onStitches()) updateZoomLabel();
   }
@@ -616,6 +622,15 @@ const Shapes = (() => {
       if (!p) continue;
       overlay.append(el("path", { d: p.getAttribute("d"), fill: "none", stroke: "#fff", "stroke-width": 2.5, "vector-effect": "non-scaling-stroke" }));
       overlay.append(el("path", { d: p.getAttribute("d"), fill: "none", stroke: "#222", "stroke-width": 1.2, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke" }));
+    }
+    const hr = hoopRectMm(); // hoop outline, centred on the design
+    if (hr) {
+      const r = el("rect", { x: hr.x, y: hr.y, width: hr.w, height: hr.h, rx: Math.min(hr.w, hr.h) * 0.06, fill: "none",
+        stroke: hr.bad ? "#e03131" : "#6c7584", "stroke-width": 1.5, "stroke-dasharray": "6 5", "vector-effect": "non-scaling-stroke" });
+      const t = el("title", {});
+      t.textContent = `Hoop ${hr.name}${hr.bad ? " – the design does not fit" : ""}`;
+      r.append(t);
+      overlay.append(r);
     }
     for (const id of sel) { // selection outline
       const p = pathOf(id);
@@ -960,5 +975,5 @@ const Shapes = (() => {
   }
 
   return { init, afterRender, reset, select, selectLayer, setObjects, setStitchShapes, click3, drawSelection3, refresh,
-    reference, fit: fitSvg, zoomBy, pxPerMm };
+    reference, fit: fitSvg, zoomBy, pxPerMm, objects: () => objects };
 })();

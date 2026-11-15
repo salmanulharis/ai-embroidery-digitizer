@@ -62,6 +62,22 @@ const HELP = {
     what: "Shapes shows your design as solid colour areas – select them, fix their outlines, draw guide and direction lines. Stitches shows the stitches exactly as the machine will sew them.",
     why: "Both show the same design: a change in one appears in the other. Selected shapes stay selected when you switch.",
   },
+  modified: {
+    t: "Changed settings",
+    what: "Settings that differ from what this design started with are marked with a dot. ↺ next to a setting, “Reset” on a section or “Reset all” puts them back.",
+    why: "You always see what you changed, and can go back without remembering the old values. Resetting can be undone like any other change.",
+    eg: "The starting values are the app's stitch defaults and the picture settings found right after the upload.",
+  },
+  style_settings: {
+    t: "Style settings",
+    what: "Settings that only matter for some stitch styles – zigzag and E-stitch borders, stipple, cross stitch, motifs, pattern and jagged fills, photo stitch. Only those used in your design are shown.",
+    why: "Fewer settings to look through. To see them all, tick “Show the settings of every stitch style” under Advanced stitch settings.",
+  },
+  hoop_outline: {
+    t: "Hoop outline",
+    what: "Shows the hoop chosen under Size around the design, centred like on the machine (the middle of the design is the middle of the hoop).",
+    why: "You see at once whether the design fits and how much room is left. The outline turns red when the design is too large.",
+  },
   auto_update: {
     t: "Auto-update",
     what: "The preview updates by itself a moment after you change a setting or the design. The bottom bar shows when it is working and when it is up to date.",
@@ -166,7 +182,7 @@ const HELP = {
   },
   undo: {
     t: "Undo / Redo",
-    what: "Undo takes back your changes to the design one by one (shape edits, colours, stitch styles, merging, preparing the design again) - up to 50 steps. Redo brings back what you undid. The stitch settings in the Stitches section are not part of it.",
+    what: "Undo takes back your changes one by one, in the order you made them: shape edits, thread colours, merging, picture and size settings, and the stitch settings. Redo brings back what you undid. Point at the button to see which step it undoes.",
     why: "Try things freely: nothing is lost until you make a new change after undoing.",
     eg: "Undo: Ctrl+Z (Cmd+Z). Redo: Ctrl+Y or Ctrl+Shift+Z.",
   },
@@ -568,7 +584,7 @@ const HELP = {
   export: {
     t: "Export",
     what: "Save the design for your embroidery machine or software. The stitches are brought up to date first, so the files match what you see.",
-    why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom, which rebuilds editable objects from the stitches.",
+    why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom, which rebuilds editable objects from the stitches. “Continue in Wilcom” adds the artwork as EPS for fully editable objects (Wilcom's own .EMB format cannot be written by other software).",
     eg: "Tick the files you need, then press Download. One file downloads as it is; several come together in one .zip. Not sure? Keep DST and add the worksheet.",
   },
 };
@@ -626,7 +642,7 @@ const Tip = (() => {
       label.htmlFor = field.id;
       if (field.hasAttribute("aria-label") || field.hasAttribute("aria-labelledby")) return;
       const text = label.cloneNode(true);
-      text.querySelectorAll(".help, output, input, select, textarea, .hint, a").forEach((n) => n.remove());
+      text.querySelectorAll(".help, output, input, select, textarea, .hint, a, .reset-one, .sec-reset").forEach((n) => n.remove());
       const name = text.textContent.replace(/\s+/g, " ").trim();
       if (name) field.setAttribute("aria-label", name);
     });

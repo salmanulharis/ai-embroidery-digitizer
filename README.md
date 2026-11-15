@@ -48,6 +48,18 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
   ~3 s to stitch switches to **Update** in the bottom bar; *Auto-update* can also be turned off there.
 * **Export** opens a dialog: files grouped by use, a summary (size, hoop fit, stitches, time), checks and the
   allowance note. It brings the stitches up to date first, so a download always matches the screen.
+* **Undo / redo** cover everything in the order it happened: shape edits, threads, merging, Size / Colours /
+  Picture settings (undoing one puts back the design and the setting) and the stitch settings.
+* **Changed settings** are marked against what the design started with (the stitch defaults and the picture
+  settings found after the upload): ↺ resets one setting, "Reset" a section, "Reset all" everything.
+* **Style settings** (borders, stipple, cross stitch, motifs, pattern / jagged fills, photo stitch) are listed only
+  for the styles the design uses; *Show the settings of every stitch style* lists them all.
+* **Hoop**: the hoop chosen under Size is drawn around the design, centred like on the machine; it turns red and
+  the Checks warn when the design does not fit.
+* **Continue in Wilcom** (export): a ZIP with the DST, the artwork as EPS and SVG (also one EPS per thread, named
+  with sewing order, style and direction), the worksheet and a how-to. Wilcom EmbroideryStudio rebuilds editable
+  objects from the stitches (object recognition) or from the artwork (Convert / Auto-Digitize). It is not an EMB
+  project: that format is Wilcom's own and cannot be written by other software.
 
 
 ## Accounts
@@ -443,7 +455,7 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | POST | `/api/projects/{id}/objects/reset` | `{ids}` back to colour settings (empty = all shapes) |
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |
 | POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn |
-| GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip`. For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet). The first stitch-output download of a design counts against the allowance (403 `quota_exceeded` / `feature_unavailable` with an explanation) |
+| GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip wilcom`. `wilcom`: the package for continuing in Wilcom (DST + EPS/SVG artwork + worksheet + how-to, a download of its own). For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet). The first stitch-output download of a design counts against the allowance (403 `quota_exceeded` / `feature_unavailable` with an explanation) |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
 | POST | `/api/projects/{id}/ai/clean` | `{ai, mode: redraw\|remove_background\|enhance, colors?}` (needs an image-capable AI) |

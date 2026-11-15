@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .ai import tasks as ai_tasks
 from .config import settings
-from .export import FORMATS, design_to_svg, export_embroidery, plan_preview_json, render_png, worksheet
+from .export import FORMATS, design_to_eps, design_to_svg, export_embroidery, plan_preview_json, render_png, worksheet
 from .ingest import detect_kind
 from .ingest.raster import RasterOptions, encode_png, load_raster, raster_to_design
 from .ingest.vector import VectorOptions, ai_or_pdf_to_svg, svg_to_design
@@ -46,6 +46,7 @@ from .models import (
     StitchParams,
     StitchPlan,
     normalize_angle,
+    rgb_to_hex,
 )
 from .stitch import plan_stitches
 from .stitch.planner import describe_objects
@@ -752,6 +753,9 @@ def _plan_key(design: Design, params: StitchParams) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
+PLAN_CACHE_SIZE = 6  # plans kept per open design (memory: roughly 1 MB per 10,000 stitches each)
+
+
 def get_plan(pid: str, params: StitchParams | None = None) -> StitchPlan:
     meta = _meta(pid)
     if params is None:
@@ -768,7 +772,9 @@ def get_plan(pid: str, params: StitchParams | None = None) -> StitchPlan:
     with _lock:
         entry = _plan_cache.setdefault(pid, {})
         entry[key] = plan
-        while len(entry) > 2:  # keep the latest original/optimised pair only
+        # the latest three original/optimised pairs: the editor updates the preview while
+        # settings change, and going back to a setting tried a moment ago is then instant
+        while len(entry) > PLAN_CACHE_SIZE:
             entry.pop(next(iter(entry)))
     return plan
 
@@ -906,6 +912,8 @@ def _export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes
     meta = _meta(pid)
     base = Path(meta["filename"]).stem or "design"
     fmt = fmt.lower()
+    if fmt == WILCOM_PACKAGE:
+        return wilcom_package(pid, base), f"{base}_for_wilcom.zip", "application/zip"
     if fmt != "zip":
         return _export_file(pid, fmt, base)
     chosen = formats or list(ZIP_DEFAULT)
@@ -916,6 +924,76 @@ def _export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes
             data, filename, _ = _export_file(pid, f, base, plan)
             z.writestr(filename, data)
     return buf.getvalue(), f"{base}_embroidery.zip", "application/zip"
+
+
+# --------------------------------------------------------------------------- Wilcom package
+# EmbroideryStudio's own editable format (EMB) is closed: no other software can write it.
+# What Wilcom can use is documented: it opens machine files and rebuilds satin / fill
+# objects from the stitches ("object recognition", on by default), and it imports EPS
+# artwork that its Convert / Auto-Digitize tools turn into fully editable objects. The
+# package carries both, plus the thread list DST cannot hold. It never claims to be EMB.
+
+WILCOM_PACKAGE = "wilcom"
+_SAFE_NAME = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _safe(text: str, fallback: str) -> str:
+    return _SAFE_NAME.sub("_", str(text)).strip("_")[:40] or fallback
+
+
+def _wilcom_readme(design: Design, plan: StitchPlan, base: str, colour_files: list[tuple[str, str]]) -> str:
+    s = plan.stats()
+    lines = [
+        f"{base} - files for continuing in Wilcom EmbroideryStudio",
+        "",
+        "This is not a Wilcom .EMB project: that format is Wilcom's own and cannot be written by other",
+        "software. These files let you open the stitches in Wilcom and rebuild editable objects there.",
+        "",
+        f"1. {base}.dst - the stitches exactly as created ({s['stitches']:,} stitches, {s['width_mm']} x {s['height_mm']} mm).",
+        "   Open it in EmbroideryStudio. With object recognition switched on (Wilcom's default for machine",
+        "   files), Wilcom rebuilds satin and fill objects from the stitches so they can be reshaped, scaled",
+        "   and given another density. Parts it does not recognise stay as stitch blocks: scale those only",
+        "   a little. DST files carry no thread colours - set them from the thread list below.",
+        "",
+        f"2. {base}_artwork.eps - the clean shapes in their thread colours, at real size (also as .svg).",
+        "   For fully editable objects, import it as a graphic and convert the shapes to embroidery",
+        "   (Convert or Auto-Digitize). The folder artwork_by_colour has one file per thread, named with",
+        "   the sewing order, the stitch style and the direction used here.",
+        "",
+        f"3. {base}_worksheet.txt - thread order, stitch count, time and machine notes.",
+        "",
+        "Thread list (sewing order):",
+    ]
+    for i, block in enumerate(plan.blocks, 1):
+        lines.append(f"  {i:>2}. {block.name:<14} {rgb_to_hex(block.rgb)}")
+    lines += ["", "Artwork files:"] + [f"  {name}  ({what})" for name, what in colour_files]
+    return "\n".join(lines) + "\n"
+
+
+def wilcom_package(pid: str, base: str) -> bytes:
+    """A ZIP for continuing in Wilcom: DST + EPS / SVG artwork (all colours and one file per
+    colour) + worksheet + a short how-to. Counts as stitch output (it contains the DST)."""
+    design = load_design(pid)
+    plan = get_plan(pid)
+    colour_files: list[tuple[str, str]] = []
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{base}.dst", export_embroidery(plan, "dst", base))
+        z.writestr(f"{base}_artwork.eps", design_to_eps(design, title=base))
+        z.writestr(f"{base}_artwork.svg", design_to_svg(design, only_enabled=True))
+        z.writestr(f"{base}_worksheet.txt", worksheet(plan, base))
+        order = 0
+        for layer in design.layers:
+            if not layer.enabled or not any(o.layer == layer.index and o.enabled for o in design.objects):
+                continue
+            order += 1
+            style = layer.stitch_type or "auto"
+            angle = "auto" if layer.angle is None else f"{round(layer.angle)}deg"
+            name = f"artwork_by_colour/{order:02d}_{_safe(layer.name, 'colour')}_{_safe(style, 'auto')}_{angle}.eps"
+            z.writestr(name, design_to_eps(design, layers=[layer.index], title=f"{base} {layer.name}"))
+            colour_files.append((name, f"{layer.name} {layer.hex}, stitch style {style}, direction {angle}"))
+        z.writestr("Open in Wilcom - read me.txt", _wilcom_readme(design, plan, base, colour_files))
+    return buf.getvalue()
 
 
 # --------------------------------------------------------------------------- AI assistant

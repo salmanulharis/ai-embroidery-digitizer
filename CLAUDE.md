@@ -76,6 +76,9 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   then stitch; debounced, one request at a time, latest values win; manual mode for slow designs); `work()` runs
   design changes one at a time without blocking the screen. Use them, not `busy()`, for edits. Export waits for
   `Jobs.flush()` so downloads match the screen; the server also serialises stitch/export per project.
+  `History` is the one undo timeline: record design changes (`History.designChange`) and stitch-setting changes
+  (`History.stitchChange`); extracts record themselves. Settings are compared with `state.baseline` (markers,
+  reset). Style-only stitch settings are declared in `STYLE_PARAMS`.
 - User-facing help text belongs in `static/help.js`. Front-end scripts load in order:
   help.js, auth.js, shapes.js, ai.js, app.js (plain globals, no bundler).
 - Dependencies were chosen deliberately (pystitch not pyembroidery, PyMuPDF not svgelements, httpx2 not httpx,

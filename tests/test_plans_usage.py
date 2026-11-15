@@ -113,7 +113,7 @@ def test_one_design_counts_once_whatever_is_downloaded():
     assert c.get(f"/api/projects/{pid}/quota").json()["charged"] is False
     assert c.get(f"/api/projects/{pid}/export/svg").status_code == 200  # artwork only: free
     assert me(c)["usage"]["used"] == 0
-    for fmt in ("dst", "pes", "png", "txt", "dst"):
+    for fmt in ("dst", "pes", "png", "txt", "wilcom", "dst"):
         assert c.get(f"/api/projects/{pid}/export/{fmt}").status_code == 200, fmt
     assert c.get(f"/api/projects/{pid}/export/zip?formats=dst,exp").status_code == 200
     assert me(c)["usage"]["used"] == 1
@@ -212,6 +212,7 @@ def test_plan_features_and_user_overrides():
     assert c.post(f"/api/projects/{pid}/stitch", json={"params": {"photo_stitch": True}}).status_code == 403
     assert me(c)["usage"]["used"] == 0  # refused before anything was charged
     assert c.get(f"/api/projects/{pid}/export/dst").status_code == 200
+    assert c.get(f"/api/projects/{pid}/export/wilcom").status_code == 200  # DST-based: allowed on a DST-only plan
     # an individual override wins over the plan
     a.put(f"/api/admin/users/{user['id']}/overrides", json={"features": {"all_formats": True}})
     assert c.get(f"/api/projects/{pid}/export/pes").status_code == 200
