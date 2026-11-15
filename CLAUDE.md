@@ -63,7 +63,8 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
 - Units: mm everywhere in the engine; exports use 0.1 mm. Angles are y-down (45° = top-left → bottom-right).
 - Stitching must be deterministic (fixed seeds). With an option off, output must stay byte-identical.
   `tests/golden/plans.json.gz` enforces this; don't regenerate it to make a failing test pass.
-- New per-shape settings must survive merge, undo, re-extract and "Update preview" (`_carry_shape_settings`).
+- New per-shape settings must survive merge, undo and re-extract (any Size / Colours / Picture change,
+  `_carry_shape_settings`).
 - AI is optional everywhere: built-in result first (`ai/builtin.py`), AI refines it (`ai/tasks.py`), and any AI
   failure falls back with a note. AI answers are validated and clamped. Providers are one file each in
   `ai/providers/` with `@register`; plain REST over `httpx2`, no vendor SDKs.
@@ -71,6 +72,10 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   or logged.
 - Every project route is owner-checked; admin routes need the Super Admin role. Keep it that way for new routes.
 - DB schema changes: append to `db.MIGRATIONS` (applied on start); never edit existing entries.
+- Editor (`static/app.js`): one workspace, panes `shapes` / `stitches`. `Jobs` keeps the preview current (extract,
+  then stitch; debounced, one request at a time, latest values win; manual mode for slow designs); `work()` runs
+  design changes one at a time without blocking the screen. Use them, not `busy()`, for edits. Export waits for
+  `Jobs.flush()` so downloads match the screen; the server also serialises stitch/export per project.
 - User-facing help text belongs in `static/help.js`. Front-end scripts load in order:
   help.js, auth.js, shapes.js, ai.js, app.js (plain globals, no bundler).
 - Dependencies were chosen deliberately (pystitch not pyembroidery, PyMuPDF not svgelements, httpx2 not httpx,

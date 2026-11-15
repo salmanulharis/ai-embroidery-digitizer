@@ -2,7 +2,7 @@
 /* The signed-in user's side of plans and usage: the allowance chip in the header, the
    "My account" page (plan, allowance, features, AI status, profile, sessions), downloads
    that explain a used-up allowance instead of failing, and the switch between the design
-   steps and the account / admin pages. The server decides every limit (entitlements.py,
+   editor and the account / admin pages. The server decides every limit (entitlements.py,
    usage.py); this file only shows them. Uses helpers from app.js ($, api, json, esc,
    toast, busy) and Auth, inside functions. */
 
@@ -142,11 +142,12 @@ const Account = (() => {
   }
 
   // ------------------------------------------------------------------ downloads
-  /** Note above the Download button: what this download costs. */
+  /** Note in the export dialog: what this download costs. Returns the server's answer
+   *  (charged, usage, plan features) for the dialog, or null when it could not be asked. */
   async function quotaNote(pid) {
     const note = $("quotaNote");
     let q;
-    try { q = await api(`/api/projects/${pid}/quota`); } catch (_) { note.classList.add("hidden"); return; }
+    try { q = await api(`/api/projects/${pid}/quota`); } catch (_) { note.classList.add("hidden"); return null; }
     const u = q.usage;
     note.dataset.level = q.charged ? "ok" : level(u);
     note.textContent = q.charged ? "Already counted – download this design in any format as often as you like."
@@ -154,6 +155,7 @@ const Account = (() => {
       : u.remaining > 0 ? `Your first download of this design uses 1 of your ${u.remaining} remaining design${u.remaining === 1 ? "" : "s"} ${periodWord(u)} (${u.plan} plan). Other formats of it are then free.`
       : `You have used ${u.limit === 1 ? "your 1 design download" : `all ${u.limit} design downloads`} ${periodWord(u)}. Contact your administrator about an upgrade.`;
     note.classList.remove("hidden");
+    return q;
   }
 
   async function download(url, pid) {

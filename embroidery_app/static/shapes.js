@@ -1,8 +1,10 @@
 "use strict";
-/* Shape editor: pick shapes in the design (step 2) or the stitch preview (step 3) and
-   give them their own stitch style / direction, or one direction for the whole design.
-   Uses helpers from app.js ($, api, json, busy, esc, state, renderDesign, generate, draw)
-   - they are only called inside functions, after app.js has loaded. */
+/* Shape editor: pick shapes in the shapes view or the stitch preview and give them their
+   own stitch style / direction, or one direction for the whole design. The outline tools
+   (paint, erase, lasso, guide and direction lines) work in the shapes view.
+   Uses helpers from app.js ($, api, json, work, esc, state, renderDesign, Jobs, draw,
+   ensureShapesPane, updateZoomLabel, updateSelCount, ico) - they are only called inside
+   functions, after app.js has loaded. */
 
 const Shapes = (() => {
   const sel = new Set(); // selected shape ids
@@ -14,16 +16,16 @@ const Shapes = (() => {
   let guideMode = false; // drawing a guide line for the selected shapes
   let paths3 = []; // step-3 hit-test shapes [{id, order, kind, width, path}]
   let down = null; // pointer state for step-2 preview
-  // shape editing (step 2): paint / erase / lasso the outline of the selected areas
+  // shape editing (shapes view): paint / erase / lasso the outline of the selected areas
   const edit = { on: false, tool: "add", size: 1.0, refAuto: true };
   let refInfo = null; // {picture, box, design, size, version} - see service.reference_info
   let spaceDown = false;
   const EDIT_TOOLS = [
-    ["move", "✋", "Move", "Move and select (no drawing)"],
-    ["add", "🖌", "Paint", "Paint area on"],
-    ["erase", "⌫", "Erase", "Erase area"],
-    ["lasso-add", "⬚+", "Lasso +", "Draw an outline to add"],
-    ["lasso-erase", "⬚−", "Lasso −", "Draw an outline to cut away"],
+    ["move", "move", "Move", "Move and select (no drawing)"],
+    ["add", "brush", "Paint", "Paint area on"],
+    ["erase", "eraser", "Erase", "Erase area"],
+    ["lasso-add", "lasso-add", "Lasso +", "Draw an outline to add"],
+    ["lasso-erase", "lasso-erase", "Lasso −", "Draw an outline to cut away"],
   ];
 
   // stitch styles come from the server (models.STITCH_STYLES), shared with the colour table
@@ -44,7 +46,7 @@ const Shapes = (() => {
   const PRESETS = [[0, "—", "Horizontal"], [45, "╲", "Diagonal, top-left to bottom-right"], [90, "│", "Vertical"], [135, "╱", "Diagonal, bottom-left to top-right"]];
 
   const svgEl = () => $("svgBox").querySelector("svg");
-  const onStep3 = () => !$("step3").classList.contains("hidden");
+  const onStitches = () => state.pane === "stitches";
   const layerOf = (o) => state.design?.layers.find((l) => l.index === o.layer);
   const layerOn = (o) => layerOf(o)?.enabled !== false;
   const isCustom = (o) => o.stitch_type != null || o.angle != null || o.enabled === false
@@ -87,12 +89,13 @@ const Shapes = (() => {
   }
 
   function refresh() {
-    if (edit.on && !editable().length) setEdit(false);
+    if (edit.on && (!editable().length || onStitches())) setEdit(false);
+    if (onStitches()) { if (drawMode) setDrawMode(false); if (guideMode) setGuideMode(false); }
     decorate();
-    renderPanel($("shapePanel"), 2);
-    renderPanel($("shapePanel3"), 3);
+    renderPanel($("shapePanel"));
     syncList();
-    if (state.preview && onStep3()) draw();
+    updateSelCount(sel.size);
+    if (state.preview && onStitches()) draw();
   }
 
   function select(ids, additive = false) {
@@ -111,17 +114,19 @@ const Shapes = (() => {
   }
 
   // ------------------------------------------------------------------ saving
+  // Saved one after another without covering the screen (work); the stitches follow by
+  // themselves and a note tells how the stitch count changed.
   async function update(body, label = "Saving…") {
-    const res = await busy(label, () => api(`/api/projects/${state.project.id}/objects`, json("PUT", body)));
-    await applied(res);
+    const res = await work(label, () => api(`/api/projects/${state.project.id}/objects`, json("PUT", body)));
+    applied(res);
   }
 
   async function resetShapes(ids) {
-    const res = await busy("Resetting…", () => api(`/api/projects/${state.project.id}/objects/reset`, json("POST", { ids })));
-    await applied(res);
+    const res = await work("Resetting…", () => api(`/api/projects/${state.project.id}/objects/reset`, json("POST", { ids })));
+    applied(res);
   }
 
-  async function applied(res) {
+  function applied(res) {
     const focusKey = document.activeElement?.dataset?.action;
     const panelId = document.activeElement?.closest?.(".shapepanel")?.id;
     if (Array.isArray(res.selected)) { // the server merged / split the edited areas: keep them selected
@@ -129,36 +134,27 @@ const Shapes = (() => {
       res.selected.forEach((id) => sel.add(id));
     }
     renderDesign(res);
-    if (onStep3()) {
-      const before = state.preview?.stats;
-      await generate({ keepView: true });
-      const after = state.preview?.stats;
-      if (before && after && before.stitches !== after.stitches) {
-        const d = after.stitches - before.stitches, m = Math.round((after.est_minutes - before.est_minutes) * 10) / 10;
-        toast(`Stitches: ${before.stitches.toLocaleString()} → ${after.stitches.toLocaleString()} (${d > 0 ? "+" : ""}${d.toLocaleString()})` +
-          (m ? ` · about ${Math.abs(m)} min ${m > 0 ? "longer" : "shorter"}` : ""), true);
-      }
-    }
+    Jobs.stitch({ report: true });
     if (focusKey) (panelId ? $(panelId) : document).querySelector(`[data-action="${focusKey}"]`)?.focus();
   }
 
   async function recolor(body, label) {
-    const res = await busy(label, () => api(`/api/projects/${state.project.id}/objects/recolor`, json("POST", body)));
-    await applied(res);
+    const res = await work(label, () => api(`/api/projects/${state.project.id}/objects/recolor`, json("POST", body)));
+    applied(res);
   }
 
   async function setLayerHex(index, hex) {
     const layers = state.design.layers.map(({ index: i, hex: h, name, enabled, stitch_type, angle }) =>
       ({ index: i, hex: i === index ? hex : h, name, enabled, stitch_type, angle }));
-    const res = await busy("Changing thread colour…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers })));
-    await applied(res);
+    const res = await work("Changing thread colour…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers })));
+    applied(res);
   }
 
   async function sendEdit(body, label = "Editing shape…") {
     const ids = editable().map((o) => o.id);
     if (!ids.length) return toast("Select a filled shape to edit.");
-    const res = await busy(label, () => api(`/api/projects/${state.project.id}/objects/edit`, json("POST", { ids, ...body })));
-    await applied(res);
+    const res = await work(label, () => api(`/api/projects/${state.project.id}/objects/edit`, json("POST", { ids, ...body })));
+    applied(res);
   }
 
   // ------------------------------------------------------------------ colours: select every area of a thread colour
@@ -201,19 +197,17 @@ const Shapes = (() => {
   }
 
   // ------------------------------------------------------------------ selection panel
-  function renderPanel(el, step) {
+  function renderPanel(el) {
     if (!el) return;
     const dyn = el.querySelector(".sp-dyn") || el;
-    if (step === 3 && !state.preview) { dyn.innerHTML = ""; return; }
+    const step = onStitches() ? 3 : 2; // keeps the radio group names unique per view
     const chosen = [...sel].map((id) => byId.get(id)).filter(Boolean);
     const customCount = objects.filter(isCustom).length;
     const resetAll = customCount
       ? `<button type="button" class="ghost small" data-action="reset-all">Reset all shape settings (${customCount})</button>${Tip.icon("shape_reset")}`
       : "";
     if (!chosen.length) {
-      dyn.innerHTML = chipsHtml() + `<div class="sp-empty small muted">${step === 2
-        ? "No shape selected. Click a shape in the design above to give it its own stitch style or direction."
-        : "No shape selected. Click a shape in the stitch preview to change it."} ${resetAll}</div>`;
+      dyn.innerHTML = chipsHtml() + `<div class="sp-empty small muted">No shape selected. Click a shape in the preview to give it its own stitch style or direction. ${resetAll}</div>`;
       el.classList.toggle("active", false);
       return;
     }
@@ -314,7 +308,7 @@ const Shapes = (() => {
         : "Direction does not apply to outlines or shapes that are not stitched."}</p>`
       : "";
 
-    const canEdit = step === 2 && chosen.some((o) => o.kind === "area");
+    const canEdit = chosen.some((o) => o.kind === "area");
     const guided = chosen.some((o) => GUIDED.includes(o.stitch_type || layerOf(o)?.stitch_type));
     const blending = chosen.some((o) => (o.stitch_type || layerOf(o)?.stitch_type) === "blend_fill");
     const ownBlend = same(chosen.map((o) => (o.blend_to == null ? "inherit" : String(o.blend_to))));
@@ -329,11 +323,11 @@ const Shapes = (() => {
     const hasGuide = chosen.some((o) => o.guide);
     const guideHtml = guided || hasGuide ? `
       <div class="row sp-guide">
-        ${step === 2 ? `<button type="button" class="small ${guideMode ? "on" : ""}" data-action="guide" aria-pressed="${guideMode}">✎ ${hasGuide ? "Redraw guide line" : "Draw guide line"}</button>` : ""}
+        <button type="button" class="small ${guideMode ? "on" : ""}" data-action="guide" aria-pressed="${guideMode}">✎ ${hasGuide ? "Redraw guide line" : "Draw guide line"}</button>
         ${hasGuide ? `<button type="button" class="ghost small" data-action="guide-clear">Clear guide line</button>` : ""}
         ${Tip.icon("shape_guide")}
       </div>
-      ${guided && !chosen.every((o) => o.guide) ? `<p class="small muted">${step === 2 ? "Draw a guide line across the shape: the satin or the fill rows follow it (carved fill: the line is pressed into the fill)." : "Draw a guide line in step 2 (Edit design): until then the shape is sewn the usual way."}</p>` : ""}` : "";
+      ${guided && !chosen.every((o) => o.guide) ? `<p class="small muted">Draw a guide line across the shape: the satin or the fill rows follow it (carved fill: the line is pressed into the fill). Until then the shape is sewn the usual way.</p>` : ""}` : "";
     dyn.innerHTML = `${chipsHtml()}
       <div class="sp-head">
         <b>${chosen.length === 1 ? "1 shape selected" : `${chosen.length} shapes selected`}</b>
@@ -355,7 +349,7 @@ const Shapes = (() => {
           </div>
           <div class="sp-presets" role="group" aria-label="Quick directions">
             ${PRESETS.map(([a, glyph, name]) => `<button type="button" data-action="preset" data-angle="${a}" class="${ownAngle === a ? "on" : ""}" title="${name} (${a}°)" aria-label="${name}, ${a} degrees">${glyph}<span class="small"> ${a}°</span></button>`).join("")}
-            ${step === 2 ? `<button type="button" data-action="draw" class="${drawMode ? "on" : ""}" aria-pressed="${drawMode}">✎ Draw direction</button>${Tip.icon("shape_draw")}` : ""}
+            <button type="button" data-action="draw" class="${drawMode ? "on" : ""}" aria-pressed="${drawMode}">✎ Draw direction</button>${Tip.icon("shape_draw")}
           </div>
           <button type="button" class="ghost small" data-action="whole">Use this direction for the whole design</button>${Tip.icon("shape_whole")}
         </fieldset>
@@ -395,10 +389,10 @@ const Shapes = (() => {
         if (action === "pick-colour" && fullySelected(idx) && sel.size === ids2.length) return select([]);
         return select(ids2);
       }
-      if (action === "edit") return setEdit(!edit.on);
+      if (action === "edit") { if (!edit.on) ensureShapesPane(); return setEdit(!edit.on); }
       if (action === "preset") return update({ ids, angle: Number(t.dataset.angle) }, "Changing direction…");
-      if (action === "draw") { if (!drawMode) setEdit(false); return setDrawMode(!drawMode); }
-      if (action === "guide") { if (!guideMode) { setEdit(false); setDrawMode(false); } return setGuideMode(!guideMode); }
+      if (action === "draw") { if (!drawMode) { ensureShapesPane(); setEdit(false); } return setDrawMode(!drawMode); }
+      if (action === "guide") { if (!guideMode) { ensureShapesPane(); setEdit(false); setDrawMode(false); } return setGuideMode(!guideMode); }
       if (action === "guide-clear") return update({ ids, guide: "inherit" }, "Removing guide line…");
       if (action === "reset-sel") return resetShapes(ids);
       if (action === "reset-all") {
@@ -510,16 +504,27 @@ const Shapes = (() => {
     for (const opt of sl.options) opt.selected = sel.has(opt.value);
   }
 
-  // ------------------------------------------------------------------ step 2 preview: view box, overlays
+  // ------------------------------------------------------------------ shapes view: view box, zoom, overlays
   function applyViewBox() {
     const svg = svgEl();
     if (!svg) return;
     const [, , w, h] = (svg.getAttribute("viewBox") || "0 0 100 100").split(/\s+/).map(Number);
     if (!vb) { const m = Math.max(w, h) * 0.03; vb = { x: -m, y: -m, w: w + 2 * m, h: h + 2 * m }; }
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    if (!onStitches()) updateZoomLabel();
   }
 
   function fitSvg() { vb = null; applyViewBox(); }
+
+  // screen pixels per mm (the design's SVG units are mm); 0 while not on screen
+  function pxPerMm() { return svgEl()?.getScreenCTM()?.a || 0; }
+  /** Zoom around the middle of the view (bottom bar buttons). */
+  function zoomBy(f) {
+    if (!vb) return;
+    const cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2, w = vb.w / f, h = vb.h / f;
+    vb = { x: cx - w / 2, y: cy - h / 2, w, h };
+    applyViewBox();
+  }
 
   function svgPoint(svg, ev) {
     const pt = svg.createSVGPoint();
@@ -546,23 +551,30 @@ const Shapes = (() => {
     $("refBar").classList.toggle("hidden", !$("showRef").checked || $("showRef").disabled);
   }
 
-  function referenceImage() {
-    if (!$("showRef")?.checked || !refInfo || !state.project) return null;
+  /** The reference to show ("Original"): {url, x, y, w, h (mm), opacity}, or null. The
+   *  stitch preview draws it under the stitches, the shapes view under the shapes. */
+  function reference() {
+    if (!$("showRef")?.checked || !refInfo || !state.project || !state.design) return null;
     const kind = $("refKind").value;
-    const base = `/api/projects/${state.project.id}/reference/${kind}?v=${refInfo.version || 0}`;
-    const op = (+$("refOpacity").value || 40) / 100;
-    let attrs = null;
+    const url = `/api/projects/${state.project.id}/reference/${kind}?v=${refInfo.version || 0}`;
+    const opacity = (+$("refOpacity").value || 40) / 100;
     if (kind === "picture" && refInfo.picture && refInfo.box) {
       const [x, y, w, h] = refInfo.box;
-      attrs = { x, y, width: w, height: h };
-    } else if (refInfo.design) {
-      const [w, h] = refInfo.size || [state.design.width_mm, state.design.height_mm];
-      attrs = { x: 0, y: 0, width: w, height: h };
+      return { url, x, y, w, h, opacity };
     }
-    if (!attrs) return null;
+    if (refInfo.design) {
+      const [w, h] = refInfo.size || [state.design.width_mm, state.design.height_mm];
+      return { url, x: 0, y: 0, w, h, opacity };
+    }
+    return null;
+  }
+
+  function referenceImage() {
+    const r = reference();
+    if (!r) return null;
     // inside the design's own SVG: it zooms and pans with the shapes, always aligned
-    const img = el("image", { ...attrs, class: "sp-ref", preserveAspectRatio: "none", opacity: op, "pointer-events": "none" });
-    img.setAttribute("href", base);
+    const img = el("image", { x: r.x, y: r.y, width: r.w, height: r.h, class: "sp-ref", preserveAspectRatio: "none", opacity: r.opacity, "pointer-events": "none" });
+    img.setAttribute("href", r.url);
     return img;
   }
 
@@ -650,8 +662,8 @@ const Shapes = (() => {
     box.dataset.tool = edit.on ? edit.tool : "";
     if (!edit.on) { bar.innerHTML = ""; return; }
     bar.innerHTML = `
-      <div class="seg" role="group" aria-label="Editing tool">${EDIT_TOOLS.map(([k, g, label, title]) =>
-        `<button type="button" data-tool="${k}" class="${edit.tool === k ? "on" : ""}" aria-pressed="${edit.tool === k}" title="${title}">${g} <span>${label}</span></button>`).join("")}</div>
+      <div class="seg" role="group" aria-label="Editing tool">${EDIT_TOOLS.map(([k, icon, label, title]) =>
+        `<button type="button" data-tool="${k}" class="${edit.tool === k ? "on" : ""}" aria-pressed="${edit.tool === k}" title="${title}">${ico(icon)} <span>${label}</span></button>`).join("")}</div>
       <label class="small brush"><span class="lbl">Brush <output data-out="size">${edit.size.toFixed(1)} mm</output></span>
         <input type="range" data-edit="size" min="0.3" max="10" step="0.1" value="${edit.size}" aria-label="Brush size in millimetres"></label>
       <span class="row nowrap">
@@ -873,7 +885,7 @@ const Shapes = (() => {
     box.addEventListener("auxclick", (ev) => ev.button === 1 && ev.preventDefault());
   }
 
-  // ------------------------------------------------------------------ step 3: click shapes in the stitch preview
+  // ------------------------------------------------------------------ stitch preview: click shapes
   function setStitchShapes(shapes) {
     paths3 = (shapes || []).map((s) => ({ ...s, path: new Path2D(s.d) })).sort((a, b) => b.order - a.order);
   }
@@ -919,23 +931,22 @@ const Shapes = (() => {
       for (const opt of ev.target.selectedOptions) sel.add(opt.value);
       refresh();
     });
-    for (const panel of [p2, $("shapePanel3")]) {
-      panel.addEventListener("click", onPanelEvent);
-      panel.addEventListener("change", onPanelEvent);
-    }
+    p2.addEventListener("click", onPanelEvent);
+    p2.addEventListener("change", onPanelEvent);
     $("showDirections").addEventListener("change", decorate);
-    $("showRef").addEventListener("change", () => { edit.refAuto = false; syncRefControls(); decorate(); });
-    $("refKind").addEventListener("change", decorate);
+    // the reference shows in both views: under the shapes and under the stitches
+    $("showRef").addEventListener("change", () => { edit.refAuto = false; syncRefControls(); decorate(); draw(); });
+    $("refKind").addEventListener("change", () => { decorate(); draw(); });
     $("refOpacity").addEventListener("input", () => {
       $("refOpOut").textContent = `${$("refOpacity").value}%`;
       const img = svgEl()?.querySelector(".sp-ref");
       if (img) img.setAttribute("opacity", $("refOpacity").value / 100);
+      draw();
     });
     $("editBar").addEventListener("click", onEditBar);
     $("editBar").addEventListener("input", onEditBar);
     document.addEventListener("keydown", (ev) => { if (ev.code === "Space" && !ev.target.matches("input, select, textarea, button")) { spaceDown = true; if (edit.on) ev.preventDefault(); } });
     document.addEventListener("keyup", (ev) => { if (ev.code === "Space") spaceDown = false; });
-    $("btnFitSvg").addEventListener("click", fitSvg);
     bindSvgBox();
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape" || ev.target.matches("input, select, textarea")) return;
@@ -948,5 +959,6 @@ const Shapes = (() => {
     });
   }
 
-  return { init, afterRender, reset, select, selectLayer, setObjects, setStitchShapes, click3, drawSelection3, refresh };
+  return { init, afterRender, reset, select, selectLayer, setObjects, setStitchShapes, click3, drawSelection3, refresh,
+    reference, fit: fitSvg, zoomBy, pxPerMm };
 })();

@@ -56,6 +56,15 @@ PROJECTS.mkdir(parents=True, exist_ok=True)
 _ID_RE = re.compile(r"^[a-f0-9]{12}$")
 _plan_cache: dict[str, dict[str, StitchPlan]] = {}  # pid -> {params key: plan}; holds original + optimised
 _lock = threading.Lock()
+# One stitch / export at a time per project: the editor updates its preview automatically, so
+# requests can overlap (a click during an update, two tabs). A second identical request then
+# finds the plan in the cache instead of computing it again in parallel.
+_project_locks: dict[str, threading.Lock] = {}
+
+
+def _project_lock(pid: str) -> threading.Lock:
+    with _lock:
+        return _project_locks.setdefault(pid, threading.Lock())
 
 
 class NotFound(Exception):
@@ -84,7 +93,7 @@ def _save_meta(pid: str, meta: dict) -> None:
 def load_design(pid: str) -> Design:
     path = _dir(pid) / "design.json"
     if not path.exists():
-        raise ValueError("Prepare the design first (step 2).")
+        raise ValueError("Prepare the design first.")
     raw = json.loads(path.read_text(encoding="utf-8"))
     design = Design.from_dict(raw)
     if any("id" not in o for o in raw.get("objects", [])):
@@ -195,6 +204,7 @@ def delete_project(pid: str) -> None:
     """Remove a project's files and its cached stitch plans (temp_projects.py decides when)."""
     with _lock:
         _plan_cache.pop(pid, None)
+        _project_locks.pop(pid, None)
     if _ID_RE.match(pid or ""):
         shutil.rmtree(PROJECTS / pid, ignore_errors=True)
 
@@ -781,6 +791,11 @@ def _comparison(original: StitchPlan, optimized: StitchPlan) -> dict:
 
 
 def stitch(pid: str, params: dict) -> dict:
+    with _project_lock(pid):
+        return _stitch(pid, params)
+
+
+def _stitch(pid: str, params: dict) -> dict:
     p = StitchParams.from_dict(params)
     meta = _meta(pid)
     meta["stitch_params"] = p.to_dict()
@@ -839,7 +854,7 @@ def _dense_on_tiny_shapes(design: Design) -> bool:
 
 
 def saved_stitch_params(pid: str) -> StitchParams:
-    """The stitch settings the design is exported with (the last "Create stitches")."""
+    """The stitch settings the design is exported with (the last stitch run)."""
     return StitchParams.from_dict(_meta(pid).get("stitch_params"))
 
 
@@ -881,7 +896,13 @@ def parse_formats(value: str | None) -> list[str] | None:
 
 
 def export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes, str, str]:
-    """A single file, or ``zip``: the chosen ``formats`` (default ``ZIP_DEFAULT``) in one archive."""
+    """A single file, or ``zip``: the chosen ``formats`` (default ``ZIP_DEFAULT``) in one archive.
+    Waits for a stitch run of the same project, so the file has the settings just stitched."""
+    with _project_lock(pid):
+        return _export(pid, fmt, formats)
+
+
+def _export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes, str, str]:
     meta = _meta(pid)
     base = Path(meta["filename"]).stem or "design"
     fmt = fmt.lower()

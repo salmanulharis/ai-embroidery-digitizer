@@ -50,7 +50,7 @@ FEATURES: dict[str, Feature] = {f.key: f for f in (
             "(you pay the AI provider for these requests).", False),
     Feature("all_formats", "All machine formats", "EXP, U01, PES, JEF and VP3 downloads besides DST.", True),
     Feature("zip_export", "Several files as one ZIP", "Download the chosen files together as a ZIP archive.", True),
-    Feature("photo_stitch", "Photo stitch", "Sew a whole picture as a photo texture (step 3).", True),
+    Feature("photo_stitch", "Photo stitch", "Sew a whole picture as a photo texture (stitch settings).", True),
 )}
 
 

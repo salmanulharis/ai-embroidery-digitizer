@@ -1,9 +1,11 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = { config: null, project: null, design: null, preview: null, view: { scale: 1, x: 0, y: 0 }, mode: "real", variant: "optimized", upto: 0, playing: false };
+// pane: "shapes" (the design as shapes) or "stitches" (the stitch preview) - see setPane()
+const state = { config: null, project: null, design: null, preview: null, view: { scale: 1, x: 0, y: 0 }, mode: "real", variant: "optimized", upto: 0, playing: false, pane: "shapes", autoPane: true };
 // stitches currently shown: optimised (default) or the original, unreduced version
 const activeOps = () => (state.variant === "original" && state.preview.original_ops) || state.preview.ops;
+const ico = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 // ------------------------------------------------------------------ helpers
 async function api(path, opts = {}) {
@@ -55,6 +57,8 @@ function toast(msg, info = false) {
   $("toastClose").onclick = hideToast;
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !t.classList.contains("hidden")) hideToast(); });
 })();
+/** Blocking: covers the page. Only for steps with nothing to look at yet (upload, opening,
+ *  closing) and the explicit AI tasks. Editing uses work() and keeps the preview visible. */
 async function busy(text, fn, { quiet = false } = {}) {
   $("busyText").textContent = text;
   $("busy").classList.remove("hidden");
@@ -67,83 +71,82 @@ async function busy(text, fn, { quiet = false } = {}) {
   }
 }
 
-// ------------------------------------------------------------------ steps
-// The steps in the header are buttons: any step already reached can be opened again.
-// Pages: 1 upload, 2 prepare, 3 stitches + download (steps 3 and 4 share a page).
-// Each page change adds a browser history entry, so Back returns to the previous step.
-const pageOf = (n) => Math.min(n, 3);
-let currentStep = 1;
-function stepReachable(s) {
-  if (s === 1) return true;
-  if (s === 2) return !!state.design;
-  if (s === 3) return !!state.design && !$("btnApprove").disabled;
-  return !!state.preview;
-}
-function updateSteps() {
-  document.querySelectorAll("#steps li").forEach((li) => {
-    const s = +li.dataset.step, b = li.querySelector("button");
-    li.classList.toggle("active", s === currentStep);
-    li.classList.toggle("done", s < currentStep);
-    b.disabled = s !== currentStep && !stepReachable(s);
-    if (s === currentStep) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+// Non-blocking work on the open design: one request at a time, in the order asked (the
+// server's design file is changed by several of them, so they must not overlap). The
+// preview stays on screen; the bottom bar shows what is happening.
+let workChain = Promise.resolve();
+const working = [];
+function work(label, fn, { quiet = false } = {}) {
+  const run = workChain.then(async () => {
+    working.push(label);
+    renderStatus();
+    try { return await fn(); } finally {
+      working.splice(working.indexOf(label), 1);
+      renderStatus();
+    }
   });
-  $("btnNew").classList.toggle("hidden", !state.project || currentStep === 1);
-  $("openNote").classList.toggle("hidden", !state.project || currentStep !== 1);
-  if (state.project) $("openName").textContent = state.project.filename;
+  workChain = run.catch(() => {});
+  return run.catch((e) => { if (!quiet) toast(e.message); throw e; });
 }
-function showStep(n, { fromHistory = false } = {}) {
-  const pageChanged = pageOf(n) !== pageOf(currentStep);
-  if (pageChanged) window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
-  currentStep = n;
-  $("editActions").classList.toggle("hidden", n < 2);
+
+// ------------------------------------------------------------------ pages: upload / editor
+// Two pages: the upload page and the editor. Each page change adds a browser history entry,
+// so Back returns to the previous page.
+let currentPage = "upload";
+function showPage(page, { fromHistory = false } = {}) {
+  const changed = page !== currentPage;
+  currentPage = page;
+  $("step1").classList.toggle("hidden", page !== "upload");
+  $("editor").classList.toggle("hidden", page !== "editor");
+  document.body.classList.toggle("page-editor", page === "editor");
+  if (page !== "editor") closeSheets();
+  updateHeader();
+  if (changed) {
+    window.scrollTo(0, 0);
+    if (!fromHistory) history.pushState({ page }, "");
+  }
   requestAnimationFrame(measureHeader);
-  ["step1", "step2", "step3"].forEach((id, i) => $(id).classList.toggle("hidden", pageOf(n) !== i + 1));
-  updateSteps();
-  if (pageChanged && !fromHistory) history.pushState({ step: n }, "");
+  if (page === "editor") requestAnimationFrame(() => { if (state.pane === "stitches") { if (state.viewMoved) draw(); else fit(); } });
   saveSession();
 }
-// Step 3 from another page sews the (possibly edited) design again; step 4 then shows Download.
-async function goToStep(s, opts = {}) {
-  if (!stepReachable(s)) return;
-  if (s >= 3 && pageOf(currentStep) !== 3) {
-    showStep(3, opts);
-    await generate();
-  } else if (s !== 4) {
-    showStep(s, opts);
-  }
-  if (s === 4) revealDownload();
+function updateHeader() {
+  const open = !!state.project;
+  $("hdrFile").classList.toggle("hidden", !open);
+  $("btnNew").classList.toggle("hidden", currentPage !== "editor");
+  $("hdrName").textContent = open ? state.project.filename : "";
+  $("hdrName").title = open ? state.project.filename : "";
+  $("openNote").classList.toggle("hidden", !open || currentPage !== "upload");
+  if (open) $("openName").textContent = state.project.filename;
 }
-function revealDownload() {
-  $("exportBox").scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
-  $("downloadTitle").focus({ preventScroll: true });
-}
-$("steps").addEventListener("click", (ev) => {
-  const b = ev.target.closest("[data-goto]");
-  if (!b || b.disabled) return;
-  const s = +b.dataset.goto;
-  if (s === currentStep && s !== 4) return;
-  goToStep(s).catch(() => {});
-});
 window.addEventListener("popstate", (ev) => {
-  const s = ev.state?.step || 1;
-  if (pageOf(s) === pageOf(currentStep)) return;
-  goToStep(stepReachable(s) ? s : 1, { fromHistory: true }).catch(() => {});
+  const page = ev.state?.page || (ev.state?.step >= 2 ? "editor" : "upload");
+  showPage(page === "editor" && state.design ? "editor" : "upload", { fromHistory: true });
 });
+// account / admin pages: keep --hdr right for their sticky parts
+function measureHeader() {
+  const header = document.querySelector("header");
+  const h = getComputedStyle(header).position === "sticky" ? header.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty("--hdr", `${Math.round(h)}px`);
+}
+window.addEventListener("resize", measureHeader);
 
 // ------------------------------------------------------------------ the open design survives a reload
-// Kept for this browser tab only: the project, the step and the form values. The design
-// itself stays on the server and is fetched again.
+// Kept for this browser tab only: the project, the page, the preview and the form values.
+// The design itself stays on the server and is fetched again.
 const SESSION_KEY = "openDesign";
 function formSnapshot() {
   const v = {};
-  document.querySelectorAll("#step2 aside input[id], #step2 aside select[id]").forEach((e) => (v["#" + e.id] = e.type === "checkbox" ? e.checked : e.value));
+  // fields with an id, except the stitch form (its fields get generated ids, see Tip)
+  document.querySelectorAll("#leftPanel input[id], #leftPanel select[id]").forEach((e) => {
+    if (!e.closest("#stitchForm")) v["#" + e.id] = e.type === "checkbox" ? e.checked : e.value;
+  });
   [...$("stitchForm").elements].forEach((e) => { if (e.name) v[e.name] = e.type === "checkbox" ? e.checked : e.value; });
   return v;
 }
 function restoreForm(v) {
   Object.entries(v).forEach(([k, val]) => {
     const e = k.startsWith("#") ? $(k.slice(1)) : $("stitchForm").elements[k];
-    if (!e || !e.matches?.("input, select")) return;
+    if (!e || !e.matches?.("input, select") || (k.startsWith("#") && e.closest("#stitchForm"))) return;
     if (e.type === "checkbox") e.checked = !!val; else e.value = val;
   });
   showAdjustValues();
@@ -153,7 +156,7 @@ function restoreForm(v) {
 function saveSession() {
   try {
     if (!state.project) sessionStorage.removeItem(SESSION_KEY);
-    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ uid: Auth.user()?.id, meta: state.project, step: currentStep, form: formSnapshot() }));
+    else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ uid: Auth.user()?.id, meta: state.project, page: currentPage, pane: state.pane, form: formSnapshot() }));
   } catch (_) {}
 }
 window.addEventListener("pagehide", saveSession);
@@ -168,9 +171,10 @@ window.addEventListener("pageshow", (ev) => { // back/forward cache: the page is
 });
 /** Forget the open design in this tab (after it was closed or removed on the server). */
 function forgetDesign() {
+  Jobs.reset();
   Object.assign(state, { project: null, design: null, preview: null });
   try { sessionStorage.removeItem(SESSION_KEY); } catch (_) {}
-  showStep(1);
+  showPage("upload");
 }
 async function closeDesign() {
   if (!state.project) return;
@@ -192,13 +196,19 @@ async function resumeDesign() {
     await loadSource();
     // a design that was never prepared (reload right after upload) is prepared now
     const res = await busy("Opening your design again…", () => api(`/api/projects/${saved.meta.id}/design`), { quiet: true }).catch(() => null);
-    if (res) renderDesign(res); else await extract({ quiet: true });
-    showStep(2);
-    if (saved.step >= 3) await goToStep(3);
+    if (res) renderDesign(res);
+    else await busy("Opening your design again…", () => api(`/api/projects/${saved.meta.id}/extract`, json("POST", { options: extractOptions() }))).then(renderDesign);
+    // earlier versions saved the step (3 and 4 = stitches)
+    const pane = saved.pane || (saved.step >= 3 ? "stitches" : "shapes");
+    state.autoPane = pane === "shapes" && !saved.pane;
+    setPane(pane);
+    if (saved.page === "upload") showPage("upload"); else showPage("editor");
+    Jobs.stitch({ force: true, delay: 0 });
     toast(`Welcome back – ${saved.meta.filename} is open again.`, true);
   } catch (_) {
+    Jobs.reset();
     Object.assign(state, { project: null, design: null, preview: null });
-    showStep(1);
+    showPage("upload");
     toast("Your last design is no longer on the server (designs are removed when they are closed, after a while without use, "
       + "or when you sign out). Please upload the file again.", true);
   }
@@ -218,7 +228,9 @@ async function init() {
   hoop.innerHTML = '<option value="">Custom size</option>' + state.config.hoops.map((h, i) => `<option value="${i}">${esc(h.name)}</option>`).join("");
   hoop.onchange = () => {
     const h = state.config.hoops[hoop.value];
-    if (h) $("width_mm").value = Math.round(Math.min(h.width, h.height * aspect()) * 0.9);
+    if (!h) return;
+    $("width_mm").value = Math.round(Math.min(h.width, h.height * aspect()) * 0.9);
+    if (state.project) Jobs.extract();
   };
   const nc = $("num_colors");
   for (let i = 1; i <= 15; i++) nc.insertAdjacentHTML("beforeend", `<option value="${i}">${i}</option>`);
@@ -226,12 +238,13 @@ async function init() {
 
   buildStitchForm();
   bindUpload();
+  bindEditor();
   bindCanvas();
   await Auth.start(state.config); // the sign-in screen until someone is signed in
   document.body.classList.remove("booting", "signed-out");
   await AI.init(state.config); // this account's AI settings
   Account.init(state.config); // plan + usage chip, account page, admin console
-  history.replaceState({ step: 1 }, "");
+  history.replaceState({ page: "upload" }, "");
   await resumeDesign();
 }
 
@@ -259,22 +272,26 @@ function applyTextMode() {
   $("min_feature_mm").value = v.min_feature_mm;
   $("min_area_mm2").value = v.min_area_mm2;
 }
+// Every setting that prepares the design again does so by itself once it is changed
+// (slider released, field left or Enter pressed): there is no "Update preview" button.
 function bindAdjustments() {
   ["brightness", "contrast", "sharpen", "denoise"].forEach((k) => {
     $(k).addEventListener("input", showAdjustValues);
-    $(k).addEventListener("change", () => state.project && extract());
+    $(k).addEventListener("change", () => state.project && Jobs.extract());
   });
   $("btnResetAdjust").onclick = () => {
     const smart = state.smart && state.smart.extract;
     Object.entries(ADJUST_DEFAULTS).forEach(([k, v]) => ($(k).value = smart && k === "denoise" ? smart.denoise : v));
     showAdjustValues();
-    if (state.project) extract();
+    if (state.project) Jobs.extract();
   };
-  $("text_mode").onchange = () => { applyTextMode(); if (state.project) extract(); };
+  $("text_mode").onchange = () => { applyTextMode(); if (state.project) Jobs.extract(); };
   ["min_feature_mm", "min_area_mm2"].forEach((k) => $(k).addEventListener("change", () => {
     const match = Object.entries(TEXT_MODES).find(([, v]) => v.min_feature_mm === +$("min_feature_mm").value && v.min_area_mm2 === +$("min_area_mm2").value);
     $("text_mode").value = match ? match[0] : "auto";
+    if (state.project) Jobs.extract();
   }));
+  ["width_mm", "num_colors", "background", "knockout"].forEach((k) => $(k).addEventListener("change", () => state.project && Jobs.extract()));
   showAdjustValues();
 }
 
@@ -319,13 +336,13 @@ function aspect() {
   return img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1;
 }
 
-// ------------------------------------------------------------------ step 1: upload
+// ------------------------------------------------------------------ upload
 function bindUpload() {
   const drop = $("drop"), input = $("file");
   input.onchange = () => {
     const f = input.files[0];
     input.value = ""; // choosing the same file again still uploads it
-    if (f) upload(f);
+    if (f) upload(f).catch(() => {});
   };
   $("btnChoose").onclick = () => input.click();
   // a bundled example goes through the normal upload, so it behaves like any file
@@ -337,12 +354,12 @@ function bindUpload() {
     }).catch(() => null);
     if (blob) upload(new File([blob], "example-logo.png", { type: "image/png" })).catch(() => {});
   };
-  $("btnNew").onclick = () => { showStep(1); $("btnChoose").focus(); };
-  $("btnBackToOpen").onclick = () => goToStep(state.preview ? 3 : 2).catch(() => {});
+  $("btnNew").onclick = () => { showPage("upload"); $("btnChoose").focus(); };
+  $("btnBackToOpen").onclick = () => showPage("editor");
   $("btnCloseDesign").onclick = () => closeDesign().catch(() => {});
   ["dragenter", "dragover"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop", (ev) => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]));
+  drop.addEventListener("drop", (ev) => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]).catch(() => {}));
 }
 
 async function upload(file) {
@@ -351,15 +368,18 @@ async function upload(file) {
   const meta = await busy("Uploading…", () => api("/api/projects", { method: "POST", body: fd }));
   openProject(meta);
   await loadSource();
-  showStep(2);
+  showPage("editor");
   await busy("Analysing your picture…", smartDefaults).catch(() => {});
-  await extract();
+  await Jobs.extract({ delay: 0 }); // the stitches follow by themselves
 }
 
-// A new or reopened project: forget the previous design, set up step 2 for this file.
+// A new or reopened project: forget the previous design, set up the editor for this file.
 function openProject(meta) {
-  Object.assign(state, { project: meta, design: null, preview: null, smart: null });
+  Jobs.reset();
+  if (state.playing) togglePlay();
+  Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true });
   Shapes.reset();
+  Render.reset();
   const raster = meta.kind === "raster";
   $("rasterOpts").classList.toggle("hidden", !raster);
   $("vectorOpts").classList.toggle("hidden", raster);
@@ -368,8 +388,16 @@ function openProject(meta) {
   $("fileInfo").textContent = `${meta.filename} · ${raster ? `picture, ${meta.info.width_px} × ${meta.info.height_px} pixels` : "artwork file"}`;
   $("layers").innerHTML = "";
   $("svgBox").innerHTML = "";
-  $("btnApprove").disabled = true;
-  $("exportBox").classList.add("hidden");
+  ["stats", "sequence", "warnings2", "warnings3"].forEach((id) => ($(id).innerHTML = ""));
+  $("optimizeInfo").className = "optinfo hidden";
+  $("sequenceTitle").classList.add("hidden");
+  $("statsEmpty").classList.remove("hidden");
+  $("variant").classList.add("hidden");
+  $("variantHelp")?.classList.add("hidden");
+  openThreads.clear();
+  setPane("shapes");
+  updateHeader();
+  renderStatus();
 }
 
 async function loadSource() {
@@ -380,7 +408,7 @@ async function loadSource() {
   });
 }
 
-// ------------------------------------------------------------------ step 2: prepare design
+// ------------------------------------------------------------------ design (shapes)
 function extractOptions() {
   const o = { width_mm: +$("width_mm").value, num_colors: $("num_colors").value ? +$("num_colors").value : null };
   if (state.project.kind === "raster") {
@@ -399,19 +427,15 @@ function extractOptions() {
   return o;
 }
 
-async function extract({ quiet = false } = {}) {
-  const res = await busy("Preparing your design…", () => api(`/api/projects/${state.project.id}/extract`, json("POST", { options: extractOptions() })), { quiet });
-  renderDesign(res);
-}
+/** Prepare the design again now and wait until the preview is up to date (AI assistant). */
+const extract = () => Jobs.extract({ delay: 0 });
 
 function renderDesign(res) {
   state.design = res.design;
   $("svgBox").innerHTML = res.svg.replace(/<\?xml[^>]*>/, "");
   $("warnings2").innerHTML = res.design.warnings.map((w) => `<div>${esc(w)}</div>`).join("");
-  $("dlSvg").href = `/api/projects/${state.project.id}/export/svg`;
   renderLayers();
-  $("btnApprove").disabled = !res.design.layers.some((l) => l.enabled);
-  // dim disabled layers in the vector preview
+  // dim disabled layers in the shapes view
   res.design.layers.forEach((l) => {
     const g = $("svgBox").querySelector(`#layer-${l.index}`);
     if (g) {
@@ -422,7 +446,7 @@ function renderDesign(res) {
   $("btnUndo").disabled = !res.can_undo;
   $("btnRedo").disabled = !res.can_redo;
   Shapes.afterRender(res);
-  updateSteps();
+  renderStatus();
 }
 
 // stitch styles for colours and shapes come from the server (models.STITCH_STYLES)
@@ -433,77 +457,101 @@ const styleLabel = (v, label) => {
   return term && !label.toLowerCase().startsWith(term.toLowerCase()) ? `${label} — ${term}` : label;
 };
 
+// ------------------------------------------------------------------ threads (thread colours, sewn top to bottom)
+// One compact row per colour: sew on/off, thread colour, name, shape count. The arrow opens
+// its stitch style, direction, area, order and "merge into"; drag the handle onto another
+// colour to merge them.
+const openThreads = new Set(); // colours whose details are open (kept across updates)
 function renderLayers() {
   const L = state.design.layers;
-  // help only where the heading alone does not explain the column (fewer tab stops)
-  const th = (label, key, note) => `<th scope="col">${label}${key ? " " + Tip.icon(key) : ""}${note ? `<span class="th-note">${note}</span>` : ""}</th>`;
-  $("layers").innerHTML =
-    `<tr><th scope="col" class="grip-col"><span class="visually-hidden">Drag to merge</span>${Tip.icon("layers_drag")}</th>${th("Stitch", "layers_sew")}${th("Thread", "layers_thread")}${th("Name")}${th("Area", "layers_area")}` +
-    `${th("Stitch style", "layers_stitch")}${th("Direction", "layers_angle", "empty = automatic")}${th("Shapes", "layers_shapes")}${th("Order", "layers_order")}${th("Merge into", "layers_merge")}</tr>` +
-    L.map((l, i) => {
-      const n = esc(l.name);
-      return `
-      <tr class="${l.enabled ? "" : "off"}" data-index="${l.index}" data-merge-target="${l.index}">
-        <td class="grip-col"><span class="grip" data-drag-layer="${l.index}" title="Drag onto another colour to merge ${n} into it" role="img" aria-label="Drag ${n} onto another colour to merge">⠿</span></td>
-        <td><input type="checkbox" data-k="enabled" ${l.enabled ? "checked" : ""} aria-label="Stitch ${n}"></td>
-        <td><input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}"></td>
-        <td class="cell-name"><input data-k="name" value="${n}" size="10" aria-label="Name for ${n}"></td>
-        <td class="small muted" data-label="Area">${l.area_mm2} mm²</td>
-        <td class="cell-wide" data-label="Stitch style"><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${styleLabel(v, label)}</option>`).join("")}</select></td>
-        <td data-label="Direction (empty = automatic)"><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></td>
-        <td class="small nowrap" data-label="Shapes">${l.objects}${l.customised ? ` <span class="muted">(${l.customised} own)</span>` : ""}
-          <button type="button" class="ghost small" data-select-layer="${l.index}" ${l.enabled ? "" : "disabled"} aria-label="Select all shapes of ${n}">Select</button></td>
-        <td data-label="Order"><button data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="Sew ${n} earlier">↑</button><button data-move="1" ${i === L.length - 1 ? "disabled" : ""} aria-label="Sew ${n} later">↓</button></td>
-        <td data-label="Merge into"><select data-merge aria-label="Merge ${n} into another colour"><option value="">–</option>${L.filter((o) => o.index !== l.index).map((o) => `<option value="${o.index}">${esc(o.name)}</option>`).join("")}</select></td>
-      </tr>`;
-    }).join("");
+  $("layers").innerHTML = L.map((l, i) => {
+    const n = esc(l.name), open = openThreads.has(l.index);
+    return `
+    <div class="thr ${l.enabled ? "" : "off"}" data-index="${l.index}" data-merge-target="${l.index}">
+      <div class="thr-row">
+        <span class="grip" data-drag-layer="${l.index}" title="Drag onto another colour to merge ${n} into it" role="img" aria-label="Drag ${n} onto another colour to merge">⠿</span>
+        <input type="checkbox" data-k="enabled" ${l.enabled ? "checked" : ""} aria-label="Stitch ${n}">
+        <input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}">
+        <input class="thr-name" data-k="name" value="${n}" aria-label="Name for ${n}">
+        <span class="thr-meta">${l.objects} shape${l.objects === 1 ? "" : "s"}</span>
+        <button type="button" class="ghost thr-toggle" data-expand aria-expanded="${open}" aria-controls="thr-more-${l.index}" aria-label="More settings for ${n}">›</button>
+      </div>
+      <div class="thr-more" id="thr-more-${l.index}" ${open ? "" : "hidden"}>
+        <label><span class="lbl">Stitch style ${Tip.icon("layers_stitch")}</span><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${styleLabel(v, label)}</option>`).join("")}</select></label>
+        <label><span class="lbl">Direction in degrees (empty = automatic) ${Tip.icon("layers_angle")}</span><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></label>
+        <div class="row small"><span class="muted">${l.area_mm2} mm² ${Tip.icon("layers_area")}</span>
+          <span class="muted">${l.objects} shape${l.objects === 1 ? "" : "s"}${l.customised ? ` (${l.customised} own)` : ""}</span>
+          <button type="button" class="ghost small" data-select-layer="${l.index}" ${l.enabled ? "" : "disabled"} aria-label="Select all shapes of ${n}">Select</button></div>
+        <div class="row small"><span class="muted">Order ${Tip.icon("layers_order")}</span>
+          <button type="button" class="ghost small" data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="Sew ${n} earlier">↑ Earlier</button>
+          <button type="button" class="ghost small" data-move="1" ${i === L.length - 1 ? "disabled" : ""} aria-label="Sew ${n} later">↓ Later</button></div>
+        <label><span class="lbl">Merge into ${Tip.icon("layers_merge")}</span><select data-merge aria-label="Merge ${n} into another colour"><option value="">–</option>${L.filter((o) => o.index !== l.index).map((o) => `<option value="${o.index}">${esc(o.name)}</option>`).join("")}</select></label>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 $("layers").addEventListener("change", async (ev) => {
-  const tr = ev.target.closest("tr");
-  if (!tr) return;
-  const idx = +tr.dataset.index;
+  const item = ev.target.closest("[data-index]");
+  if (!item) return;
+  const idx = +item.dataset.index;
   if (ev.target.dataset.merge !== undefined) {
     if (!ev.target.value) return;
-    return mergeColours(idx, +ev.target.value);
+    return mergeColours(idx, +ev.target.value).catch(() => {});
   }
   const layer = state.design.layers.find((l) => l.index === idx);
   const k = ev.target.dataset.k;
+  if (!layer || !k) return;
   layer[k] = ev.target.type === "checkbox" ? ev.target.checked : k === "angle" ? (ev.target.value === "" ? null : +ev.target.value) : ev.target.value;
   await saveLayers();
 });
 $("layers").addEventListener("click", async (ev) => {
+  const toggle = ev.target.closest("[data-expand]");
+  if (toggle) {
+    const idx = +toggle.closest("[data-index]").dataset.index;
+    const open = !openThreads.has(idx);
+    if (open) openThreads.add(idx); else openThreads.delete(idx);
+    toggle.setAttribute("aria-expanded", open);
+    $(`thr-more-${idx}`).hidden = !open;
+    return;
+  }
   const pick = ev.target.closest("[data-select-layer]");
   if (pick) return Shapes.selectLayer(+pick.dataset.selectLayer);
-  const mv = ev.target.dataset.move;
+  const mv = ev.target.closest("[data-move]")?.dataset.move;
   if (!mv) return;
   const L = state.design.layers;
-  const i = L.findIndex((l) => l.index === +ev.target.closest("tr").dataset.index);
+  const i = L.findIndex((l) => l.index === +ev.target.closest("[data-index]").dataset.index);
   const j = i + +mv;
+  if (j < 0 || j >= L.length) return;
   [L[i], L[j]] = [L[j], L[i]];
   await saveLayers();
+  $("layers").querySelector(`[data-index="${L[j].index}"] [data-move="${mv}"]:not(:disabled)`)?.focus();
 });
 async function saveLayers() {
   const layers = state.design.layers.map(({ index, hex, name, enabled, stitch_type, angle }) => ({ index, hex, name, enabled, stitch_type, angle }));
-  const res = await api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers })).catch((e) => toast(e.message));
-  if (res) renderDesign(res);
+  const res = await work("Saving thread colours…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers }))).catch(() => null);
+  if (res) {
+    renderDesign(res);
+    Jobs.stitch();
+  }
 }
 
 // ------------------------------------------------------------------ merging colours (menu or drag & drop)
 const layerName = (idx) => state.design.layers.find((l) => l.index === idx)?.name || "colour";
 
 // Every area of `source` takes the `target` thread; both become one region and the
-// `source` entry disappears. Stitches are recreated when the stitch preview is open.
+// `source` entry disappears. The stitches follow by themselves.
 async function mergeColours(source, target) {
   if (source === target || !state.project) return;
   const from = layerName(source), to = layerName(target);
-  const res = await busy(`Merging ${from} into ${to}…`, () => api(`/api/projects/${state.project.id}/layers/merge`, json("POST", { source, target })));
+  const res = await work(`Merging ${from} into ${to}…`, () => api(`/api/projects/${state.project.id}/layers/merge`, json("POST", { source, target })));
+  openThreads.delete(source);
   renderDesign(res);
-  if (!$("step3").classList.contains("hidden")) await generate({ keepView: true });
+  Jobs.stitch();
   toast(`${from} merged into ${to}. Use Undo to separate them again.`, true);
 }
 
-// Drag a colour (grip in the colour table, or a colour chip) and drop it on another one.
+// Drag a colour (handle in the threads list, or a colour chip) and drop it on another one.
 // Pointer events, so it works with a mouse, a pen and touch alike.
 const ColourDrag = (() => {
   let drag = null;
@@ -587,9 +635,10 @@ ColourDrag.init();
 async function historyStep(kind) {
   const btn = kind === "undo" ? $("btnUndo") : $("btnRedo");
   if (btn.disabled || !state.project) return;
-  const res = await busy(kind === "undo" ? "Undoing…" : "Redoing…", () => api(`/api/projects/${state.project.id}/${kind}`, { method: "POST" }));
+  const res = await work(kind === "undo" ? "Undoing…" : "Redoing…", () => api(`/api/projects/${state.project.id}/${kind}`, { method: "POST" })).catch(() => null);
+  if (!res) return;
   renderDesign(res);
-  if (!$("step3").classList.contains("hidden")) await generate({ keepView: true });
+  Jobs.stitch();
 }
 const undoLast = () => historyStep("undo");
 const redoLast = () => historyStep("redo");
@@ -597,41 +646,17 @@ $("btnUndo").onclick = undoLast;
 $("btnRedo").onclick = redoLast;
 document.addEventListener("keydown", (ev) => {
   // Ctrl/Cmd+Z = undo, Ctrl+Y or Ctrl/Cmd+Shift+Z = redo - never while typing in a field
-  if (!(ev.ctrlKey || ev.metaKey) || ev.target.matches("input, select, textarea") || !state.project || !$("step1").classList.contains("hidden")) return;
+  if (!(ev.ctrlKey || ev.metaKey) || ev.target.matches("input, select, textarea") || !state.project || currentPage !== "editor"
+    || document.querySelector("dialog[open]") || document.body.matches(".view-account, .view-admin")) return;
   const k = ev.key.toLowerCase();
   if (k === "z" && !ev.shiftKey) { ev.preventDefault(); undoLast(); }
   else if (k === "y" || (k === "z" && ev.shiftKey)) { ev.preventDefault(); redoLast(); }
 });
 
-// Pin preview: the preview stays in view while the settings scroll (remembered per browser).
-function measureHeader() {
-  const header = document.querySelector("header");
-  // on phones the header scrolls away, so nothing has to keep clear of it
-  const h = getComputedStyle(header).position === "sticky" ? header.getBoundingClientRect().height : 0;
-  document.documentElement.style.setProperty("--hdr", `${Math.round(h)}px`);
-}
-function setPinned(on) {
-  document.body.classList.toggle("pin", on);
-  $("btnPin").setAttribute("aria-pressed", on);
-  $("btnPin").classList.toggle("on", on);
-  try { localStorage.setItem("pinPreview", on ? "1" : "0"); } catch (_) {}
-  measureHeader();
-  if (state.preview && !$("step3").classList.contains("hidden")) requestAnimationFrame(draw);
-}
-$("btnPin").onclick = () => setPinned(!document.body.classList.contains("pin"));
-window.addEventListener("resize", measureHeader);
-(() => { let on = false; try { on = localStorage.getItem("pinPreview") === "1"; } catch (_) {} setPinned(on); })();
-
-$("btnExtract").onclick = () => extract();
-$("btnApprove").onclick = () => goToStep(3).catch(() => {});
-$("btnBack").onclick = () => goToStep(2);
-$("btnToDownload").onclick = revealDownload;
-
 // AI assistant buttons live in ai.js
 
-// ------------------------------------------------------------------ step 3: stitch settings
-// [parameter name (sent to the server), plain-language label, min, max, step]
-// [parameter name, label, min, max, step, advanced?]
+// ------------------------------------------------------------------ stitch settings
+// [parameter name (sent to the server), plain-language label, min, max, step, advanced?]
 const PARAMS = [
   ["fill_spacing_mm", "Fill thickness – gap between rows (mm)", 0.25, 1.0, 0.05],
   ["satin_spacing_mm", "Satin thickness – gap between stitches (mm)", 0.25, 1.0, 0.05],
@@ -730,6 +755,9 @@ function buildStitchForm() {
     sel.onchange = () => applyFabric(sel.value);
     showFabricNote(sel.value);
   }
+  // a changed setting updates the stitches by itself (or marks them out of date, see Jobs)
+  $("stitchForm").addEventListener("change", () => { if (state.design) Jobs.stitch(); });
+  $("stitchForm").addEventListener("submit", (ev) => ev.preventDefault());
 }
 // A fabric preset fills in the stitch settings it is about; every value stays editable.
 function applyFabric(id) {
@@ -763,52 +791,193 @@ function stitchParams() {
   delete p.triple_run;
   return p;
 }
-$("btnStitch").onclick = () => generate();
 
-// After a setting changes, the preview still shows the previous stitches: say so until
-// the stitches are created again.
-function setStale(on) {
-  state.stale = on;
-  $("staleNote").classList.toggle("hidden", !on);
-  ["btnStitch", "barStitch"].forEach((id) => $(id).classList.toggle("attention", on));
+// ------------------------------------------------------------------ keeping the preview up to date
+// Changes to the design or the settings are collected for a moment and then sent as one
+// request; while it runs, newer changes wait and are sent once it is done with the latest
+// values ("latest wins"). Preparing the design (extract) goes first; the stitches follow.
+// A design that takes long to stitch switches to manual updates ("Update" in the bottom bar).
+const SLOW_STITCH_MS = 3000;
+const Jobs = (() => {
+  let timer = null, wantExtract = false, wantStitch = false, loop = null, waiters = [];
+  let stale = false, error = "", report = null, slow = false;
+  let auto = true;
+  try { auto = localStorage.getItem("autoUpdate") !== "0"; } catch (_) {}
+
+  const autoOn = () => auto && !slow;
+  const pending = () => !!(timer || loop || wantExtract || wantStitch);
+
+  function settle() {
+    if (pending()) return;
+    const w = waiters;
+    waiters = [];
+    w.forEach((f) => f());
+  }
+  function idle() {
+    return pending() ? new Promise((res) => waiters.push(res)) : Promise.resolve();
+  }
+  function kick(delay) {
+    clearTimeout(timer);
+    timer = setTimeout(start, delay);
+    renderStatus();
+    return idle();
+  }
+
+  /** Prepare the design again (extract) with the current settings; the stitches follow. */
+  function extract({ delay = 250 } = {}) {
+    if (!state.project) return Promise.resolve();
+    wantExtract = true;
+    return kick(delay);
+  }
+  /** Create the stitches again. ``report``: tell how the stitch count changed (shape edits).
+   *  ``force``: also in manual mode (the Update button, export, the AI assistant). */
+  function stitch({ delay = 350, report: rep = false, force = false } = {}) {
+    if (!state.design) return Promise.resolve();
+    if (rep && !report && state.preview) report = state.preview.stats;
+    if (!force && !autoOn() && state.preview) {
+      stale = true;
+      renderStatus();
+      return idle();
+    }
+    wantStitch = true;
+    return kick(delay);
+  }
+
+  function start() {
+    timer = null;
+    if (loop) return;
+    loop = (async () => {
+      while (wantExtract || wantStitch) {
+        if (wantExtract) {
+          wantExtract = false;
+          try {
+            const pid = state.project.id;
+            const res = await work("Preparing your design…", () => api(`/api/projects/${pid}/extract`, json("POST", { options: extractOptions() })));
+            if (state.project?.id !== pid) continue;
+            renderDesign(res);
+            error = "";
+            if (autoOn() || !state.preview) wantStitch = true;
+            else stale = true;
+          } catch (e) {
+            error = e.message;
+            wantStitch = false;
+          }
+          continue;
+        }
+        wantStitch = false;
+        if (!state.design) continue;
+        const pid = state.project.id, t0 = performance.now();
+        try {
+          const prev = await work("Creating stitches…", () => api(`/api/projects/${pid}/stitch`, json("POST", { params: stitchParams() })));
+          if (state.project?.id !== pid) continue;
+          stale = false;
+          error = "";
+          applyPreview(prev);
+          if (performance.now() - t0 > SLOW_STITCH_MS && auto && !slow) {
+            slow = true;
+            toast("This design takes a few seconds to stitch, so the preview now updates when you press Update.", true);
+          }
+          if (report) reportChange(report, prev.stats);
+        } catch (e) {
+          error = e.message;
+          stale = !!state.preview;
+        }
+        report = null;
+      }
+    })().finally(() => {
+      loop = null;
+      renderStatus();
+      settle();
+    });
+  }
+
+  function reportChange(before, after) {
+    if (before.stitches === after.stitches) return;
+    const d = after.stitches - before.stitches, m = Math.round((after.est_minutes - before.est_minutes) * 10) / 10;
+    toast(`Stitches: ${before.stitches.toLocaleString()} → ${after.stitches.toLocaleString()} (${d > 0 ? "+" : ""}${d.toLocaleString()})` +
+      (m ? ` · about ${Math.abs(m)} min ${m > 0 ? "longer" : "shorter"}` : ""), true);
+  }
+
+  /** Run what is waiting now (no delay) and resolve once everything is done. */
+  function flush() {
+    if (timer) { clearTimeout(timer); start(); }
+    return idle();
+  }
+  function reset() {
+    clearTimeout(timer);
+    timer = null;
+    wantExtract = wantStitch = false;
+    stale = false; error = ""; report = null; slow = false;
+    renderStatus();
+    settle();
+  }
+  function setAuto(on) {
+    auto = on;
+    try { localStorage.setItem("autoUpdate", on ? "1" : "0"); } catch (_) {}
+    if (on) slow = false;
+    if (on && stale) stitch({ delay: 0 });
+    renderStatus();
+  }
+  return {
+    extract, stitch, flush, idle, reset, setAuto, pending,
+    stale: () => stale, error: () => error, auto: () => autoOn(), working: () => !!loop,
+  };
+})();
+
+// The bottom bar's status: what the preview shows right now.
+function renderStatus() {
+  let level = "", text = "";
+  if (working.length) { level = "busy"; text = working[working.length - 1]; }
+  else if (Jobs.pending()) { level = "busy"; text = "Updating…"; }
+  else if (Jobs.error()) { level = "error"; text = `Not updated: ${Jobs.error()}`; }
+  else if (Jobs.stale()) { level = "stale"; text = "Settings changed"; }
+  else if (state.preview) { level = "ok"; text = "Up to date"; }
+  $("edDot").dataset.level = level;
+  $("edStatusText").textContent = text;
+  $("edStatusText").title = text;
+  $("btnUpdate").hidden = !(level === "stale" || level === "error") || !state.design;
+  $("btnUpdate").lastChild.textContent = level === "error" ? "Try again" : "Update";
+  $("autoUpdate").checked = Jobs.auto();
+  $("edProgress").hidden = level !== "busy";
+  $("stage").classList.toggle("updating", level === "busy");
+  const s = state.preview?.stats;
+  $("edFacts").textContent = s ? `${s.width_mm} × ${s.height_mm} mm · ${s.stitches.toLocaleString()} stitches` : "";
+  $("btnExport").disabled = !state.design;
+  renderStageEmpty(level);
+  if ($("exportDialog").open) Export.refresh();
 }
-["input", "change"].forEach((type) => $("stitchForm").addEventListener(type, () => {
-  if (!state.preview || state.stale) return;
-  setStale(true);
-  announce("Settings changed. Create stitches to update the preview.");
-}));
-$("btnStaleStitch").onclick = () => generate();
+function renderStageEmpty(level) {
+  const shapes = state.pane === "shapes";
+  const empty = shapes ? !state.design : !state.preview;
+  const failed = level === "error";
+  $("stageEmpty").classList.toggle("hidden", !empty || !state.project);
+  $("stageEmpty").querySelector(".spinner").classList.toggle("hidden", failed);
+  $("stageEmptyText").textContent = failed ? Jobs.error()
+    : shapes || !state.design ? "Preparing your design…" : "Creating stitches…";
+}
 
-// Phones: a bar at the bottom of the stitch page keeps the settings, sewing and
-// Download one tap away (the settings sit below the preview there).
-$("barSettings").onclick = () => {
-  const side = $("stitchForm").closest("aside");
-  side.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
-  side.querySelector("h2").setAttribute("tabindex", "-1");
-  side.querySelector("h2").focus({ preventScroll: true });
-};
-$("barStitch").onclick = () => generate();
-$("barDownload").onclick = () => state.preview && revealDownload();
-
-async function generate(opts = {}) {
-  const prev = await busy("Creating stitches…", () => api(`/api/projects/${state.project.id}/stitch`, json("POST", { params: stitchParams() })));
+// ------------------------------------------------------------------ stitch preview data
+function applyPreview(prev) {
   state.preview = prev;
-  setStale(false);
+  Render.reset();
   Shapes.setStitchShapes(prev.shapes);
   Shapes.setObjects(prev.objects); // stitch style and direction as they were really sewn
   const canCompare = !!(prev.comparison && !prev.comparison.reverted && prev.original_ops);
   $("variant").classList.toggle("hidden", !canCompare);
   $("variantHelp")?.classList.toggle("hidden", !canCompare);
-  setVariant("optimized", false);
+  setVariant(canCompare ? state.variant : "optimized", false);
+  if (state.playing) togglePlay();
   resetScrub();
   renderOptimizeInfo();
   renderStats();
-  renderExports();
   AI.onStitched();
-  showStep(4);
   Shapes.refresh();
-  if (opts.keepView) draw(); else fit(); // keep the zoom while editing shapes
+  if (state.autoPane && state.pane === "shapes") setPane("stitches");
+  else if (state.pane === "stitches") { if (state.viewMoved) draw(); else fit(); }
 }
+
+/** Create the stitches again now (also in manual mode) and wait for them (AI assistant). */
+const generate = () => Jobs.stitch({ force: true, delay: 0 });
 
 function resetScrub() {
   state.upto = activeOps().length / 4;
@@ -852,81 +1021,511 @@ function renderOptimizeInfo() {
     `<span class="small">${c.original.stitches.toLocaleString()} → ${c.optimized.stitches.toLocaleString()} stitches` +
     `${parts.length ? ` · removed ${parts.join(" and ")}` : ""}. ` +
     `Shape check passed: no gaps – ${unchanged.toFixed(1)}% of the visible stitching is covered exactly as before. ` +
-    `Use <i>Optimised</i> / <i>Original</i> above the preview to compare.</span>`;
+    `Use <i>Optimised</i> / <i>Original</i> in the bottom bar to compare.</span>`;
 }
 
-function renderStats() {
+const shownStats = () => {
   const c = state.preview.comparison;
-  const s = c && !c.reverted ? (state.variant === "original" ? c.original : c.optimized) : state.preview.stats;
+  return c && !c.reverted ? (state.variant === "original" ? c.original : c.optimized) : state.preview.stats;
+};
+function renderStats() {
+  const s = shownStats();
   const items = [
     [s.stitches.toLocaleString(), "stitches", "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)"],
     [s.colors, "colours"], [s.trims, "thread cuts", "stats_trims"], [s.color_changes, "colour changes"],
-    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used"],
+    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used (est.)"],
   ];
+  $("statsEmpty").classList.add("hidden");
   $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
   $("warnings3").innerHTML = state.preview.warnings.map((w) => `<div>${esc(w)}</div>`).join("");
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span></div>`).join("");
+  renderStatus();
 }
 
-// Download: tick the files you want, then one button. One file downloads as it is,
-// several come as one .zip (browsers block several downloads at once).
-const exportPick = new Set(["dst"]); // kept while the page is open, across re-stitching
-function exportItems() {
-  const items = Object.entries(state.config.formats).map(([k, f]) => [k, `${f.label} (.${k})`, f.note, k === "dst"]);
-  items.push(["svg", "Artwork (SVG)", "The cleaned-up design as a vector file – open in Wilcom, Illustrator or Inkscape", false]);
-  items.push(["png", "Preview picture (PNG)", "A realistic picture of the embroidery – handy for customer approval", false]);
-  items.push(["txt", "Worksheet (TXT)", "Thread order, stitch count and time for the machine operator", false]);
-  return items;
+// ------------------------------------------------------------------ the editor: panes, sheets, bottom bar
+const paneButtons = () => document.querySelectorAll(".ed-views [data-pane]");
+function setPane(pane, { user = false } = {}) {
+  if (user) state.autoPane = false;
+  state.pane = pane;
+  $("editor").dataset.view = pane;
+  paneButtons().forEach((b) => b.setAttribute("aria-pressed", b.dataset.pane === pane));
+  if (pane === "stitches") requestAnimationFrame(() => { if (!state.preview) return; if (state.viewMoved) draw(); else fit(); });
+  if (pane === "shapes" && state.playing) togglePlay();
+  Shapes.refresh();
+  updateZoomLabel();
+  renderStatus();
+  saveSession();
 }
-function renderExports() {
-  const items = exportItems();
-  for (const k of [...exportPick]) if (!items.some(([key]) => key === k)) exportPick.delete(k);
-  $("exports").innerHTML = items.map(([k, label, note, rec]) =>
-    `<label class="${rec ? "rec" : ""}${exportPick.has(k) ? " on" : ""}"><input type="checkbox" value="${k}" ${exportPick.has(k) ? "checked" : ""}>` +
-    `<span><b>${label}${rec ? " ★ recommended" : ""}</b><span>${esc(note)}</span></span></label>`).join("");
-  updateDownload();
-  $("exportBox").classList.remove("hidden");
-  Account.quotaNote(state.project.id); // "counts as 1 of your N designs" / "already counted"
+/** The shape tools (edit outline, draw direction / guide line) work on the shapes view. */
+function ensureShapesPane() {
+  if (state.pane !== "shapes") setPane("shapes", { user: true });
 }
-function updateDownload() {
-  const items = exportItems();
-  const chosen = items.filter(([k]) => exportPick.has(k));
-  const n = chosen.length;
-  const btn = $("btnDownload");
-  btn.disabled = !n;
-  btn.textContent = !n ? "Choose a file to download" : n === 1 ? `Download ${chosen[0][1]}` : `Download ${n} files (.zip)`;
-  $("btnExportAll").textContent = n === items.length ? "Clear all" : "Select all";
-}
-$("exports").addEventListener("change", (ev) => {
-  const box = ev.target.closest("input[type=checkbox]");
-  if (!box) return;
-  if (box.checked) exportPick.add(box.value); else exportPick.delete(box.value);
-  box.closest("label").classList.toggle("on", box.checked);
-  updateDownload();
-});
-$("btnExportAll").onclick = () => {
-  const items = exportItems();
-  const all = items.every(([k]) => exportPick.has(k));
-  exportPick.clear();
-  if (!all) items.forEach(([k]) => exportPick.add(k));
-  renderExports();
-};
-$("btnDownload").onclick = () => {
-  const chosen = exportItems().map(([k]) => k).filter((k) => exportPick.has(k));
-  if (!chosen.length) return;
-  const base = `/api/projects/${state.project.id}/export/`;
-  // fetched (not a plain link) so a used-up allowance or a plan limit shows a clear message
-  Account.download(chosen.length === 1 ? base + chosen[0] : `${base}zip?formats=${chosen.join(",")}`, state.project.id);
-};
 
-// ------------------------------------------------------------------ preview canvas
+// Side panels as sheets (smaller screens): one open at a time, Esc or the backdrop closes it.
+let sheetReturn = null;
+function openSheet(side) {
+  closeSheets(false);
+  document.body.classList.add(`sheet-${side}`);
+  $("sheetBackdrop").hidden = false;
+  const btn = side === "left" ? $("barSettings") : $("barInfo");
+  btn.setAttribute("aria-expanded", "true");
+  sheetReturn = btn;
+  const panel = side === "left" ? $("leftPanel") : $("rightPanel");
+  requestAnimationFrame(() => panel.querySelector("[data-close-sheet]")?.focus());
+}
+function closeSheets(restore = true) {
+  const was = document.body.matches(".sheet-left, .sheet-right");
+  document.body.classList.remove("sheet-left", "sheet-right");
+  $("sheetBackdrop").hidden = true;
+  $("barSettings").setAttribute("aria-expanded", "false");
+  $("barInfo").setAttribute("aria-expanded", "false");
+  if (was && restore) sheetReturn?.focus();
+}
+const sheetOpen = (side) => document.body.classList.contains(`sheet-${side}`);
+
+function updateSelCount(n) {
+  $("selCount").textContent = n || "";
+  $("selCount").classList.toggle("hidden", !n);
+  $("barInfo").setAttribute("aria-label", n ? `Design panel, ${n} shape${n === 1 ? "" : "s"} selected` : "Design panel");
+}
+
+// Remember which settings sections are open (per browser, a convenience only).
+function bindSections() {
+  let open = {};
+  try { open = JSON.parse(localStorage.getItem("edSections") || "{}"); } catch (_) {}
+  document.querySelectorAll(".ed-sec[data-sec]").forEach((d) => {
+    if (d.dataset.sec in open) d.open = !!open[d.dataset.sec];
+    d.addEventListener("toggle", () => {
+      open[d.dataset.sec] = d.open;
+      try { localStorage.setItem("edSections", JSON.stringify(open)); } catch (_) {}
+    });
+  });
+}
+
+function bindEditor() {
+  bindSections();
+  // the shapes view keeps the design below the reference / edit bars (see --tools-h in style.css)
+  const tools = document.querySelector(".ed-tools");
+  new ResizeObserver(() => $("stage").style.setProperty("--tools-h", `${tools.offsetHeight}px`)).observe(tools);
+  paneButtons().forEach((b) => (b.onclick = () => setPane(b.dataset.pane, { user: true })));
+  $("barSettings").onclick = () => (sheetOpen("left") ? closeSheets() : openSheet("left"));
+  $("barInfo").onclick = () => (sheetOpen("right") ? closeSheets() : openSheet("right"));
+  $("sheetBackdrop").onclick = () => closeSheets();
+  document.querySelectorAll("[data-close-sheet]").forEach((b) => (b.onclick = () => closeSheets()));
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && document.body.matches(".sheet-left, .sheet-right") && !document.querySelector("dialog[open]")) closeSheets();
+  });
+  // a wider window shows the panels again: no sheet stays open behind them
+  window.matchMedia("(min-width: 1200px)").addEventListener("change", (m) => m.matches && closeSheets(false));
+  $("btnUpdate").onclick = () => Jobs.stitch({ force: true, delay: 0 }).catch(() => {});
+  $("autoUpdate").onchange = () => Jobs.setAuto($("autoUpdate").checked);
+  $("btnExport").onclick = () => Export.open();
+  $("btnFit").onclick = () => (state.pane === "stitches" ? fit() : Shapes.fit());
+  $("btnZoomIn").onclick = () => zoomBy(1.25);
+  $("btnZoomOut").onclick = () => zoomBy(1 / 1.25);
+  $("zoomPct").onclick = () => zoomTo(ACTUAL_PX_PER_MM);
+  Export.init();
+}
+
+// Zoom: 100% = actual size, assuming the usual 96 screen pixels per inch (screens differ).
+const ACTUAL_PX_PER_MM = 96 / 25.4;
+function pxPerMm() { return state.pane === "stitches" ? state.view.scale * 10 : Shapes.pxPerMm(); }
+function updateZoomLabel() {
+  const ppm = pxPerMm();
+  $("zoomPct").textContent = ppm ? `${Math.round((100 * ppm) / ACTUAL_PX_PER_MM)}%` : "–";
+}
+function zoomBy(f) {
+  if (state.pane !== "stitches") return Shapes.zoomBy(f);
+  if (!state.preview) return;
+  const c = $("canvas"), v = state.view, mx = c.clientWidth / 2, my = c.clientHeight / 2;
+  v.x = mx - (mx - v.x) * f;
+  v.y = my - (my - v.y) * f;
+  v.scale *= f;
+  state.viewMoved = true;
+  draw();
+}
+function zoomTo(ppm) {
+  const cur = pxPerMm();
+  if (cur) zoomBy(ppm / cur);
+}
+
+// ------------------------------------------------------------------ export dialog
+// Choose the files, see a summary and the checks, download. The dialog first brings the
+// stitches up to date, so a download always matches the settings on screen. One file
+// downloads as it is, several come as one .zip (browsers block several downloads at once).
+const Export = (() => {
+  const pick = new Set(["dst"]); // kept while the page is open, across re-stitching
+  let quota = null; // /api/projects/{id}/quota: charged, usage, features
+  let downloading = false;
+  const STITCH_FILES = () => new Set([...Object.keys(state.config.formats), "png", "txt"]);
+
+  function items() {
+    const machine = Object.entries(state.config.formats).map(([k, f]) => ({ key: k, group: "Machine files", label: `${f.label} (.${k})`, note: f.note, rec: k === "dst" }));
+    return machine.concat([
+      { key: "svg", group: "Artwork for editing", label: "Artwork (SVG)", note: "The cleaned-up design as a vector file for Illustrator, Inkscape or embroidery software that imports vector artwork. Free: not counted as a design download" },
+      { key: "txt", group: "For the operator and customer", label: "Worksheet (TXT)", note: "Thread order, stitch count and time for the machine operator" },
+      { key: "png", group: "For the operator and customer", label: "Preview picture (PNG)", note: "A realistic picture of the embroidery – handy for customer approval" },
+    ]);
+  }
+  const lockOf = (key) => (quota && !quota.features?.all_formats && key in state.config.formats && key !== "dst" ? "Not in your plan" : "");
+
+  function render() {
+    const list = items();
+    for (const k of [...pick]) if (!list.some((i) => i.key === k) || lockOf(k)) pick.delete(k);
+    let group = "";
+    $("exports").innerHTML = list.map((it) => {
+      const lock = lockOf(it.key), on = pick.has(it.key);
+      const head = it.group !== group ? `<p class="exp-grp">${esc((group = it.group))}</p>` : "";
+      return `${head}<label class="${it.rec ? "rec" : ""}${on ? " on" : ""}${lock ? " locked" : ""}"><input type="checkbox" value="${it.key}" ${on ? "checked" : ""} ${lock ? "disabled" : ""}>` +
+        `<span><b>${esc(it.label)}${it.rec ? " ★ recommended" : ""}</b><span>${esc(it.note)}</span></span>${lock ? `<span class="lock-badge">${lock}</span>` : ""}</label>`;
+    }).join("");
+    summary();
+    update();
+  }
+
+  function summary() {
+    const p = state.preview;
+    const facts = [];
+    const checks = [];
+    if (p) {
+      const s = shownStats();
+      facts.push(["Size", `${s.width_mm} × ${s.height_mm} mm`]);
+      const h = state.config.hoops[$("hoop").value];
+      if (h) {
+        const fits = s.width_mm <= h.width && s.height_mm <= h.height;
+        const turned = !fits && s.width_mm <= h.height && s.height_mm <= h.width;
+        facts.push(["Hoop", `${h.name} · ${fits ? "fits" : turned ? "fits turned 90°" : "too large"}`]);
+        if (!fits && !turned) checks.push(`The design is larger than the ${h.name} hoop. Choose a smaller width or a bigger hoop.`);
+      }
+      facts.push(["Stitches", s.stitches.toLocaleString()], ["Colours · changes", `${s.colors} · ${s.color_changes}`],
+        ["Thread cuts", String(s.trims)], ["Sewing time (est.)", `${s.est_minutes} min`]);
+      p.warnings.forEach((w) => checks.push(w));
+      if (pick.has("dst") && !pick.has("txt")) checks.push("DST files carry no thread colours: add the worksheet to know which colour goes on which needle.");
+    }
+    $("expFacts").innerHTML = facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+    $("expChecks").innerHTML = checks.map((c) => `<div>${esc(c)}</div>`).join("");
+    if (p) Render.thumbnail($("expThumb"));
+  }
+
+  function update() {
+    const chosen = items().filter((i) => pick.has(i.key));
+    const n = chosen.length;
+    const needStitches = chosen.some((i) => STITCH_FILES().has(i.key));
+    const busyNow = Jobs.pending() || working.length > 0;
+    const notReady = needStitches && (busyNow || Jobs.stale() || !!Jobs.error() || !state.preview);
+    const zipLocked = n > 1 && quota && !quota.features?.zip_export;
+    const btn = $("btnDownload");
+    btn.disabled = !n || notReady || zipLocked || downloading;
+    btn.textContent = downloading ? "Preparing…" : !n ? "Choose a file to download" : n === 1 ? `Download ${chosen[0].label}` : `Download ${n} files (.zip)`;
+    $("btnExportAll").textContent = items().filter((i) => !lockOf(i.key)).every((i) => pick.has(i.key)) ? "Clear all" : "Select all";
+    let msg = "";
+    if (needStitches && busyNow) msg = "Bringing the stitches up to date…";
+    else if (needStitches && Jobs.error()) msg = `The stitches could not be updated: ${Jobs.error()}`;
+    else if (needStitches && (Jobs.stale() || !state.preview)) msg = "The stitches are not up to date yet.";
+    else if (zipLocked) msg = "Your plan downloads one file at a time: choose one file.";
+    $("expState").textContent = msg;
+  }
+
+  async function open() {
+    if (!state.design || !state.project) return;
+    closeSheets(false);
+    quota = null;
+    render();
+    $("exportDialog").showModal();
+    // up to date before downloading: run waiting changes now, in manual mode too
+    if (Jobs.stale() || Jobs.error() || (!state.preview && state.design)) Jobs.stitch({ force: true, delay: 0 }).catch(() => {});
+    const pid = state.project.id;
+    const [q] = await Promise.all([Account.quotaNote(pid), Jobs.flush()]);
+    if (state.project?.id !== pid || !$("exportDialog").open) return;
+    quota = q || null;
+    render();
+  }
+
+  async function download() {
+    const chosen = items().map((i) => i.key).filter((k) => pick.has(k));
+    if (!chosen.length || !state.project) return;
+    await Jobs.flush();
+    if ($("btnDownload").disabled) return;
+    const base = `/api/projects/${state.project.id}/export/`;
+    downloading = true;
+    update();
+    try {
+      // fetched (not a plain link) so a used-up allowance or a plan limit shows a clear message
+      await Account.download(chosen.length === 1 ? base + chosen[0] : `${base}zip?formats=${chosen.join(",")}`, state.project.id);
+    } finally {
+      downloading = false;
+      update();
+    }
+  }
+
+  function init() {
+    $("exports").addEventListener("change", (ev) => {
+      const box = ev.target.closest("input[type=checkbox]");
+      if (!box) return;
+      if (box.checked) pick.add(box.value); else pick.delete(box.value);
+      box.closest("label").classList.toggle("on", box.checked);
+      summary();
+      update();
+    });
+    $("btnExportAll").onclick = () => {
+      const free = items().filter((i) => !lockOf(i.key));
+      const all = free.every((i) => pick.has(i.key));
+      pick.clear();
+      if (!all) free.forEach((i) => pick.add(i.key));
+      render();
+    };
+    $("btnDownload").onclick = () => download().catch(() => {});
+  }
+
+  return { init, open, refresh: () => { summary(); update(); } };
+})();
+
+// ------------------------------------------------------------------ stitch preview: drawing
+// The stitches are drawn into an off-screen picture once per view (zoom, position, style)
+// and copied to the screen; selection outlines and markers go on top. The sewing simulation
+// only adds the new stitches. While you zoom or move, a quick version is drawn and the full
+// one follows when you stop. The look is exactly that of drawing stitch by stitch.
 const KIND_COLORS = ["#2d6cdf", "#d6336c", "#2f9e44", "#f08c00", "#868e96", "#ae3ec9", "#000"]; // fill satin running underlay travel tie
 
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.max(0, Math.min(255, Math.round(f >= 1 ? v + (255 - v) * (f - 1) : v * f))));
+  return `rgb(${ch.join(",")})`;
+}
+
+const Render = (() => {
+  const base = document.createElement("canvas");
+  const bctx = base.getContext("2d");
+  let key = "", st = null, version = 0, fast = null;
+  let raf = 0, idleTimer = 0, interacting = false;
+  const ref = { url: "", img: null, ok: false };
+
+  function reset() { version++; key = ""; st = null; fast = null; }
+  /** Draw on the next frame. ``moving``: quick version until the zooming / moving stops. */
+  function request(moving = false) {
+    if (moving) {
+      interacting = true;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { interacting = false; request(); }, 140);
+    }
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; frame(); });
+  }
+
+  function canvasSize(c) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(c.clientWidth * dpr)), h = Math.max(1, Math.round(c.clientHeight * dpr));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return { w, h, dpr };
+  }
+
+  // the original picture (or first extracted design) under the stitches, aligned in mm
+  function refImage(spec) {
+    if (!spec) return null;
+    if (ref.url !== spec.url) {
+      ref.url = spec.url;
+      ref.ok = false;
+      ref.img = new Image();
+      ref.img.onload = () => { ref.ok = true; key = ""; request(); };
+      ref.img.src = spec.url;
+    }
+    return ref.ok ? ref.img : null;
+  }
+  function drawRef(ctx, v, spec) {
+    const img = refImage(spec);
+    if (!img) return;
+    ctx.globalAlpha = spec.opacity;
+    ctx.drawImage(img, v.x + spec.x * 10 * v.scale, v.y + spec.y * 10 * v.scale, spec.w * 10 * v.scale, spec.h * 10 * v.scale);
+    ctx.globalAlpha = 1;
+  }
+
+  // stitch by stitch from where the last drawing stopped (st) up to `upto`
+  function drawStitches(ctx, v, ops, mode, colors, s, upto) {
+    const X = (u) => v.x + u * v.scale, Y = (u) => v.y + u * v.scale;
+    const threadW = Math.max(0.6, 3.2 * v.scale); // 0.32 mm thread (units are 0.1 mm)
+    ctx.lineCap = "round";
+    let { color, px, py, n } = s;
+    for (let i = s.i; i < upto * 4; i += 4) {
+      const cmd = ops[i], x = ops[i + 1], y = ops[i + 2], kind = ops[i + 3];
+      if (cmd === 3) { color++; continue; }
+      if (cmd === 4) continue; // machine stop (applique)
+      if (cmd === 2) { if (px !== null) s.trims.push([px, py]); continue; }
+      if (cmd === 1) { if (px !== null) s.jumps.push([px, py, x, y]); px = x; py = y; continue; }
+      if (px === null) { px = x; py = y; continue; }
+      const hex = colors[Math.min(color, colors.length - 1)].hex;
+      if (mode === "real" || mode === "check") {
+        if (mode === "check") ctx.globalAlpha = 0.35; // faded so the problem markers stand out
+        ctx.lineWidth = threadW;
+        ctx.strokeStyle = shade(hex, 0.62);
+        ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(x), Y(y)); ctx.stroke();
+        ctx.lineWidth = threadW * 0.7;
+        ctx.strokeStyle = hex;
+        ctx.stroke();
+        if (threadW > 3) { ctx.lineWidth = threadW * 0.22; ctx.strokeStyle = shade(hex, 1.35); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = mode === "type" ? KIND_COLORS[kind] : hex;
+        ctx.globalAlpha = mode === "type" && kind === 3 ? 0.6 : 1;
+        ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(x), Y(y)); ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (mode === "direction" && kind !== 3 && kind !== 5 && n % 14 === 0) arrow(ctx, X(px), Y(py), X(x), Y(y));
+      }
+      px = x; py = y; n++;
+    }
+    Object.assign(s, { i: Math.max(s.i, upto * 4), color, px, py, n, upto });
+  }
+
+  // quick version while zooming / moving: one path per thread colour (or stitch type)
+  function fastPaths(ops, colors) {
+    if (fast && fast.version === version && fast.variant === state.variant) return fast;
+    const byColor = colors.map(() => new Path2D()), byKind = KIND_COLORS.map(() => new Path2D());
+    let color = 0, px = null, py = null;
+    for (let i = 0; i < ops.length; i += 4) {
+      const cmd = ops[i], x = ops[i + 1], y = ops[i + 2], kind = ops[i + 3];
+      if (cmd === 3) { color++; continue; }
+      if (cmd === 4 || cmd === 2) continue;
+      if (cmd === 1 || px === null) { px = x; py = y; continue; }
+      const c = Math.min(color, colors.length - 1);
+      byColor[c].moveTo(px, py); byColor[c].lineTo(x, y);
+      byKind[kind] && (byKind[kind].moveTo(px, py), byKind[kind].lineTo(x, y));
+      px = x; py = y;
+    }
+    fast = { version, variant: state.variant, byColor, byKind };
+    return fast;
+  }
+  function drawFast(ctx, v, dpr, ops, mode, colors) {
+    const f = fastPaths(ops, colors);
+    ctx.save();
+    ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.x, dpr * v.y);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const unit = 1 / v.scale; // one screen pixel in stitch units
+    if (mode === "type") {
+      f.byKind.forEach((p, k) => { ctx.globalAlpha = k === 3 ? 0.6 : 1; ctx.strokeStyle = KIND_COLORS[k]; ctx.lineWidth = unit; ctx.stroke(p); });
+    } else {
+      ctx.globalAlpha = mode === "check" ? 0.35 : 1;
+      ctx.lineWidth = mode === "real" || mode === "check" ? Math.max(0.6, 3.2 * v.scale) * 0.7 * unit : unit;
+      f.byColor.forEach((p, i) => { ctx.strokeStyle = colors[i].hex; ctx.stroke(p); });
+    }
+    ctx.restore();
+  }
+
+  function frame() {
+    const c = $("canvas"), p = state.preview;
+    if (!p || !c.clientWidth || !c.clientHeight) return;
+    const { w, h, dpr } = canvasSize(c);
+    const ctx = c.getContext("2d");
+    const v = state.view, ops = activeOps(), mode = state.mode, total = ops.length / 4;
+    const upto = Math.min(state.upto, total);
+    const spec = Shapes.reference();
+    const k = [w, h, dpr, v.scale, v.x, v.y, mode, state.variant, version, spec ? `${spec.url}@${spec.opacity}:${ref.ok && ref.url === spec.url}` : ""].join("|");
+
+    if (interacting && k !== key && upto >= total) { // quick version, the full one follows
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawRef(ctx, v, spec);
+      drawFast(ctx, v, dpr, ops, mode, p.colors);
+      Shapes.drawSelection3(ctx, v, dpr);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      updateZoomLabel();
+      return;
+    }
+    if (k !== key || !st || upto < st.upto) {
+      if (base.width !== w || base.height !== h) { base.width = w; base.height = h; }
+      bctx.setTransform(1, 0, 0, 1, 0, 0);
+      bctx.clearRect(0, 0, w, h);
+      bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawRef(bctx, v, spec);
+      st = { i: 0, color: 0, px: null, py: null, n: 0, jumps: [], trims: [], upto: 0 };
+      key = k;
+    }
+    if (upto > st.upto) {
+      bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawStitches(bctx, v, ops, mode, p.colors, st, upto);
+    }
+
+    // on screen: the stitches, then markers and the selection on top
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(base, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const X = (u) => v.x + u * v.scale, Y = (u) => v.y + u * v.scale;
+    if (mode === "check") drawRisks(ctx, X, Y, p.risks || []);
+    if (mode !== "real" && mode !== "check") {
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = "#e03131"; ctx.lineWidth = 1;
+      st.jumps.forEach(([a, b, c2, d]) => { ctx.beginPath(); ctx.moveTo(X(a), Y(b)); ctx.lineTo(X(c2), Y(d)); ctx.stroke(); });
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#e03131";
+      st.trims.forEach(([a, b]) => { ctx.beginPath(); ctx.arc(X(a), Y(b), 3, 0, 7); ctx.fill(); });
+    }
+    if (st.px !== null && upto < total) {
+      ctx.strokeStyle = "#e03131"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(st.px), Y(st.py), 6, 0, 7); ctx.stroke();
+    }
+    Shapes.drawSelection3(ctx, v, dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    $("legend").innerHTML = mode === "type"
+      ? ["fill", "satin", "outline", "foundation", "moving", "lock"].map((k2, i) => `<span style="background:${KIND_COLORS[i]}"></span>${k2}`).join("") + `<span style="background:#e03131"></span>jump / thread cut`
+      : mode === "direction" ? "Arrows show which way the needle sews · red dashes = jumps · red dots = thread cuts"
+      : mode === "check" ? riskLegend(p.risks || []) : "";
+    $("legend").classList.toggle("hidden", mode === "real");
+    $("scrubInfo").textContent = `${st.n.toLocaleString()} stitches sewn · colour ${Math.min(st.color + 1, p.colors.length)} of ${p.colors.length}`;
+    updateZoomLabel();
+  }
+
+  /** The whole design, realistic, fitted into a small canvas (export summary). Drawn again
+   *  only when the stitches, the version shown or the size change. */
+  function thumbnail(c) {
+    const p = state.preview;
+    if (!p || !c.clientWidth) return;
+    const { w, h, dpr } = canvasSize(c);
+    const tkey = `${version}|${state.variant}|${w}x${h}`;
+    if (c.dataset.key === tkey) return;
+    c.dataset.key = tkey;
+    const ctx = c.getContext("2d");
+    const ops = activeOps();
+    const v = fitView(ops, w / dpr, h / dpr, 12);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawStitches(ctx, v, ops, "real", p.colors, { i: 0, color: 0, px: null, py: null, n: 0, jumps: [], trims: [], upto: 0 }, ops.length / 4);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  return { request, reset, thumbnail, now: frame };
+})();
+
+/** Redraw the stitch preview (on the next frame). */
+function draw() { Render.request(); }
+
+// view that shows every stitch, with a margin (in stitch units, 0.1 mm)
+function fitView(ops, w, h, margin = 20) {
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (let i = 0; i < ops.length; i += 4) {
+    if (ops[i] !== 0) continue;
+    minx = Math.min(minx, ops[i + 1]); maxx = Math.max(maxx, ops[i + 1]);
+    miny = Math.min(miny, ops[i + 2]); maxy = Math.max(maxy, ops[i + 2]);
+  }
+  if (!Number.isFinite(minx)) return { scale: 1, x: 0, y: 0 };
+  const s = Math.min(w / (maxx - minx + 2 * margin), h / (maxy - miny + 2 * margin));
+  return { scale: s, x: (w - (maxx + minx) * s) / 2, y: (h - (maxy + miny) * s) / 2 };
+}
+function fit() {
+  const c = $("canvas"), p = state.preview;
+  if (!p || !c.clientWidth || !c.clientHeight) return; // not on screen
+  state.viewMoved = false;
+  state.view = fitView(activeOps(), c.clientWidth, c.clientHeight);
+  draw();
+}
+
+// ------------------------------------------------------------------ stitch preview: zoom, move, select, play
 function bindCanvas() {
   const c = $("canvas");
   let drag = null;
   c.addEventListener("wheel", (ev) => {
+    if (!state.preview) return;
     ev.preventDefault();
     const r = c.getBoundingClientRect();
     const mx = ev.clientX - r.left, my = ev.clientY - r.top;
@@ -936,7 +1535,7 @@ function bindCanvas() {
     v.y = my - (my - v.y) * f;
     v.scale *= f;
     state.viewMoved = true;
-    draw();
+    Render.request(true);
   }, { passive: false });
   // touch: two fingers pinch to zoom (one finger drags, a tap selects)
   const touches = new Map();
@@ -964,7 +1563,7 @@ function bindCanvas() {
       v.scale *= f;
       pinch.d = d;
       state.viewMoved = true;
-      draw();
+      Render.request(true);
       return;
     }
     if (!drag) return;
@@ -972,7 +1571,7 @@ function bindCanvas() {
     state.view.y += ev.clientY - drag.y;
     state.viewMoved = true;
     drag = { ...drag, x: ev.clientX, y: ev.clientY };
-    draw();
+    Render.request(true);
   });
   const lift = (ev) => {
     touches.delete(ev.pointerId);
@@ -987,18 +1586,18 @@ function bindCanvas() {
     // a click (not a drag): select the shape under the pointer
     const r = c.getBoundingClientRect(), v = state.view;
     const xMm = (ev.clientX - r.left - v.x) / v.scale / 10, yMm = (ev.clientY - r.top - v.y) / v.scale / 10;
+    state.autoPane = false;
     Shapes.click3(xMm, yMm, ev.shiftKey || ev.ctrlKey || ev.metaKey);
   });
   c.addEventListener("pointercancel", () => (drag = null));
-  // a new window size or a rotated phone fits the design again, unless you zoomed or moved it
-  window.addEventListener("resize", () => {
-    if (!state.preview || !c.clientWidth) return;
+  // a new size (window, panels, rotated phone) fits the design again, unless you zoomed or moved it
+  new ResizeObserver(() => {
+    if (!state.preview || !c.clientWidth || state.pane !== "stitches") return;
     if (state.viewMoved) draw(); else fit();
-  });
-  $("btnFit").onclick = fit;
-  $("showFabric").onchange = () => { $("canvas").parentElement.classList.toggle("dark", $("showFabric").checked); draw(); };
+  }).observe($("canvasWrap"));
+  $("showFabric").onchange = () => { $("canvasWrap").classList.toggle("dark", $("showFabric").checked); draw(); };
   $("viewMode").addEventListener("click", (ev) => {
-    const m = ev.target.dataset.mode;
+    const m = ev.target.closest("[data-mode]")?.dataset.mode;
     if (!m) return;
     state.mode = m;
     document.querySelectorAll("#viewMode button").forEach((b) => {
@@ -1008,101 +1607,11 @@ function bindCanvas() {
     draw();
   });
   $("variant").addEventListener("click", (ev) => {
-    const v = ev.target.dataset.variant;
+    const v = ev.target.closest("[data-variant]")?.dataset.variant;
     if (v && v !== state.variant) setVariant(v);
   });
-  $("scrub").oninput = () => { state.upto = +$("scrub").value; draw(); };
+  $("scrub").oninput = () => { if (!state.preview) return; state.upto = +$("scrub").value; draw(); };
   $("btnPlay").onclick = togglePlay;
-}
-
-function fit() {
-  const c = $("canvas"), p = state.preview;
-  if (!p) return;
-  const w = c.clientWidth, h = c.clientHeight;
-  if (!w || !h) return; // not on screen
-  state.viewMoved = false;
-  const ops = activeOps();
-  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-  for (let i = 0; i < ops.length; i += 4) {
-    if (ops[i] !== 0) continue;
-    minx = Math.min(minx, ops[i + 1]); maxx = Math.max(maxx, ops[i + 1]);
-    miny = Math.min(miny, ops[i + 2]); maxy = Math.max(maxy, ops[i + 2]);
-  }
-  const s = Math.min(w / (maxx - minx + 40), h / (maxy - miny + 40));
-  state.view = { scale: s, x: (w - (maxx + minx) * s) / 2, y: (h - (maxy + miny) * s) / 2 };
-  draw();
-}
-
-function shade(hex, f) {
-  const n = parseInt(hex.slice(1), 16);
-  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.max(0, Math.min(255, Math.round(f >= 1 ? v + (255 - v) * (f - 1) : v * f))));
-  return `rgb(${ch.join(",")})`;
-}
-
-function draw() {
-  const c = $("canvas"), p = state.preview;
-  if (!p) return;
-  const dpr = window.devicePixelRatio || 1;
-  c.width = c.clientWidth * dpr;
-  c.height = c.clientHeight * dpr;
-  const ctx = c.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, c.clientWidth, c.clientHeight);
-  const v = state.view, ops = activeOps(), mode = state.mode;
-  const X = (u) => v.x + u * v.scale, Y = (u) => v.y + u * v.scale;
-  const threadW = Math.max(0.6, 3.2 * v.scale); // 0.32 mm thread (units are 0.1 mm)
-  ctx.lineCap = "round";
-  let color = 0, px = null, py = null, n = 0;
-  const upto = Math.min(state.upto, ops.length / 4);
-  const jumps = [], trims = [];
-
-  for (let i = 0; i < upto * 4; i += 4) {
-    const cmd = ops[i], x = ops[i + 1], y = ops[i + 2], kind = ops[i + 3];
-    if (cmd === 3) { color++; continue; }
-    if (cmd === 4) continue; // machine stop (applique)
-    if (cmd === 2) { if (px !== null) trims.push([px, py]); continue; }
-    if (cmd === 1) { if (px !== null) jumps.push([px, py, x, y]); px = x; py = y; continue; }
-    if (px === null) { px = x; py = y; continue; }
-    const hex = p.colors[Math.min(color, p.colors.length - 1)].hex;
-    if (mode === "real" || mode === "check") {
-      if (mode === "check") ctx.globalAlpha = 0.35; // faded so the problem markers stand out
-      ctx.lineWidth = threadW;
-      ctx.strokeStyle = shade(hex, 0.62);
-      ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(x), Y(y)); ctx.stroke();
-      ctx.lineWidth = threadW * 0.7;
-      ctx.strokeStyle = hex;
-      ctx.stroke();
-      if (threadW > 3) { ctx.lineWidth = threadW * 0.22; ctx.strokeStyle = shade(hex, 1.35); ctx.stroke(); }
-      ctx.globalAlpha = 1;
-    } else {
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = mode === "type" ? KIND_COLORS[kind] : hex;
-      ctx.globalAlpha = mode === "type" && kind === 3 ? 0.6 : 1;
-      ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(x), Y(y)); ctx.stroke();
-      ctx.globalAlpha = 1;
-      if (mode === "direction" && kind !== 3 && kind !== 5 && n % 14 === 0) arrow(ctx, X(px), Y(py), X(x), Y(y));
-    }
-    px = x; py = y; n++;
-  }
-  if (mode === "check") drawRisks(ctx, X, Y, p.risks || []);
-  if (mode !== "real" && mode !== "check") {
-    ctx.setLineDash([4, 4]); ctx.strokeStyle = "#e03131"; ctx.lineWidth = 1;
-    jumps.forEach(([a, b, c2, d]) => { ctx.beginPath(); ctx.moveTo(X(a), Y(b)); ctx.lineTo(X(c2), Y(d)); ctx.stroke(); });
-    ctx.setLineDash([]);
-    ctx.fillStyle = "#e03131";
-    trims.forEach(([a, b]) => { ctx.beginPath(); ctx.arc(X(a), Y(b), 3, 0, 7); ctx.fill(); });
-  }
-  if (px !== null && upto < ops.length / 4) {
-    ctx.strokeStyle = "#e03131"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(X(px), Y(py), 6, 0, 7); ctx.stroke();
-  }
-  Shapes.drawSelection3(ctx, v, dpr);
-  $("legend").innerHTML = mode === "type"
-    ? ["fill", "satin", "outline", "foundation", "moving", "lock"].map((k, i) => `<span style="background:${KIND_COLORS[i]}"></span>${k}`).join("") + `<span style="background:#e03131"></span>jump / thread cut`
-    : mode === "direction" ? "Arrows show which way the needle sews · red dashes = jumps · red dots = thread cuts"
-    : mode === "check" ? riskLegend(p.risks || []) : "";
-  $("legend").classList.toggle("hidden", mode === "real");
-  $("scrubInfo").textContent = `${n.toLocaleString()} stitches sewn · colour ${Math.min(color + 1, p.colors.length)} of ${p.colors.length}`;
 }
 
 // Machine check: spots where the thread may break or a detail may not show (stitch/safety.py)
@@ -1137,18 +1646,20 @@ function arrow(ctx, x1, y1, x2, y2) {
 }
 
 function togglePlay() {
+  if (!state.preview && !state.playing) return;
   state.playing = !state.playing;
-  $("btnPlay").innerHTML = state.playing ? "&#10074;&#10074;" : "&#9654;";
+  $("btnPlay").innerHTML = ico(state.playing ? "pause" : "play");
   $("btnPlay").setAttribute("aria-label", state.playing ? "Pause sewing simulation" : "Play sewing simulation");
   if (!state.playing) return;
+  if (state.pane !== "stitches") setPane("stitches", { user: true });
   const total = activeOps().length / 4;
   if (state.upto >= total) state.upto = 0;
   const step = Math.max(20, Math.round(total / 400));
   const tick = () => {
-    if (!state.playing) return;
+    if (!state.playing || !state.preview) return;
     state.upto = Math.min(total, state.upto + step);
     $("scrub").value = state.upto;
-    draw();
+    Render.now();
     if (state.upto >= total) { togglePlay(); return; }
     requestAnimationFrame(tick);
   };

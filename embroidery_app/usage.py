@@ -7,7 +7,7 @@ download of stitch output for a project (a machine file, the stitch preview PNG,
 worksheet, or a ZIP with any of them) is charged once. Re-downloads, other formats and
 edits of the same upload are free (the uploaded source never changes, so a project is
 always the same artwork). Uploading, preparing, previewing and creating stitches are not
-charged. The artwork SVG download (step 2) is not stitch output and is free.
+charged. The artwork SVG download is not stitch output and is free.
 
 How a charge is made safe
 -------------------------

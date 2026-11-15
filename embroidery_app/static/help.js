@@ -3,7 +3,7 @@
    Each entry: t = title, what = what it does, why = why it helps, eg = example. */
 
 const HELP = {
-  // ---------------------------------------------------------------- step 2: prepare design
+  // ---------------------------------------------------------------- design: size, colours, picture
   hoop: {
     t: "Hoop size",
     what: "The frame on your machine that holds the fabric tight while sewing.",
@@ -55,7 +55,17 @@ const HELP = {
   vector_preview: {
     t: "Design ready for stitching",
     what: "Your design simplified into solid colour shapes – this is what will be turned into stitches.",
-    why: "Check it carefully before continuing: anything missing here will be missing in the embroidery.",
+    why: "Check it carefully: anything missing here will be missing in the embroidery.",
+  },
+  view_switch: {
+    t: "Shapes and Stitches",
+    what: "Shapes shows your design as solid colour areas – select them, fix their outlines, draw guide and direction lines. Stitches shows the stitches exactly as the machine will sew them.",
+    why: "Both show the same design: a change in one appears in the other. Selected shapes stay selected when you switch.",
+  },
+  auto_update: {
+    t: "Auto-update",
+    what: "The preview updates by itself a moment after you change a setting or the design. The bottom bar shows when it is working and when it is up to date.",
+    why: "You see the effect of every change without pressing a button. Turn it off to make several changes first, then press Update. Designs that take a few seconds to stitch switch to Update by themselves.",
   },
   ai: {
     t: "Smart assistant",
@@ -156,7 +166,7 @@ const HELP = {
   },
   undo: {
     t: "Undo / Redo",
-    what: "Undo takes back your changes to the design one by one (shape edits, colours, stitch styles, merging, “Update preview”) - up to 50 steps. Redo brings back what you undid.",
+    what: "Undo takes back your changes to the design one by one (shape edits, colours, stitch styles, merging, preparing the design again) - up to 50 steps. Redo brings back what you undid. The stitch settings in the Stitches section are not part of it.",
     why: "Try things freely: nothing is lost until you make a new change after undoing.",
     eg: "Undo: Ctrl+Z (Cmd+Z). Redo: Ctrl+Y or Ctrl+Shift+Z.",
   },
@@ -186,7 +196,7 @@ const HELP = {
   shape_thickness: {
     t: "Thickness for the selected shapes",
     what: "How tightly the stitches are packed in these shapes: the gap between fill rows or satin stitches. A smaller gap means thicker, fuller coverage.",
-    why: "Make small details and lettering bolder, or save stitches on large background areas. “Same as design” uses the setting in step 3.",
+    why: "Make small details and lettering bolder, or save stitches on large background areas. “Same as design” uses the setting in the Stitches section.",
     eg: "Light (0.50 mm) for big background areas · Normal (0.40 mm) · Dense (0.33 mm) for small lettering or towels where fabric shows through.",
   },
   shape_width: {
@@ -211,7 +221,7 @@ const HELP = {
   },
   shape_click3: {
     t: "Change shapes while previewing",
-    what: "Click a shape in the stitch preview to select it, then change its stitch style or direction below. The stitches update automatically.",
+    what: "Click a shape in the stitch preview to select it, then change its stitch style or direction in the Selection panel. The stitches update automatically.",
     why: "See the effect of a change straight away.",
   },
   layers_order: {
@@ -228,10 +238,10 @@ const HELP = {
   download_svg: {
     t: "Download artwork (SVG)",
     what: "Saves the cleaned-up design as a vector artwork file.",
-    why: "Open it in Wilcom, Illustrator or Inkscape to edit or digitise manually.",
+    why: "Open it in Illustrator, Inkscape or embroidery software that imports vector artwork, to edit or digitise manually.",
   },
 
-  // ---------------------------------------------------------------- step 3: stitch settings
+  // ---------------------------------------------------------------- stitch settings
   fill_spacing_mm: {
     t: "Fill thickness",
     what: "The gap between rows of stitches in filled areas. A smaller gap means thicker, fuller coverage.",
@@ -356,7 +366,7 @@ const HELP = {
     t: "Photo stitch",
     what: "Sews the whole picture in one dark thread as rows: each row zigzags as wide as the picture is dark at that spot, so dark areas fill in and light areas stay open. The shading comes from the colours of the shapes, so extract a photo with several shades (for example 8 colours) first.",
     why: "Photos have soft shading that separate colour areas cannot show; rows of varying width reproduce it with one thread.",
-    eg: "Portraits and pets in one colour on a light fabric. Remove the background in step 2 so only the subject is sewn.",
+    eg: "Portraits and pets in one colour on a light fabric. Remove the background in the Picture settings so only the subject is sewn.",
   },
   photo_style: {
     t: "Photo stitch style",
@@ -507,14 +517,9 @@ const HELP = {
   },
 
   // ---------------------------------------------------------------- preview & results
-  pin: {
-    t: "Pin preview",
-    what: "Keeps the preview in view at the top while you scroll through the settings below it.",
-    why: "You see every change on the design straight away. Click again for the normal layout, where the preview scrolls with the page.",
-  },
   reference: {
     t: "Reference",
-    what: "Shows the original picture (or the design as first extracted) faded under your shapes, exactly lined up with them - also when you zoom or move.",
+    what: "Shows the original picture (or the design as first extracted) faded under your shapes or stitches, exactly lined up with them - also when you zoom or move.",
     why: "Compare your edits with the artwork you started from. Use the slider to make it fainter or stronger.",
   },
   layers_drag: {
@@ -544,8 +549,8 @@ const HELP = {
   },
   view: {
     t: "Preview style",
-    what: "Realistic: how the finished embroidery will look. Sewing direction: arrows show which way the needle moves. Stitch types: each kind of stitch in its own colour. Machine check: circles mark spots where the thread may break or a detail may not show.",
-    why: "Use Stitch types to spot loose jumps (red dashes) and thread cuts (red dots). Use Machine check before sending small lettering to the machine – orange circles are strokes too thin to sew cleanly: make the design bigger or choose fine 60 wt thread.",
+    what: "Realistic: how the finished embroidery will look. Direction: arrows show which way the needle moves. Types: each kind of stitch in its own colour. Check: circles mark spots where the thread may break or a detail may not show.",
+    why: "Use Types to spot loose jumps (red dashes) and thread cuts (red dots). Use Check before sending small lettering to the machine – orange circles are strokes too thin to sew cleanly: make the design bigger or choose fine 60 wt thread.",
   },
   variant: {
     t: "Compare versions",
@@ -561,9 +566,9 @@ const HELP = {
     why: "Load your machine's needles in this order. DST files do not store colours – the worksheet lists them too.",
   },
   export: {
-    t: "Download",
-    what: "Save the design for your embroidery machine or software.",
-    why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom.",
+    t: "Export",
+    what: "Save the design for your embroidery machine or software. The stitches are brought up to date first, so the files match what you see.",
+    why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom, which rebuilds editable objects from the stitches.",
     eg: "Tick the files you need, then press Download. One file downloads as it is; several come together in one .zip. Not sure? Keep DST and add the worksheet.",
   },
 };

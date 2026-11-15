@@ -90,6 +90,39 @@ def test_svg_workflow(svg_text):
     assert client.get(f"/api/projects/{pid}/export/dst").status_code == 200
 
 
+def test_overlapping_stitch_requests_compute_once(svg_text, monkeypatch):
+    """The editor updates its preview automatically, so stitch requests for one design can
+    overlap. They run one after the other: the second finds the plans in the cache."""
+    import threading
+    import time
+
+    from embroidery_app import service
+
+    pid = _upload("art.svg", svg_text.encode())["id"]
+    assert client.post(f"/api/projects/{pid}/extract", json={"options": {"width_mm": 120}}).status_code == 200
+    real, calls = service.plan_stitches, []
+
+    def slow_plan(design, params):
+        calls.append(params.optimize)
+        time.sleep(0.2)  # long enough for the second request to arrive while the first runs
+        return real(design, params)
+
+    monkeypatch.setattr(service, "plan_stitches", slow_plan)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(
+        client.post(f"/api/projects/{pid}/stitch", json={"params": {"fill_spacing_mm": 0.45}}))) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert [r.status_code for r in results] == [200, 200]
+    assert results[0].json()["stats"] == results[1].json()["stats"]
+    assert sorted(calls) == [False, True]  # optimised + original plan, computed once for both requests
+    # an export waits for the stitch run and uses the same plan
+    assert client.get(f"/api/projects/{pid}/export/dst").status_code == 200
+    assert len(calls) == 2
+
+
 def test_ai_file_via_pdf_compat():
     fitz = pytest.importorskip("pymupdf")
     doc = fitz.open()

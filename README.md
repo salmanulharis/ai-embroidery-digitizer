@@ -6,7 +6,7 @@ pull compensation, lock stitches, trims, and color changes. The primary output i
 WONYO (Dahao-controller) machines and Wilcom EmbroideryStudio.
 
 ```
-Upload ──► Extract & approve ──► Stitch & preview ──► Export
+Upload ──► Prepare shapes ─────► Stitch & preview ──► Export
  image     background removal     fill / satin / run     DST ★, EXP, U01, PES, JEF, VP3
  vector    color reduction        underlay, pull comp.   SVG (clean vector), PNG preview,
            vector shapes (mm)     trims, locks, order    production worksheet, ZIP
@@ -30,8 +30,25 @@ pytest                            # pipeline, exports, API, editing, AI (mocked)
 start; that account is created at startup and adds everyone else. See [Accounts](#accounts),
 [Plans, allowance and usage](#plans-allowance-and-usage) and [Privacy](#privacy-temporary-designs-and-what-is-stored).
 
-AI is optional. Open **⚙ AI settings** in the app to add your own key, or set server-wide keys in `.env`.
+AI is optional. Open **AI settings** in the app to add your own key, or set server-wide keys in `.env`.
 See [AI assistant](#ai-assistant).
+
+## The editor
+
+After the upload one editor opens: settings on the left (Size, Colours, Picture or Artwork, Stitches, Smart
+assistant), the preview in the middle, and Selection, Threads, Design info and Checks on the right. The bottom bar
+holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual size, approximate), the status and
+**Export**. Below 1200 px the right panel, and below 900 px the left one, open as sheets from the bottom bar.
+
+* **Shapes / Stitches**: the same design as shapes (select, edit outlines, draw guide and direction lines) or as
+  stitches. The selection is shared. **Original** shows the uploaded picture under either view, aligned in mm.
+* **The preview keeps itself up to date.** A changed setting prepares the design again (Size, Colours, Picture) or
+  creates the stitches again (Stitches, threads, shapes) a moment later, without covering the screen. Requests run
+  one at a time, and changes made meanwhile are sent together with the latest values. A design that takes over
+  ~3 s to stitch switches to **Update** in the bottom bar; *Auto-update* can also be turned off there.
+* **Export** opens a dialog: files grouped by use, a summary (size, hoop fit, stitches, time), checks and the
+  allowance note. It brings the stitches up to date first, so a download always matches the screen.
+
 
 ## Accounts
 
@@ -123,9 +140,9 @@ refines the result when configured.
 
 | Feature | Without AI (built-in) | With an AI service |
 |---|---|---|
-| **Suggest best settings** (step 2) | Measures the picture: background, colour count (k-means in LAB), noise level, thinnest line in mm at your size, photo vs. logo | A vision model judges the colour count, background and picture type. Measured values (noise, thin lines) stay from the built-in analysis |
+| **Suggest best settings** (Smart assistant) | Measures the picture: background, colour count (k-means in LAB), noise level, thinnest line in mm at your size, photo vs. logo | A vision model judges the colour count, background and picture type. Measured values (noise, thin lines) stay from the built-in analysis |
 | **Picture clean-up**: redraw / remove background / sharpen & enhance | Not needed. The built-in preparation already denoises and removes plain backgrounds | An image model edits the picture. You always compare it with the original and can switch back |
-| **Check my stitches** (step 3) | Rule-based checks: density, foundation, thread cuts, tiny or very thin shapes, satin width, size and time, with one-click setting changes | A vision model also reviews the rendered stitch preview against the artwork |
+| **Check my stitches** (Checks) | Rule-based checks: density, foundation, thread cuts, tiny or very thin shapes, satin width, size and time, with one-click setting changes | A vision model also reviews the rendered stitch preview against the artwork |
 
 **Providers:**
 - Google Gemini
@@ -200,14 +217,14 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    editor is sewn in its own colour with rows that thin out across it, and again in the second colour shaded the
    other way. At every point the two shares add up to one full fill (gap = row gap / share), so the colours mix
    evenly. Without a second colour it fades into the fabric. The second half is sewn in that colour's turn.
-0. **Photo stitch** (step 3, off by default), three styles. *Rows* (Wilcom: Photo Flash): one dark thread in rows that
+0. **Photo stitch** (stitch settings, off by default), three styles. *Rows* (Wilcom: Photo Flash): one dark thread in rows that
    zigzag as wide as the picture is dark (auto contrast). *Reef* (Wilcom: Reef PhotoStitch): one dark thread as a
    meander that never crosses itself, tight where dark and open where light. *Rows in every colour* (Wilcom: Color
    PhotoStitch): each thread colour sews rows as wide as it is present, with soft 2 mm edges where colours meet. The
    tones come from the shapes' colours, so extract a photo with several colours and remove its background.
 0. **Knockdown** (towel / fleece presets): an open two-layer fill sewn first under small details and narrow fills,
    2 mm beyond them, in its own colour for the operator to load in the fabric's colour.
-0. **Guide lines** (shape editor, step 2: "Draw guide line"): drag a line across a shape. *Guided satin* sews
+0. **Guide lines** (shape editor, Shapes view: "Draw guide line"): drag a line across a shape. *Guided satin* sews
    satin whose stitches cross that line at right angles from edge to edge (you decide how a curved satin turns -
    the practical form of Wilcom's column input / Ink/Stitch rails); *Florentine fill* makes every fill row a copy
    of the line, so the whole fill bends with it; *Carved fill* (Wilcom: user-defined split / carving stamp) puts the fill's
@@ -234,7 +251,7 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    stemstitch, sculpture run, zigzag border and E-stitch border. They are sewn along a line, or around a filled
    shape's outline and holes instead of filling it. Sharp corners stay needle points; spacing stays even on
    curves. Border width and gap are in the advanced settings (a stroked line of 1 mm or more keeps its width).
-0. **Fabric preset** (step 3, default "General" = the standard settings): choosing a fabric (woven, denim,
+0. **Fabric preset** (stitch settings, default "General" = the standard settings): choosing a fabric (woven, denim,
    T-shirt, piqué, fleece, towel, cap) fills in shrink compensation, thickness and foundation for it; every value
    stays editable. The worksheet names the backing and needle. Values are starting points: sew a test piece.
 0. **Per-shape settings**: click shapes in the design (or in the stitch preview) to give them their
@@ -251,7 +268,8 @@ pipeline is fast (≈1 s per design), free, offline and repeatable.
    * Satin that follows a curve (borders, strokes) always follows it.
    * Angles use the engine's y-down convention: 45° runs top-left → bottom-right.
    * Settings survive joining shapes (when pieces disagree, the largest piece wins and you're told).
-   * Settings also survive "Update preview": shapes are re-matched by overlap, even at a new width.
+   * Settings also survive preparing the design again (Size, Colours, Picture): shapes are re-matched by overlap,
+     even at a new width.
    * One-level **Undo** (Ctrl+Z) covers every design change.
 0. **One region per color**: all filled pieces of a color, such as merged shades, near-identical vector
    colors or overlapping same-color shapes, are joined into continuous regions. Only the hairline seams
@@ -340,7 +358,7 @@ embroidery_app/
   service.py          workflow orchestration, on-disk projects (data/projects/<id>)
   models.py           Design (vector, mm) · StitchParams · StitchPlan
   config.py           settings from env / .env
-  fabrics.py          fabric presets (step 3): fill in compensation, density, foundation; backing + needle on the worksheet
+  fabrics.py          fabric presets (stitch settings): fill in compensation, density, foundation; backing + needle on the worksheet
   colors.py, geometry.py
   ingest/
     __init__.py       file-type detection

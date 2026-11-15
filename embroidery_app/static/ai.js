@@ -212,7 +212,7 @@ const AI = (() => {
     document.dispatchEvent(new CustomEvent("ai-saved"));
   }
 
-  // ------------------------------------------------------------------ assistant (step 2)
+  // ------------------------------------------------------------------ assistant (settings panel)
   function refresh() {
     const vis = payload("vision"), edit = payload("edit");
     $("aiBadge").textContent = vis || edit ? prov((vis || edit).provider).label.split(" ")[0] : "Built-in";
@@ -292,7 +292,7 @@ const AI = (() => {
     await extract();
   }
 
-  // ------------------------------------------------------------------ stitch check (step 3)
+  // ------------------------------------------------------------------ stitch check (Checks, design panel)
   function onStitched() {
     $("aiReviewResult").innerHTML = "";
     refresh();

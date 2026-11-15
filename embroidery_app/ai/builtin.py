@@ -266,7 +266,7 @@ def _review_fabric(plan: StitchPlan, design: Design, params: StitchParams, stats
         if stats["height_mm"] > CAP_MAX_HEIGHT_MM:
             add("medium", "Design too tall for a cap",
                 f"The design is {stats['height_mm']:.0f} mm tall; most caps take about {CAP_MAX_HEIGHT_MM:.0f} mm on "
-                "the front panel. Make it smaller in step 2.")
+                "the front panel. Make it smaller in the Size settings.")
         if params.satin_max_width_mm > 7.0:
             add("low", "Wide satin on a cap", "Caps get rubbed: satin up to 7 mm wide holds up better.",
                 satin_max_width_mm=7.0)
@@ -369,7 +369,7 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
     if unguided:
         add("medium", "Guide line missing",
             f"{len(unguided)} shape(s) are set to guided satin or Florentine fill but have no guide line yet, so they "
-            "are sewn the usual way. Select them in step 2 and use “Draw guide line”.")
+            "are sewn the usual way. Select them and use “Draw guide line”.")
     if stats.get("stops"):
         add("low", "The machine stops for applique",
             f"The machine stops {stats['stops']} time(s) after the placement line: lay the fabric piece over it, "
@@ -377,7 +377,7 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
 
     if stats["colors"] > 10:
         add("low", "Many thread colours",
-            f"{stats['colors']} colours means many thread changes - consider merging similar shades in step 2.")
+            f"{stats['colors']} colours means many thread changes - consider merging similar shades in the Threads list.")
     if stats["stitches"] > 100_000:
         add("high", "Very high stitch count", "Consider a smaller design or a thinner fill.")
     if stats["est_minutes"] > 60:
