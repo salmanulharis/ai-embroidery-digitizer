@@ -18,7 +18,7 @@ yet: deploys run on version tags only.
 | 1 | One workspace: 3 panes, bottom bar, Shapes/Stitches, auto-update, export dialog, icons | **Done** | `2fdefb4` |
 | 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
 | 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
-| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | Planned | – |
+| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Batch A done** (objects list, shortcuts, stitch types, full screen, lazy original); B and C planned | – |
 | 5 | Future: thread catalogs, more formats, machine speed, theme toggle | Planned | – |
 
 Before the first release tag:
@@ -264,19 +264,19 @@ The smart analysis after upload stays the baseline; it may *suggest* a preset, n
 
 | Item | Spec | Notes |
 |---|---|---|
-| Objects list | Tab in Threads: every shape grouped by colour, keyboard navigable, selects on click (keyboard path to every shape – accessibility) | data: `Shapes.objects()` |
+| Objects list | Tab in Threads: every shape grouped by colour, keyboard navigable, selects on click (keyboard path to every shape – accessibility) | **Done**: "Shapes" tab, WAI-ARIA listbox (↑ ↓ Home End PgUp PgDn, Enter = only this, Space = add/remove, Ctrl+A, Ctrl/Shift+click), tab remembered |
 | Context menu | Right-click / long-press on a shape: Stitch style ▸, Direction ▸, Select same colour, Don't stitch, Reset | reuse shape-panel actions |
 | Floating selection toolbar | Next to the selection box: style, direction, thickness, don't stitch, "Details →"; repositions to stay on screen; hidden while panning | bounding box from `paths3` / SVG bbox |
 | Grid + rulers | mm rulers on two edges, grid 10 mm (1 mm when zoomed in); toggles in the overlay toolbar | exact (canvas works in 0.1 mm) |
 | Density view | Fifth preview mode: needle points per mm² on a grid, colour scale; exact counts, visual interpretation | client-side from ops |
-| Stitch type distribution | Design info: fill / satin / running / underlay / travel / tie counts (exact, from `kind`) | client-side |
+| Stitch type distribution | Design info: fill / satin / running / underlay / travel / tie counts (exact, from `kind`) | **Done** (follows Optimised / Original) |
 | Resizable / collapsible panels | Drag inner edge (240–420 px), `[` / `]` to collapse, remembered in localStorage, "Reset workspace" | keyboard-operable separators |
-| Full screen | Fullscreen API toggle (feature-detected) | |
-| Keyboard shortcuts | F fit, 1 = 100 %, 2 = 200 %, +/−, Space-drag pan (both views), S / A panes, O original, V B E L G tools, Enter = Update (manual mode), Ctrl+E export, ? sheet; only when focus is not in a field | |
+| Full screen | Fullscreen API toggle (feature-detected) | **Done** (whole app, so dialogs still show; headless browsers refuse it, so the smoke test checks the note) |
+| Keyboard shortcuts | F fit, 1 = 100 %, 2 = 200 %, +/−, Space-drag pan (both views), S / A panes, O original, V B E L G tools, Enter = Update (manual mode), Ctrl+E export, ? sheet; only when focus is not in a field | **Done**: each key presses its button (same code path); **S toggles** Shapes / Stitches (no second pane key); not in fields, dialogs, lists or tabs; ⌨ button + `?` list |
 | Merge similar colours | Server suggests pairs below a CIEDE2000 threshold; preview list; apply via existing merge (undoable) | new service fn + test |
 | Split before/after | Draggable split: original picture vs stitches, aligned via `reference_info` | reuse Original overlay |
 | 100 % calibration | Optional: match a card on screen, stored per browser | approximate otherwise |
-| Lazy `original_ops` | Send the original stitches only when Compare is opened (`GET …/stitch/original`) – halves the preview payload | API + test |
+| Lazy `original_ops` | Send the original stitches only when Compare is opened (`GET …/stitch/original`) – halves the preview payload | **Done**: `original_ref` ties the request to the stitches on screen (404 when stale); test logo 83 → 48 KB per update (−42 %) |
 
 ---
 
@@ -359,5 +359,6 @@ DATA_DIR=/tmp/smokedata SUPER_ADMIN_EMAIL=smoke@example.com SUPER_ADMIN_PASSWORD
 node tools/smoke/workspace.mjs ./smoke-out     # Phase 1: 45 checks, screenshots in ./smoke-out/shots
 node tools/smoke/controls.mjs  ./smoke-out     # Phase 2: 26 checks
 node tools/smoke/presets.mjs   ./smoke-out     # Phase 3: 39 checks
+node tools/smoke/extras.mjs    ./smoke-out     # Phase 4 batch A: 32 checks
 ```
 Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.

@@ -486,23 +486,116 @@ const Shapes = (() => {
   }
 
   // ------------------------------------------------------------------ keyboard-friendly list
+  // the shapes of every sewn colour, largest first (both lists show the same)
+  const listGroups = () => (state.design?.layers || []).filter((l) => l.enabled).map((l) => ({
+    layer: l, items: objects.filter((o) => o.layer === l.index).sort((a, b) => b.area_mm2 - a.area_mm2),
+  })).filter((g) => g.items.length);
+  const shapeText = (l, o, i) => `${l.name} ${i + 1} · ${o.kind === "line" ? "line" : `${o.area_mm2} mm²`} · ${o.enabled === false ? "not stitched" : methodLabel(o.method)}${o.effective_angle != null ? ` ${o.effective_angle}°` : ""}${o.spacing_mm != null ? ` · ${thicknessName(o.spacing_mm)}` : ""}${o.effective_bold ? " · bold" : ""}${isCustom(o) ? " · own settings" : ""}`;
+
   function buildList() {
+    buildObjList();
     const sl = $("shapePanel")?.querySelector(".sp-list select");
     if (!sl) return;
-    const groups = (state.design?.layers || []).filter((l) => l.enabled).map((l) => {
-      const items = objects.filter((o) => o.layer === l.index).sort((a, b) => b.area_mm2 - a.area_mm2);
-      if (!items.length) return "";
-      return `<optgroup label="${esc(l.name)}">${items.map((o, i) =>
-        `<option value="${o.id}">${esc(l.name)} ${i + 1} · ${o.kind === "line" ? "line" : `${o.area_mm2} mm²`} · ${o.enabled === false ? "not stitched" : methodLabel(o.method)}${o.effective_angle != null ? ` ${o.effective_angle}°` : ""}${o.spacing_mm != null ? ` · ${thicknessName(o.spacing_mm)}` : ""}${o.effective_bold ? " · bold" : ""}${isCustom(o) ? " · own settings" : ""}</option>`).join("")}</optgroup>`;
-    }).join("");
-    sl.innerHTML = groups;
+    sl.innerHTML = listGroups().map(({ layer: l, items }) =>
+      `<optgroup label="${esc(l.name)}">${items.map((o, i) => `<option value="${o.id}">${esc(shapeText(l, o, i))}</option>`).join("")}</optgroup>`).join("");
     sl.size = Math.min(8, Math.max(3, objects.length));
   }
 
   function syncList() {
+    syncObjList();
     const sl = $("shapePanel")?.querySelector(".sp-list select");
     if (!sl) return;
     for (const opt of sl.options) opt.selected = sel.has(opt.value);
+  }
+
+  // ------------------------------------------------------------------ objects list (Threads panel, "Shapes" tab)
+  // A listbox (WAI-ARIA): one tab stop, ↑ ↓ Home End move, Enter selects only that shape,
+  // Space adds or removes it, Ctrl+A selects all; a click selects, Ctrl / Shift + click adds.
+  let objOrder = [], objActive = -1;
+  function buildObjList() {
+    const box = $("objList");
+    if (!box) return;
+    const keep = objOrder[objActive];
+    objOrder = [];
+    const groups = listGroups();
+    box.innerHTML = groups.length ? groups.map(({ layer: l, items }) => {
+      const gid = `og-${l.index}`;
+      return `<div role="group" aria-labelledby="${gid}"><div class="og-head" id="${gid}"><i style="background:${l.hex}" aria-hidden="true"></i>${esc(l.name)} · ${items.length}</div>` +
+        items.map((o, i) => {
+          const n = objOrder.push(o.id) - 1;
+          return `<div role="option" id="objopt-${n}" data-n="${n}" aria-selected="false">${esc(shapeText(l, o, i))}</div>`;
+        }).join("") + "</div>";
+    }).join("") : '<div class="empty">No shapes yet.</div>';
+    $("objCount").textContent = objOrder.length ? `(${objOrder.length})` : "";
+    objActive = keep ? objOrder.indexOf(keep) : -1;
+    syncObjList();
+  }
+  function syncObjList() {
+    const box = $("objList");
+    if (!box) return;
+    box.querySelectorAll("[role=option]").forEach((e) => e.setAttribute("aria-selected", sel.has(objOrder[+e.dataset.n])));
+    if (!(objActive >= 0 && objActive < objOrder.length)) objActive = -1;
+    setActive(objActive, false);
+  }
+  function setActive(n, scroll = true) {
+    const box = $("objList");
+    box.querySelector("[role=option].active")?.classList.remove("active");
+    objActive = n;
+    const e = n >= 0 ? $(`objopt-${n}`) : null;
+    if (e) {
+      e.classList.add("active");
+      box.setAttribute("aria-activedescendant", e.id);
+      if (scroll) e.scrollIntoView({ block: "nearest" });
+    } else box.removeAttribute("aria-activedescendant");
+  }
+  function bindObjList() {
+    const box = $("objList"), tabs = [$("tabThreads"), $("tabShapes")];
+    if (!box) return;
+    const showTab = (shapes, focus = false) => {
+      tabs.forEach((t, i) => {
+        const on = (i === 1) === shapes;
+        t.setAttribute("aria-selected", on);
+        t.classList.toggle("on", on);
+        t.tabIndex = on ? 0 : -1;
+      });
+      $("layers").hidden = shapes;
+      $("objPanel").hidden = !shapes;
+      try { localStorage.setItem("thrTab", shapes ? "shapes" : "threads"); } catch (_) {}
+      if (focus) tabs[shapes ? 1 : 0].focus();
+    };
+    tabs.forEach((t, i) => {
+      t.onclick = () => showTab(i === 1);
+      t.addEventListener("keydown", (ev) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(ev.key)) return;
+        ev.preventDefault();
+        showTab(ev.key === "Home" ? false : ev.key === "End" ? true : i === 0, true);
+      });
+    });
+    let saved = "threads";
+    try { saved = localStorage.getItem("thrTab") || "threads"; } catch (_) {}
+    showTab(saved === "shapes");
+
+    box.addEventListener("click", (ev) => {
+      const e = ev.target.closest("[role=option]");
+      if (!e) return;
+      const n = +e.dataset.n;
+      setActive(n);
+      select([objOrder[n]], ev.ctrlKey || ev.metaKey || ev.shiftKey);
+    });
+    box.addEventListener("focus", () => {
+      if (objActive < 0 && objOrder.length) setActive(Math.max(0, objOrder.findIndex((id) => sel.has(id))));
+    });
+    box.addEventListener("keydown", (ev) => {
+      if (!objOrder.length) return;
+      const last = objOrder.length - 1, cur = Math.max(0, objActive);
+      const moveTo = { ArrowDown: Math.min(last, objActive + 1), ArrowUp: Math.max(0, cur - 1), Home: 0, End: last,
+        PageDown: Math.min(last, cur + 10), PageUp: Math.max(0, cur - 10) }[ev.key];
+      if (moveTo !== undefined) { ev.preventDefault(); setActive(moveTo); return; }
+      if ((ev.key === "a" || ev.key === "A") && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); select(objOrder); return; }
+      if (objActive < 0) return;
+      if (ev.key === "Enter") { ev.preventDefault(); select([objOrder[objActive]]); }
+      else if (ev.key === " ") { ev.preventDefault(); select([objOrder[objActive]], true); }
+    });
   }
 
   // ------------------------------------------------------------------ shapes view: view box, zoom, overlays
@@ -958,6 +1051,7 @@ const Shapes = (() => {
       if (img) img.setAttribute("opacity", $("refOpacity").value / 100);
       draw();
     });
+    bindObjList();
     $("editBar").addEventListener("click", onEditBar);
     $("editBar").addEventListener("input", onEditBar);
     document.addEventListener("keydown", (ev) => { if (ev.code === "Space" && !ev.target.matches("input, select, textarea, button")) { spaceDown = true; if (edit.on) ev.preventDefault(); } });

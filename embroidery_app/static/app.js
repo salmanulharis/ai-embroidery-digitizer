@@ -1275,7 +1275,7 @@ function applyPreview(prev) {
   Shapes.setStitchShapes(prev.shapes);
   Shapes.setObjects(prev.objects); // stitch style and direction as they were really sewn
   updateStyleParams();
-  const canCompare = !!(prev.comparison && !prev.comparison.reverted && prev.original_ops);
+  const canCompare = !!(prev.comparison && !prev.comparison.reverted && (prev.original_ops || prev.original_ref));
   $("variant").classList.toggle("hidden", !canCompare);
   $("variantHelp")?.classList.toggle("hidden", !canCompare);
   setVariant(canCompare ? state.variant : "optimized", false);
@@ -1298,7 +1298,30 @@ function resetScrub() {
   $("scrub").value = state.upto;
 }
 
+// The stitches before smart reduction are loaded only when the user compares (they would
+// double every preview); the ref ties them to the stitches on screen.
+async function loadOriginal(prev) {
+  if (prev.original_ops) return true;
+  const btn = document.querySelector('#variant [data-variant="original"]');
+  btn?.setAttribute("aria-busy", "true");
+  try {
+    const r = await api(`/api/projects/${state.project.id}/stitch/original?ref=${encodeURIComponent(prev.original_ref)}`);
+    prev.original_ops = r.ops;
+    return true;
+  } catch (e) {
+    if (e.status !== 404 && state.preview === prev) toast(`The original stitches could not be loaded: ${e.message}`);
+    return false; // 404: newer stitches are on their way
+  } finally {
+    btn?.removeAttribute("aria-busy");
+  }
+}
+
 function setVariant(v, redraw = true) {
+  const prev = state.preview;
+  if (v === "original" && prev && !prev.original_ops && prev.original_ref) {
+    loadOriginal(prev).then((ok) => { if (ok && state.preview === prev) setVariant("original"); });
+    v = "optimized"; // until they are here
+  }
   state.variant = v;
   document.querySelectorAll("#variant button").forEach((b) => {
     const on = b.dataset.variant === v;
@@ -1337,6 +1360,23 @@ function renderOptimizeInfo() {
     `Use <i>Optimised</i> / <i>Original</i> in the bottom bar to compare.</span>`;
 }
 
+// Design info: how the needle stitches split by type (exact counts from the ops' kind codes).
+const KIND_LABELS = { fill: "Fill", satin: "Satin", running: "Running (outlines, details)", underlay: "Foundation (underlay)",
+  travel: "Travel (hidden moves)", tie: "Lock stitches" };
+function renderKinds() {
+  const ops = activeOps(), kinds = state.preview.kinds || [];
+  const n = new Array(kinds.length).fill(0);
+  let total = 0;
+  for (let i = 0; i < ops.length; i += 4) if (ops[i] === 0) { n[ops[i + 3]] = (n[ops[i + 3]] || 0) + 1; total++; }
+  const rows = kinds.map((k, i) => [k, n[i] || 0]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+  $("kindTitle").classList.toggle("hidden", !total);
+  $("kindStats").innerHTML = rows.map(([k, c]) => {
+    const pct = (100 * c) / total;
+    return `<div class="k-row"><span>${esc(KIND_LABELS[k] || "Other")}</span><b>${c.toLocaleString()}</b><span class="pct">${pct < 1 ? "<1" : Math.round(pct)}%</span>
+      <span class="k-bar" aria-hidden="true"><span style="width:${pct.toFixed(1)}%"></span></span></div>`;
+  }).join("");
+}
+
 const shownStats = () => {
   const c = state.preview.comparison;
   return c && !c.reverted ? (state.variant === "original" ? c.original : c.optimized) : state.preview.stats;
@@ -1350,6 +1390,7 @@ function renderStats() {
   ];
   $("statsEmpty").classList.add("hidden");
   $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
+  renderKinds();
   const warnings = [...state.preview.warnings];
   const hf = hoopFit(s.width_mm, s.height_mm);
   if (hf && !hf.fits && !hf.turned) warnings.push(`The design (${s.width_mm} × ${s.height_mm} mm) is larger than the ${hf.hoop.name} hoop. Choose a smaller width or a bigger hoop.`);
@@ -1444,7 +1485,85 @@ function bindEditor() {
   $("btnZoomIn").onclick = () => zoomBy(1.25);
   $("btnZoomOut").onclick = () => zoomBy(1 / 1.25);
   $("zoomPct").onclick = () => zoomTo(ACTUAL_PX_PER_MM);
+  bindFullscreen();
+  bindShortcuts();
   Export.init();
+}
+
+// Full screen (where the browser allows it): the whole app, so dialogs and notes still show.
+function bindFullscreen() {
+  const b = $("btnFullscreen"), root = document.documentElement;
+  if (!(document.fullscreenEnabled && root.requestFullscreen)) return; // the button stays hidden
+  b.classList.remove("hidden");
+  const sync = () => {
+    const on = !!document.fullscreenElement;
+    b.setAttribute("aria-pressed", on);
+    b.title = on ? "Leave full screen" : "Full screen";
+    b.setAttribute("aria-label", b.title);
+    b.querySelector("use").setAttribute("href", on ? "#i-fullscreen-exit" : "#i-fullscreen");
+  };
+  b.onclick = () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen())
+    .catch((e) => toast(`Full screen is not available here: ${e.message}`, true));
+  document.addEventListener("fullscreenchange", sync);
+  sync();
+}
+
+// Keyboard shortcuts of the editor. Each one presses the button it stands for, so it does
+// exactly what a click does. Never while typing in a field or with a dialog open.
+const SHORTCUTS = [
+  ["View", [["F", "Fit the design to the view"], ["1", "Actual size (100 %)"], ["2", "200 %"], ["+ / −", "Zoom in / out"],
+    ["Space + drag", "Move the view (in Stitches a plain drag works too)"], ["S", "Switch between Shapes and Stitches"],
+    ["O", "Show or hide the original picture"]]],
+  ["Editing a shape (Selection → Edit shape)", [["V", "Move and select"], ["B", "Paint area on"], ["E", "Erase area"],
+    ["L / Shift+L", "Lasso: add / cut away"], ["G", "Draw a guide line on the selected shape"], ["Esc", "Cancel or finish"]]],
+  ["Design", [["Ctrl+Z / Ctrl+Y", "Undo / redo"], ["Enter", "Update the preview (when Auto-update is off)"],
+    ["Ctrl+E", "Export"], ["?", "This list"]]],
+];
+function openShortcuts() {
+  // "Ctrl+Z / Ctrl+Y" -> keys joined by +, alternatives by /; "Space + drag" -> key + word
+  const key = (k) => k.split(" / ").map((alt) => {
+    if (alt.includes(" + ")) { const [a, b] = alt.split(" + "); return `<kbd>${esc(a)}</kbd> + ${esc(b)}`; }
+    return (alt === "+" ? ["+"] : alt.split("+")).map((part) => `<kbd>${esc(part)}</kbd>`).join("+");
+  }).join(" / ");
+  $("keysTable").innerHTML = SHORTCUTS.map(([title, rows]) => `<tr><th colspan="2" scope="colgroup">${esc(title)}</th></tr>` +
+    rows.map(([k, what]) => `<tr><td>${key(k)}</td><td>${esc(what)}</td></tr>`).join("")).join("");
+  $("keysDialog").showModal();
+}
+function bindShortcuts() {
+  $("btnKeys").onclick = openShortcuts;
+  const press = (el) => { if (el && !el.disabled && !el.closest(".hidden, [hidden]")) { el.click(); return true; } return false; };
+  document.addEventListener("keydown", (ev) => {
+    if (ev.defaultPrevented || ev.altKey || !state.project || currentPage !== "editor" || document.querySelector("dialog[open]")
+      || document.body.matches(".view-account, .view-admin, .signed-out")) return;
+    const t = ev.target;
+    if (t.matches?.("input, select, textarea, [contenteditable], [contenteditable] *")) return;
+    const mod = ev.ctrlKey || ev.metaKey, k = ev.key;
+    if (mod) {
+      if (k.toLowerCase() === "e" && !ev.shiftKey) { ev.preventDefault(); press($("btnExport")); }
+      return; // Ctrl+Z / Ctrl+Y have their own handler
+    }
+    // keys that buttons, lists and tabs use themselves
+    if ((k === "Enter" || k === " ") && t.matches?.("button, a, summary, [role=listbox], [role=listbox] *, [role=tab]")) return;
+    const lower = k.length === 1 ? k.toLowerCase() : k;
+    const tool = (name) => press(document.querySelector(`#editBar [data-tool="${name}"]`));
+    const done = {
+      f: () => press($("btnFit")),
+      1: () => zoomTo(ACTUAL_PX_PER_MM),
+      2: () => zoomTo(2 * ACTUAL_PX_PER_MM),
+      "+": () => zoomBy(1.25), "=": () => zoomBy(1.25),
+      "-": () => zoomBy(1 / 1.25), _: () => zoomBy(1 / 1.25),
+      s: () => setPane(state.pane === "stitches" ? "shapes" : "stitches", { user: true }),
+      o: () => press($("showRef")),
+      v: () => tool("move"), b: () => tool("add"), e: () => tool("erase"),
+      l: () => tool(ev.shiftKey ? "lasso-erase" : "lasso-add"),
+      g: () => press($("shapePanel").querySelector('[data-action="guide"]')),
+      Enter: () => press($("btnUpdate")),
+      "?": () => (openShortcuts(), true),
+    }[lower];
+    if (!done) return;
+    if (ev.shiftKey && !["?", "+", "_", "l"].includes(lower)) return;
+    if (done() !== false) ev.preventDefault();
+  });
 }
 
 // Zoom: 100% = actual size, assuming the usual 96 screen pixels per inch (screens differ).

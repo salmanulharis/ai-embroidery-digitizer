@@ -40,6 +40,9 @@
     <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M8.5 11h5M11 8.5v5"/></symbol>
     <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5M8.5 11h5"/></symbol>
     <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M4 4l6 6M20 4l-6 6M20 20l-6-6M4 20l6-6"/></symbol>
+    <symbol id="i-fullscreen-exit" viewBox="0 0 24 24"><path d="M10 4v6H4M14 4v6h6M14 20v-6h6M10 20v-6H4"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><path d="M3 7h18v10H3zM7 10h.01M11 10h.01M15 10h.01M7 13.5h.01M17 10h.01M9 14h6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9.5 5.5 12 3l2.5 2.5M9.5 18.5 12 21l2.5-2.5M5.5 9.5 3 12l2.5 2.5M18.5 9.5 21 12l-2.5 2.5"/></symbol>
@@ -270,12 +273,22 @@
         </section>
         <section class="ed-group" aria-labelledby="thrTitle">
           <h3 id="thrTitle">Threads <span class="muted small">sewn from top to bottom</span> <i data-help="layers_drag"></i></h3>
-          <div id="layers" class="threads"></div>
+          <div class="seg thr-tabs" role="tablist" aria-label="Show threads or every shape">
+            <button type="button" role="tab" id="tabThreads" aria-selected="true" aria-controls="layers" class="on">Threads</button>
+            <button type="button" role="tab" id="tabShapes" aria-selected="false" aria-controls="objPanel" tabindex="-1">Shapes <span class="muted" id="objCount"></span></button>
+          </div>
+          <div id="layers" class="threads" role="tabpanel" aria-labelledby="tabThreads"></div>
+          <div id="objPanel" class="objpanel" role="tabpanel" aria-labelledby="tabShapes" hidden>
+            <p class="small muted" id="objHint">Every shape by thread colour. Click to select (Ctrl / Shift: add); with the keyboard: ↑ ↓ move, Enter selects, Space adds or removes. <i data-help="objects_list"></i></p>
+            <div id="objList" class="objlist" role="listbox" aria-multiselectable="true" aria-label="Shapes in the design" aria-describedby="objHint" tabindex="0"></div>
+          </div>
         </section>
         <section class="ed-group" aria-labelledby="infoTitle">
           <h3 id="infoTitle">Design info</h3>
           <p class="small muted" id="statsEmpty">Figures appear when the stitches are ready.</p>
           <div id="stats" class="stats"></div>
+          <h4 id="kindTitle" class="sub hidden">Stitch types <i data-help="stats_kinds"></i></h4>
+          <div id="kindStats" class="kinds"></div>
           <div id="optimizeInfo" class="optinfo hidden" aria-live="polite"></div>
           <h4 id="sequenceTitle" class="sub hidden">Thread order <i data-help="sequence"></i></h4>
           <div id="sequence" class="sequence"></div>
@@ -325,7 +338,9 @@
         <button type="button" class="ghost ib" id="btnZoomOut" title="Zoom out" aria-label="Zoom out"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
         <button type="button" class="ghost small ed-pct" id="zoomPct" title="Show at actual size (approximate: screens differ)">100%</button>
         <button type="button" class="ghost ib" id="btnZoomIn" title="Zoom in" aria-label="Zoom in"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
-        <button type="button" class="ghost ib" id="btnFit" title="Fit to view" aria-label="Fit design to view"><svg class="ic" aria-hidden="true"><use href="#i-fit"/></svg></button>
+        <button type="button" class="ghost ib" id="btnFit" title="Fit to view (F)" aria-label="Fit design to view"><svg class="ic" aria-hidden="true"><use href="#i-fit"/></svg></button>
+        <button type="button" class="ghost ib hidden" id="btnFullscreen" title="Full screen" aria-label="Full screen" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-fullscreen"/></svg></button>
+        <button type="button" class="ghost ib ed-keys" id="btnKeys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg></button>
       </div>
       <div class="ed-grp ed-status">
         <span class="ed-dot" id="edDot" aria-hidden="true"></span>
@@ -553,6 +568,18 @@
       <button type="button" class="primary" id="btnDownload">Download</button>
     </div>
   </div>
+</dialog>
+
+<dialog id="keysDialog" class="form-dialog" aria-labelledby="keysTitle">
+  <form method="dialog" class="ai-dialog">
+    <div class="row between">
+      <h2 id="keysTitle">Keyboard shortcuts</h2>
+      <button type="submit" class="ghost" aria-label="Close">&times;</button>
+    </div>
+    <p class="small muted">They work in the editor while you are not typing in a field.</p>
+    <table class="keys" id="keysTable"></table>
+    <div class="row end"><button type="submit" class="primary">OK</button></div>
+  </form>
 </dialog>
 
 <dialog id="presetDialog" class="form-dialog" aria-labelledby="presetDialogTitle">

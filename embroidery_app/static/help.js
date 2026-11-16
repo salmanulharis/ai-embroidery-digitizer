@@ -68,6 +68,17 @@ const HELP = {
     why: "You always see what you changed, and can go back without remembering the old values. Resetting can be undone like any other change.",
     eg: "The starting values are the app's stitch defaults and the picture settings found right after the upload.",
   },
+  objects_list: {
+    t: "Shapes list",
+    what: "Every shape of the design, grouped by thread colour, with its size, stitch style and direction. Selecting here is the same as clicking the shape in the preview.",
+    why: "Small or hidden shapes are easy to find, and every shape can be reached with the keyboard alone.",
+    eg: "Press ↓ to move through the shapes and Enter to select one; Space adds it to (or removes it from) the selection.",
+  },
+  stats_kinds: {
+    t: "Stitch types",
+    what: "How the stitches of the design are split: fill, satin, outlines, foundation (underlay), hidden travel moves and lock stitches.",
+    why: "Shows where the stitches go. A large foundation or travel share often means settings or the sewing order can be improved.",
+  },
   presets: {
     t: "Presets",
     what: "A preset fills in a set of settings at once – stitch density, fabric and thread, picture clean-up – for a kind of design. Choose one and press Apply; every value stays editable afterwards.",

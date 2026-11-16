@@ -345,6 +345,13 @@ def stitch(pid: str, body: StitchBody, user: dict = Depends(auth.require_user)):
     return service.stitch(pid, body.params)
 
 
+@protected.get("/api/projects/{pid}/stitch/original")
+def stitch_original(pid: str, ref: str = ""):
+    """The stitches before smart reduction, for Optimised / Original (loaded on demand);
+    ``ref`` is the ``original_ref`` of the stitch run shown (404 when out of date)."""
+    return service.original_ops(pid, ref)
+
+
 # downloads that are a generation (svg = artwork only); "wilcom" = the package for continuing
 # in Wilcom (DST + artwork, see service.wilcom_package): its machine file is DST, so it needs no
 # "all_formats", and it is one download, so it needs no "zip_export"

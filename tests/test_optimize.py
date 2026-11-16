@@ -146,14 +146,24 @@ def test_api_returns_comparison_and_exports_optimised_version():
     c = r["comparison"]
     assert c["saved_stitches"] == c["original"]["stitches"] - c["optimized"]["stitches"] > 0
     assert r["stats"]["stitches"] == c["optimized"]["stitches"]
-    assert len(r["original_ops"]) // 4 > len(r["ops"]) // 4
+    assert "original_ops" not in r and r["original_ref"]  # loaded only when the user compares
+    o = client.get(f"/api/projects/{pid}/stitch/original", params={"ref": r["original_ref"]})
+    assert o.status_code == 200, o.text
+    assert len(o.json()["ops"]) // 4 > len(r["ops"]) // 4 and len(o.json()["ops"]) % 4 == 0
     assert c["coverage_change_pct"] <= opt.MAX_COVERAGE_LOSS_PCT
     text = client.get(f"/api/projects/{pid}/export/txt").text
     assert f"Stitches: {c['optimized']['stitches']:,}" in text  # downloads use the optimised stitches
 
-    r = client.post(f"/api/projects/{pid}/stitch", json={"params": {"optimize": False}}).json()
-    assert "comparison" not in r and "original_ops" not in r
-    assert r["stats"]["stitches"] == c["original"]["stitches"]
+    r2 = client.post(f"/api/projects/{pid}/stitch", json={"params": {"optimize": False}}).json()
+    assert "comparison" not in r2 and "original_ref" not in r2
+    assert r2["stats"]["stitches"] == c["original"]["stitches"]
+    # the earlier run's original is out of date now, also after the same settings with other values
+    assert client.get(f"/api/projects/{pid}/stitch/original", params={"ref": r["original_ref"]}).status_code == 404
+    r3 = client.post(f"/api/projects/{pid}/stitch", json={"params": {"optimize": True, "fill_spacing_mm": 0.5}}).json()
+    assert r3["original_ref"] != r["original_ref"]
+    assert client.get(f"/api/projects/{pid}/stitch/original", params={"ref": r["original_ref"]}).status_code == 404
+    assert client.get(f"/api/projects/{pid}/stitch/original", params={"ref": r3["original_ref"]}).status_code == 200
+    assert client.get(f"/api/projects/{pid}/stitch/original").status_code == 404
 
 
 def test_api_falls_back_to_original_if_the_design_would_change(monkeypatch):

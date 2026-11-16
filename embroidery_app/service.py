@@ -825,7 +825,10 @@ def _stitch(pid: str, params: dict) -> dict:
     preview["objects"] = describe_objects(design, p)  # stitch style / direction per shape with these settings
     if comparison is not None:
         preview["comparison"] = comparison
-        preview["original_ops"] = plan_preview_json(original)["ops"] if original is not plan else preview["ops"]
+        if not comparison.get("reverted"):
+            # the unreduced stitches are fetched only when the user compares (original_ops):
+            # this halves the preview; the ref ties that request to exactly these stitches
+            preview["original_ref"] = _original_ref(design, p)
     stats = preview["stats"]
     warnings = []
     if stats["stitches"] > 100_000:
@@ -842,6 +845,21 @@ def _stitch(pid: str, params: dict) -> dict:
         warnings.append("Some very small shapes are set to dense stitching - this can pile up thread and cause thread breaks.")
     preview["warnings"] = warnings
     return preview
+
+
+def _original_ref(design: Design, params: StitchParams) -> str:
+    return _plan_key(design, replace(params, optimize=False))[:20]
+
+
+def original_ops(pid: str, ref: str) -> dict:
+    """The unreduced stitches of the last stitch run (Optimised / Original in the editor), as
+    preview ops. ``ref`` comes with that run; a newer run makes it stale (LookupError)."""
+    with _project_lock(pid):
+        params = StitchParams.from_dict(_meta(pid).get("stitch_params"))
+        design = load_design(pid)
+        if not params.optimize or not ref or _original_ref(design, params) != ref:
+            raise LookupError("The stitches have changed since then. Compare again.")
+        return {"ops": plan_preview_json(get_plan(pid, replace(params, optimize=False)))["ops"]}
 
 
 def _dense_on_tiny_shapes(design: Design) -> bool:

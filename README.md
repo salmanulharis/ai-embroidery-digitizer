@@ -48,6 +48,11 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
   ~3 s to stitch switches to **Update** in the bottom bar; *Auto-update* can also be turned off there.
 * **Export** opens a dialog: files grouped by use, a summary (size, hoop fit, stitches, time), checks and the
   allowance note. It brings the stitches up to date first, so a download always matches the screen.
+* **Shapes list** (Threads panel → *Shapes*): every shape by thread colour with size, style and direction; select
+  with a click or the keyboard (↑ ↓, Enter, Space) – a keyboard path to every shape.
+* **Keyboard shortcuts** (⌨ in the bottom bar or `?`): F fit, 1 / 2 = 100 / 200 %, + / − zoom, S Shapes / Stitches,
+  O original picture, V B E L G editing tools, Enter update, Ctrl+E export. **Full screen** where the browser allows it.
+* **Design info** splits the stitches by type (fill, satin, running, foundation, travel, lock stitches).
 * **Undo / redo** cover everything in the order it happened: shape edits, threads, merging, Size / Colours /
   Picture settings (undoing one puts back the design and the setting) and the stitch settings.
 * **Changed settings** are marked against what the design started with (the stitch defaults and the picture
@@ -474,7 +479,8 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | PUT | `/api/projects/{id}/objects` | per-shape settings `{ids, scope: selected\|colour\|all, stitch_type, angle, enabled, spacing_mm, pull_mm, bold}`. `"inherit"` = same as colour or design |
 | POST | `/api/projects/{id}/objects/reset` | `{ids}` back to colour settings (empty = all shapes) |
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |
-| POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn |
+| POST | `/api/projects/{id}/stitch` | `{params:{fill_spacing_mm, underlay, smart_direction, …}}` → preview data + stats, and each shape's stitch style and direction as sewn; with smart reduction also `comparison` + `original_ref` |
+| GET | `/api/projects/{id}/stitch/original?ref=…` | the stitches before smart reduction for that `original_ref` (Optimised / Original, loaded on demand; 404 when the stitches changed since) |
 | GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip wilcom`. `wilcom`: the package for continuing in Wilcom (DST + EPS/SVG artwork + worksheet + how-to, a download of its own). For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet). The first stitch-output download of a design counts against the allowance (403 `quota_exceeded` / `feature_unavailable` with an explanation) |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
