@@ -14,7 +14,7 @@ yet: deploys run on version tags only.
 
 | Phase | Content | Status | Commit |
 |---|---|---|---|
-| 0 | Safety net + foundations: request queue, canvas renderer, server lock | **Done** (browser tests in CI still open, see §8) | `2fdefb4` |
+| 0 | Safety net + foundations: request queue, canvas renderer, server lock | **Done** (browser tests run before every release, §8) | `2fdefb4` |
 | 1 | One workspace: 3 panes, bottom bar, Shapes/Stitches, auto-update, export dialog, icons | **Done** | `2fdefb4` |
 | 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
 | 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
@@ -24,7 +24,8 @@ yet: deploys run on version tags only.
 Before the first release tag:
 1. Click through on a real design (desktop, tablet, phone).
 2. Have someone with Wilcom EmbroideryStudio open a "Continue in Wilcom" ZIP (checklist in §7.4).
-3. `python -m pytest -q -W error::DeprecationWarning` and the three smoke tests (§9) green.
+3. `python -m pytest -q -W error::DeprecationWarning` and the smoke tests (`python tools/smoke/run_all.py`, §9) green -
+   the release pipeline runs both and does not deploy otherwise.
 4. A physical sew-out of every built-in preset (§4.8) before calling the presets production values.
 
 ---
@@ -345,13 +346,16 @@ github.com/EmbroidePy/pyembroidery, inkstitch.org/docs/file-formats.
 
 ## 8. Open items and risks
 
-- **Browser tests in CI**: only the manual smoke scripts exist (§9). Proposal: `pytest-playwright` as a
-  CI-only dependency (needs approval; Chromium download in CI).
+- **Browser tests in CI**: done without a new dependency - `.github/workflows/browser-tests.yml` runs
+  `tools/smoke/run_all.py` (the runner's Chrome, Node 22) before every release (`deploy.yml` needs it) and on
+  demand (Actions > Browser tests > Run workflow); logs + screenshots are kept as an artifact for 7 days.
 - **Server load**: auto-update multiplies stitch runs (two plans each with optimisation). Watch EC2 CPU after
-  release; an admin switch to disable auto-update globally would be the fallback.
+  release; the fallback exists: **Admin > Settings > Server load > Update the stitch preview automatically**
+  (off = every editor uses the Update button; editors opened afterwards follow it).
 - **History vs server**: if a design change reaches the server but the reply is lost, the client timeline
   misses one step; `History` falls back to the server's undo stack and drops steps the server no longer has.
-- **AI tasks** still use the blocking overlay (explicit, long, rare) – fine, but could move to inline progress.
+- **AI tasks** keep the blocking overlay on purpose: clean-up replaces the picture (edits meanwhile would be
+  lost), advice and the stitch check describe the design as it was when asked.
 - **100 % zoom** is approximate (96 px/inch) until the user calibrates it (per browser and screen); the tooltip says which.
 - **Static caching**: scripts are revalidated every load; if a CDN is added later, use versioned file names.
 
@@ -374,6 +378,6 @@ node tools/smoke/presets.mjs   ./smoke-out     # Phase 3: 39 checks
 node tools/smoke/extras.mjs    ./smoke-out     # Phase 4 batch A: 33 checks
 node tools/smoke/batchb.mjs    ./smoke-out     # Phase 4 batch B: 39 checks
 node tools/smoke/batchc.mjs    ./smoke-out     # Phase 4 batch C: 28 checks
-node tools/smoke/phase5.mjs    ./smoke-out     # Phase 5: 20 checks (server with THREAD_CHARTS_DIR, see tools/smoke/README.md)
+node tools/smoke/phase5.mjs    ./smoke-out     # Phase 5: 26 checks (server with THREAD_CHARTS_DIR, see tools/smoke/README.md)
 ```
 Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.

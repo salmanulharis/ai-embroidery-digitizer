@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, entitlements, maintenance, presets, service, temp_projects, threads, usage, user_ai
+from . import app_settings, auth, entitlements, maintenance, presets, service, temp_projects, threads, usage, user_ai
 from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
@@ -225,6 +225,7 @@ def get_config():
         "thread_charts": threads.catalog(),  # brand charts in THREAD_CHARTS_DIR (none bundled)
         "density": {"cell_mm": DENSITY_CELL_MM, "limit": DENSITY_LIMIT},  # the machine check's "too dense"
         "similar": {"min": service.SIMILAR_RANGE[0], "max": service.SIMILAR_RANGE[1], "default": service.SIMILAR_DEFAULT},
+        "auto_update": app_settings.get("auto_update") == 1,  # Admin > Settings: off = the Update button only
         "session_days": auth.session_choices()[-1],  # longest "keep me signed in"
         "session_choices": auth.session_choices(),  # 0 = this browser session
     }

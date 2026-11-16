@@ -32,9 +32,13 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m pytest -q -W error::DeprecationWarning
 
+  browser:
+    name: Browser tests
+    uses: ./.github/workflows/browser-tests.yml
+
   deploy:
     name: Deploy to EC2
-    needs: test
+    needs: [test, browser]
     runs-on: ubuntu-24.04
     environment:
       name: production

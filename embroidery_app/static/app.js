@@ -256,6 +256,7 @@ async function init() {
   Split.init();
   Calibration.init();
   Theme.init();
+  Jobs.allow(state.config.auto_update !== false);
   bindCanvas();
   await Auth.start(state.config); // the sign-in screen until someone is signed in
   document.body.classList.remove("booting", "signed-out");
@@ -1085,10 +1086,10 @@ const SLOW_STITCH_MS = 3000;
 const Jobs = (() => {
   let timer = null, wantExtract = false, wantStitch = false, loop = null, waiters = [];
   let stale = false, error = "", report = null, slow = false;
-  let auto = true;
+  let auto = true, allowed = true; // allowed: the administrator's switch (Admin > Settings, /api/config)
   try { auto = localStorage.getItem("autoUpdate") !== "0"; } catch (_) {}
 
-  const autoOn = () => auto && !slow;
+  const autoOn = () => auto && !slow && allowed;
   const pending = () => !!(timer || loop || wantExtract || wantStitch);
 
   function settle() {
@@ -1202,14 +1203,23 @@ const Jobs = (() => {
     settle();
   }
   function setAuto(on) {
+    if (!allowed) return;
     auto = on;
     try { localStorage.setItem("autoUpdate", on ? "1" : "0"); } catch (_) {}
     if (on) slow = false;
     if (on && stale) stitch({ delay: 0 });
     renderStatus();
   }
+  /** The administrator turned automatic updates off for everyone: the Update button only. */
+  function allow(on) {
+    allowed = !!on;
+    const box = $("autoUpdate");
+    box.disabled = !allowed;
+    box.closest("label").title = allowed ? "" : "Turned off by the administrator to save server load - use Update.";
+    renderStatus();
+  }
   return {
-    extract, stitch, flush, idle, reset, setAuto, pending,
+    extract, stitch, flush, idle, reset, setAuto, allow, pending,
     stale: () => stale, error: () => error, auto: () => autoOn(), working: () => !!loop,
   };
 })();

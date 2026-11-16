@@ -119,7 +119,7 @@ const HELP = {
   auto_update: {
     t: "Auto-update",
     what: "The preview updates by itself a moment after you change a setting or the design. The bottom bar shows when it is working and when it is up to date.",
-    why: "You see the effect of every change without pressing a button. Turn it off to make several changes first, then press Update. Designs that take a few seconds to stitch switch to Update by themselves.",
+    why: "You see the effect of every change without pressing a button. Turn it off to make several changes first, then press Update. Designs that take a few seconds to stitch switch to Update by themselves; the administrator can also turn it off for everyone to save server load.",
   },
   ai: {
     t: "Smart assistant",

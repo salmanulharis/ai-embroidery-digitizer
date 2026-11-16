@@ -41,6 +41,10 @@ SETTINGS: dict[str, Setting] = {s.key: s for s in (
     Setting("audit_retention_days", "Keep the audit log for (days)", "Older audit entries are deleted.", 730, 90, 3650, "Retention"),
     Setting("approaching_limit_pct", "\"Approaching the limit\" from (%)",
             "Users who have used this share of their allowance are listed as approaching the limit.", 80, 50, 99, "Analytics"),
+    # 0 / 1 settings are shown as a switch in the admin console
+    Setting("auto_update", "Update the stitch preview automatically",
+            "Off: every editor waits for its Update button before creating the stitches again (less server load). "
+            "Takes effect when an editor page is opened next.", 1, 0, 1, "Server load"),
 )}
 
 

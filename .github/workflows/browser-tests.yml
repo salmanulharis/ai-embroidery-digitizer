@@ -1,0 +1,40 @@
+# Browser smoke tests (tools/smoke): the editor driven in headless Chrome against a throwaway
+# server (tools/smoke/run_all.py). Runs before every release (deploy.yml calls it) and on
+# demand: Actions > Browser tests > Run workflow. Never deploys anything.
+name: Browser tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Browser smoke tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - run: pip install -r requirements.txt
+      - name: Run every suite
+        env:
+          # the runner image ships Google Chrome; Ubuntu 24.04 restricts its sandbox (AppArmor)
+          SMOKE_CHROME: google-chrome
+          SMOKE_CHROME_ARGS: --no-sandbox
+        run: python tools/smoke/run_all.py --out smoke-out
+      - name: Keep the logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-out
+          path: smoke-out
+          retention-days: 7

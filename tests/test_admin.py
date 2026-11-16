@@ -107,6 +107,22 @@ def test_settings_are_validated_and_audited():
         a.put("/api/admin/settings", json={"project_idle_minutes": 120})
 
 
+def test_auto_update_switch_reaches_the_editor():
+    a = admin()
+    s = {x["key"]: x for x in a.get("/api/admin/settings").json()["settings"]}["auto_update"]
+    assert (s["value"], s["min"], s["max"], s["default"]) == (1, 0, 1, 1)
+    assert browser().get("/api/config").json()["auto_update"] is True
+    assert a.put("/api/admin/settings", json={"auto_update": 2}).status_code == 400
+    try:
+        assert a.put("/api/admin/settings", json={"auto_update": 0}).status_code == 200
+        assert browser().get("/api/config").json()["auto_update"] is False
+        entry = a.get("/api/admin/audit?q=settings").json()["entries"][0]
+        assert entry["detail"]["auto_update"] == "1 -> 0"
+    finally:
+        a.put("/api/admin/settings", json={"auto_update": 1})
+    assert browser().get("/api/config").json()["auto_update"] is True
+
+
 # --------------------------------------------------------------------------- analytics
 
 def _ts(day: str, hour: int = 12) -> float:

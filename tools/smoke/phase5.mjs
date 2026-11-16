@@ -229,6 +229,28 @@ try {
   const fm = await ev(`$("exports").textContent.replace(/\\s+/g, " ")`);
   check("export offers Brother PEC and Singer XXX with the test-sew note", /Brother PEC \(\.pec\)/.test(fm) && /Singer XXX \(\.xxx\)/.test(fm) && (fm.match(/sew a test piece first/g) || []).length >= 2, fm.slice(0, 200));
   await key("Escape");
+
+  // ------------------------------------------------ auto-update switch (Admin > Settings)
+  await ev(`Admin.open("settings"); true`);
+  await waitFor(`!!document.querySelector('#setForm input[name="auto_update"]')`, 15000);
+  check("admin: auto-update is a switch", await ev(`(() => { const c = document.querySelector('#setForm input[name="auto_update"]'); return c.type === "checkbox" && c.checked; })()`));
+  await ev(`document.querySelector('#setForm input[name="auto_update"]').click(); $("setForm").requestSubmit(); true`);
+  await sleep(600);
+  check("admin: saved off", await ev(`fetch("/api/config").then((r) => r.json()).then((c) => c.auto_update === false)`));
+  await send("Page.reload", {});
+  await sleep(300);
+  await waitFor(`document.readyState === "complete" && !document.body.classList.contains("booting")`);
+  await waitFor(`!!state.preview && ${idle}`, 60000);
+  await ev(`setPane("stitches", { user: true }); true`); await sleep(300);
+  check("editor: Auto-update off and locked", await ev(`!$("autoUpdate").checked && $("autoUpdate").disabled && /administrator/.test($("autoUpdate").closest("label").title)`));
+  await ev(change(`${f}.fill_spacing_mm`, 0.5));
+  await sleep(800);
+  check("a change waits for Update", await ev(`Jobs.stale() && !$("btnUpdate").hidden`));
+  await ev(`$("btnUpdate").click(); true`);
+  await waitFor(`${idle} && !Jobs.stale()`, 60000);
+  check("Update creates the stitches", await ev(`!Jobs.stale() && $("btnUpdate").hidden`));
+  await ev(`fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto_update: 1 }) }).then((r) => r.ok)`);
+  check("switched back on", await ev(`fetch("/api/config").then((r) => r.json()).then((c) => c.auto_update === true)`));
 } catch (e) {
   results.push("ERROR " + e.message);
   try { await shot("p5-error"); } catch (_) {}

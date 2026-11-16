@@ -14,6 +14,7 @@ python run.py                                   # http://127.0.0.1:8000  (HOST, 
 python -m pytest -q -W error::DeprecationWarning # what CI runs; deprecations are errors
 UPDATE_GOLDEN=1 python -m pytest tests/test_golden.py   # only for deliberate stitch output changes
 HYPOTHESIS_PROFILE=deep python -m pytest tests/test_properties.py  # longer random search after generator changes
+python tools/smoke/run_all.py                   # every browser smoke test (Node 22 + Chrome; CI runs it before release)
 python -m embroidery_app.auth reset-password <email|username>
 ```
 
@@ -112,5 +113,5 @@ use unique emails and restore any plan/setting you change. Fixtures: `logo_rgba`
 
 ## Deploy
 
-`.github/workflows/deploy.yml`: tests then deploy to EC2 on version tags on `main` only
+`.github/workflows/deploy.yml`: pytest + browser tests (`browser-tests.yml`) then deploy to EC2 on version tags on `main` only
 (see `deploy/ec2/README.md`). Needs valid `SUPER_ADMIN_*` secrets; startup must never fail on them.

@@ -630,7 +630,10 @@ const Admin = (() => {
     const r = await api("/api/admin/settings");
     const groups = {};
     r.settings.forEach((s) => (groups[s.group] = groups[s.group] || []).push(s));
-    main().innerHTML = `<form id="setForm">${Object.entries(groups).map(([g, list]) => section(g, `<div class="settings-grid">${list.map((s) => `
+    const toggle = (s) => s.min === 0 && s.max === 1; // on / off settings
+    main().innerHTML = `<form id="setForm">${Object.entries(groups).map(([g, list]) => section(g, `<div class="settings-grid">${list.map((s) => toggle(s) ? `
+        <label class="check"><input type="checkbox" name="${s.key}" data-toggle ${s.value ? "checked" : ""}> ${esc(s.label)}
+        <span class="small muted">${esc(s.help)} (default ${s.default ? "on" : "off"})</span></label>` : `
         <label><span class="lbl">${esc(s.label)}</span><input type="number" name="${s.key}" min="${s.min}" max="${s.max}" step="1" value="${s.value}" required>
         <span class="small muted">${esc(s.help)} (${s.min}–${s.max}, default ${s.default})</span></label>`).join("")}</div>`)).join("")}
       <div class="row end"><button type="submit" class="primary">Save settings</button></div></form>
@@ -645,6 +648,7 @@ const Admin = (() => {
       ev.preventDefault();
       const body = {};
       new FormData($("setForm")).forEach((v, k) => (body[k] = +v));
+      $("setForm").querySelectorAll("[data-toggle]").forEach((c) => (body[c.name] = c.checked ? 1 : 0)); // unticked boxes are not in FormData
       try { await api("/api/admin/settings", json("PUT", body)); toast("Settings saved.", true); } catch (e) { toast(e.message); }
     };
     $("runClean").onclick = async () => {
