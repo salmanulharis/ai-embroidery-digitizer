@@ -131,6 +131,8 @@ def _piecewise(path: _Path, sew) -> list[Pt]:
 
 # --------------------------------------------------------------------------- run family
 
+BACK_ON_PATH_MM = 0.05  # double run: a way-back point further than this from the path moves onto it
+
 def double_run(path: _Path, step: float) -> list[Pt]:
     """There along the path, back through the middle of each forward stitch (new holes,
     no thread cut) and through every corner."""
@@ -141,6 +143,13 @@ def double_run(path: _Path, step: float) -> list[Pt]:
         pts = _resampled(piece, step)
         forward.extend(pts if not forward else pts[1:])
         mids = [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(pts, pts[1:])]
+        if len(pts) >= 2:  # on a tight curve the middle of a straight stitch lies off the path (inside a
+            line = LineString(piece.pts)  # small hole): come back through the path's own middle point there
+            n = len(pts) - 1
+            for k, m in enumerate(mids):
+                q = line.interpolate(line.length * (k + 0.5) / n)
+                if dist(m, (q.x, q.y)) > BACK_ON_PATH_MM:
+                    mids[k] = (q.x, q.y)
         back = [*mids[::-1], pts[0], *back]
     return [*forward, *back]
 

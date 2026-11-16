@@ -354,6 +354,11 @@ github.com/EmbroidePy/pyembroidery, inkstitch.org/docs/file-formats.
   (off = every editor uses the Update button; editors opened afterwards follow it).
 - **History vs server**: if a design change reaches the server but the reply is lost, the client timeline
   misses one step; `History` falls back to the server's undo stack and drops steps the server no longer has.
+- **Running stitch on tight curves**: a hole or dot smaller than about one stitch length becomes a polygon
+  (a 2 mm hole at 2.5 mm stitches is a triangle) - the needle points are on the outline, the thread cuts
+  across. Hand stitch, double run and flexi split were fixed (Nov 2026, found by `HYPOTHESIS_PROFILE=deep`,
+  kept in `tests/test_holes_and_curves.py`); shortening plain running stitches on curves would change every
+  design's outlines (golden plans) - decide after a sew-out of small round lettering.
 - **AI tasks** keep the blocking overlay on purpose: clean-up replaces the picture (edits meanwhile would be
   lost), advice and the stitch check describe the design as it was when asked.
 - **100 % zoom** is approximate (96 px/inch) until the user calibrates it (per browser and screen); the tooltip says which.

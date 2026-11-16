@@ -41,9 +41,12 @@ def shapes(draw):
     if kind == "ell":
         w = draw(hs.floats(1.5, size / 2))
         return box(0, 0, size, w).union(box(0, 0, w, size))
-    pts = draw(hs.lists(hs.tuples(hs.floats(0, size), hs.floats(0, size)), min_size=5, max_size=12))
+    # coordinates to 0.001 mm like imported designs: tiny floats (1e-36, 5e-324) make GEOS build
+    # invalid hulls or warn, which no real design can cause
+    coord = hs.floats(0, size, allow_subnormal=False).map(lambda v: round(v, 3))
+    pts = draw(hs.lists(hs.tuples(coord, coord), min_size=5, max_size=12))
     hull = MultiPoint(pts).convex_hull
-    if hull.geom_type != "Polygon" or hull.area < 2.0:
+    if hull.geom_type != "Polygon" or hull.area < 2.0 or not hull.is_valid:
         hull = box(0, 0, size, size / 2 + 1)
     if kind == "holed":
         c = hull.representative_point()

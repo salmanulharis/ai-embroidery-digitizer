@@ -17,6 +17,7 @@ import math
 from typing import TYPE_CHECKING
 
 from shapely.geometry import LineString, MultiPoint, Point, Polygon
+from shapely.prepared import prep
 
 from ..geometry import Pt, dist, subdivide
 from ..models import Run, StitchParams
@@ -120,6 +121,7 @@ def column_rungs(poly: Polygon, centre: LineString, spacing: float, pull: float)
     (distance along the centre, left end, right end), each end on the outline."""
     n = max(2, math.ceil(centre.length / spacing))
     rungs = []
+    on_shape = None  # prepared lazily: the rung check below
     for k in range(n + 1):
         s = centre.length * k / n
         q = centre.interpolate(s)
@@ -133,8 +135,15 @@ def column_rungs(poly: Polygon, centre: LineString, spacing: float, pull: float)
         right = _to_edge(poly, (q.x, q.y), (-nx, -ny))
         if left + right <= 0.3:
             continue
-        rungs.append((s, (q.x + nx * (left + pull), q.y + ny * (left + pull)),
-                      (q.x - nx * (right + pull), q.y - ny * (right + pull))))
+        end_l = (q.x + nx * (left + pull), q.y + ny * (left + pull))
+        end_r = (q.x - nx * (right + pull), q.y - ny * (right + pull))
+        # a rung must stay on the shape: the centre can run through or end on a hole or a notch,
+        # and the nearest edge is then across it
+        if on_shape is None:
+            on_shape = prep(poly.buffer(max(pull, 0.0) + 0.05))
+        if not on_shape.contains(LineString([end_l, end_r])):
+            continue
+        rungs.append((s, end_l, end_r))
     return rungs
 
 
@@ -171,12 +180,22 @@ def motif_column(poly: Polygon, centre: LineString, params: StitchParams, start:
     return motif_along(list(centre.coords), size, params.motif)
 
 
+def _centre_foundation(poly: Polygon, centre: LineString) -> list[list[Pt]]:
+    """A run along the centre line under the column; where the centre crosses a hole, only
+    the parts on the shape (a run inside the hole would show)."""
+    if poly.buffer(0.05).contains(centre):
+        return [gen.running(centre, 2.0)]
+    cut = centre.intersection(poly)
+    parts = [g for g in getattr(cut, "geoms", [cut]) if isinstance(g, LineString) and g.length > 1.0]
+    return [gen.running(g, 2.0) for g in parts]
+
+
 def _column_style(fn):
     def generate(item: "_Item", angle: float, params: StitchParams, start: Pt) -> list[Run]:
         centre = _centre(item.geom, list(item.guide)) if item.guide else auto_centre(item.geom)
         if centre is None:
             return []
-        runs = [Run("underlay", gen.running(centre, 2.0), item.oid)] if params.underlay and fn is flexi_split else []
+        runs = [Run("underlay", pts, item.oid) for pts in _centre_foundation(item.geom, centre)] if params.underlay and fn is flexi_split else []
         cur = runs[-1].points[-1] if runs else start
         pts = fn(item.geom, centre, params, cur)
         if fn is flexi_split:

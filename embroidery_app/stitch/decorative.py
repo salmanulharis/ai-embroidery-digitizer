@@ -98,8 +98,23 @@ def motif_run(geom, start: Pt, size: float, name: str) -> Pieces:
 
 # --------------------------------------------------------------------------- hand stitch
 
+HAND_FOLLOW_MM = 0.3  # a long hand stitch may leave its path by this much at most (tight curves)
+
+
+def _follows(line: LineString, a: float, b: float) -> bool:
+    """True when the straight stitch from distance ``a`` to ``b`` stays on the path."""
+    pa, pb = line.interpolate(a), line.interpolate(b)
+    for f in (0.25, 0.5, 0.75):
+        m = line.interpolate(a + (b - a) * f)
+        if math.hypot(m.x - (pa.x + (pb.x - pa.x) * f), m.y - (pa.y + (pb.y - pa.y) * f)) > HAND_FOLLOW_MM:
+            return False
+    return True
+
+
 def hand_stitch(geom, start: Pt, step: float) -> Pieces:
-    """Long stitches of uneven length, each followed by a tiny one, slightly wobbly."""
+    """Long stitches of uneven length, each followed by a tiny one, slightly wobbly.
+    On tight curves (small holes, dots) a long stitch is shortened until it follows the
+    path, instead of cutting across it; straight paths are unchanged."""
     rng = np.random.default_rng(SEED)
     pieces: Pieces = []
     for path in _paths(geom, start):
@@ -107,7 +122,10 @@ def hand_stitch(geom, start: Pt, step: float) -> Pieces:
         length = line.length
         s, positions, long_one = 0.0, [0.0], True
         while s < length - 1e-6:
-            s = min(length, s + (step * rng.uniform(0.8, 1.3) if long_one else 0.6))
+            nxt = min(length, s + (step * rng.uniform(0.8, 1.3) if long_one else 0.6))
+            while long_one and nxt - s > 0.8 and not _follows(line, s, nxt):
+                nxt = s + (nxt - s) * 0.75
+            s = nxt
             positions.append(s)
             long_one = not long_one
         pts = []
