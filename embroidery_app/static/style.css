@@ -750,6 +750,58 @@ label.mod .reset-one { display: inline-flex !important; }
 .objlist [role=option].active { box-shadow: inset 0 0 0 2px var(--accent); }
 .objlist .empty { padding: 8px 10px; font-size: var(--text-sm); color: var(--muted); }
 
+/* shape menu (right-click / long-press) */
+.ctx-menu { position: fixed; z-index: 45; min-width: 210px; max-width: min(320px, calc(100vw - 12px)); max-height: min(70vh, 520px); overflow: auto;
+  padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); color: var(--text);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .22); outline: none; }
+.ctx-menu [role^="menuitem"] { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; padding: 4px 10px 4px 6px; border: 0;
+  border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: var(--text-md); text-align: left; cursor: pointer; }
+.ctx-menu [role^="menuitem"]:hover, .ctx-menu [role^="menuitem"]:focus, .ctx-menu [aria-expanded="true"] { background: var(--accent-soft); outline: none; }
+.ctx-menu [aria-disabled="true"] { color: var(--muted); cursor: default; }
+.ctx-menu [aria-disabled="true"]:hover { background: transparent; }
+.ctx-check { width: 14px; flex: 0 0 14px; color: var(--accent); font-weight: 700; }
+.ctx-label { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx-more { color: var(--muted); }
+.ctx-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+
+/* floating toolbar next to the selection */
+.selbar { z-index: 5; gap: 4px; padding: 4px 6px; flex-wrap: nowrap; max-width: calc(100% - 16px); }
+.selbar[hidden] { display: none; }
+.selbar select { min-height: 30px; max-width: 170px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); font: inherit; font-size: var(--text-sm); }
+.selbar label { margin: 0; }
+.selbar button { min-height: 30px; padding: 2px 8px; }
+.selbar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.selbar .sb-grp { display: inline-flex; gap: 2px; padding: 0 4px; border-left: 1px solid var(--line); }
+.selbar .sb-grp button { min-width: 30px; padding: 2px 6px; }
+
+/* grid + rulers over either view */
+.grid-layer { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+.ed-stage.with-grid .legend { bottom: 30px; left: 30px; }
+
+/* resizable / collapsible side panels: a handle on each inner edge (only beside the preview) */
+.ed-sep-wrap { position: absolute; top: 0; bottom: 0; z-index: 6; width: 0; }
+.ed-sep-wrap.left { left: 0; }
+.ed-sep-wrap.right { right: 0; }
+.ed-sep { position: absolute; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
+.ed-sep-wrap.left .ed-sep { left: -5px; }
+.ed-sep-wrap.right .ed-sep { right: -5px; }
+.ed-sep::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; transition: background .15s; }
+.ed-sep:hover::after, .ed-sep.dragging::after, .ed-sep:focus-visible::after { background: var(--accent); }
+.ed-sep:focus-visible { outline: none; }
+.ed-sep-btn { position: absolute; top: calc(50% - 22px); width: 18px; min-height: 44px; height: 44px; padding: 0; border-radius: 6px;
+  font-size: 14px; line-height: 1; background: var(--card); color: var(--muted); opacity: 0; transition: opacity .15s; }
+.ed-sep-wrap.left .ed-sep-btn { left: 4px; }
+.ed-sep-wrap.right .ed-sep-btn { right: 4px; }
+.ed-sep-wrap:hover .ed-sep-btn, .ed-sep-btn:focus-visible, .ed-sep:focus-visible + .ed-sep-btn,
+body.left-off .ed-sep-wrap.left .ed-sep-btn, body.right-off .ed-sep-wrap.right .ed-sep-btn { opacity: 1; }
+body.left-off .ed-sep-wrap.left .ed-sep, body.right-off .ed-sep-wrap.right .ed-sep { display: none; }
+@media (min-width: 900px) { body.left-off .ed-left { display: none; } }
+@media (min-width: 1200px) { body.right-off .ed-right { display: none; } }
+
+/* Density view: value under the pointer */
+.density-tip { position: absolute; z-index: 5; pointer-events: none; padding: 4px 8px; border-radius: var(--radius-sm); font-size: var(--text-sm);
+  background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: var(--shadow); white-space: nowrap; }
+
 /* Design info: stitch types */
 .kinds { display: grid; gap: 4px; margin: 4px 0 10px; }
 .kinds .k-row { display: grid; grid-template-columns: minmax(90px, 1fr) auto 3.2em; gap: 8px; align-items: center; font-size: var(--text-sm); }

@@ -250,6 +250,8 @@ async function init() {
   bindSettingsMarkers();
   bindUpload();
   bindEditor();
+  Workspace.init(); // grid + rulers, resizable panels (workspace.js)
+  ShapeTools.init(); // shape menu + selection toolbar (shapetools.js)
   bindCanvas();
   await Auth.start(state.config); // the sign-in screen until someone is signed in
   document.body.classList.remove("booting", "signed-out");
@@ -1413,6 +1415,7 @@ function setPane(pane, { user = false } = {}) {
   updateZoomLabel();
   renderStatus();
   saveSession();
+  viewMoved();
 }
 /** The shape tools (edit outline, draw direction / guide line) work on the shapes view. */
 function ensureShapesPane() {
@@ -1513,11 +1516,11 @@ function bindFullscreen() {
 const SHORTCUTS = [
   ["View", [["F", "Fit the design to the view"], ["1", "Actual size (100 %)"], ["2", "200 %"], ["+ / −", "Zoom in / out"],
     ["Space + drag", "Move the view (in Stitches a plain drag works too)"], ["S", "Switch between Shapes and Stitches"],
-    ["O", "Show or hide the original picture"]]],
+    ["O", "Show or hide the original picture"], ["[ / ]", "Close or open the settings / design panel"]]],
   ["Editing a shape (Selection → Edit shape)", [["V", "Move and select"], ["B", "Paint area on"], ["E", "Erase area"],
     ["L / Shift+L", "Lasso: add / cut away"], ["G", "Draw a guide line on the selected shape"], ["Esc", "Cancel or finish"]]],
   ["Design", [["Ctrl+Z / Ctrl+Y", "Undo / redo"], ["Enter", "Update the preview (when Auto-update is off)"],
-    ["Ctrl+E", "Export"], ["?", "This list"]]],
+    ["Ctrl+E", "Export"], ["Menu key / Shift+F10", "Menu for the selected shapes (also right-click or long-press a shape)"], ["?", "This list"]]],
 ];
 function openShortcuts() {
   // "Ctrl+Z / Ctrl+Y" -> keys joined by +, alternatives by /; "Space + drag" -> key + word
@@ -1557,6 +1560,7 @@ function bindShortcuts() {
       v: () => tool("move"), b: () => tool("add"), e: () => tool("erase"),
       l: () => tool(ev.shiftKey ? "lasso-erase" : "lasso-add"),
       g: () => press($("shapePanel").querySelector('[data-action="guide"]')),
+      "[": () => Workspace.toggle("left"), "]": () => Workspace.toggle("right"),
       Enter: () => press($("btnUpdate")),
       "?": () => (openShortcuts(), true),
     }[lower];
@@ -1828,8 +1832,8 @@ const Render = (() => {
       if (cmd === 1) { if (px !== null) s.jumps.push([px, py, x, y]); px = x; py = y; continue; }
       if (px === null) { px = x; py = y; continue; }
       const hex = colors[Math.min(color, colors.length - 1)].hex;
-      if (mode === "real" || mode === "check") {
-        if (mode === "check") ctx.globalAlpha = 0.35; // faded so the problem markers stand out
+      if (mode === "real" || mode === "check" || mode === "density") {
+        if (mode !== "real") ctx.globalAlpha = mode === "density" ? 0.3 : 0.35; // faded so markers / the density map stand out
         ctx.lineWidth = threadW;
         ctx.strokeStyle = shade(hex, 0.62);
         ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(x), Y(y)); ctx.stroke();
@@ -1879,8 +1883,8 @@ const Render = (() => {
     if (mode === "type") {
       f.byKind.forEach((p, k) => { ctx.globalAlpha = k === 3 ? 0.6 : 1; ctx.strokeStyle = KIND_COLORS[k]; ctx.lineWidth = unit; ctx.stroke(p); });
     } else {
-      ctx.globalAlpha = mode === "check" ? 0.35 : 1;
-      ctx.lineWidth = mode === "real" || mode === "check" ? Math.max(0.6, 3.2 * v.scale) * 0.7 * unit : unit;
+      ctx.globalAlpha = mode === "check" ? 0.35 : mode === "density" ? 0.3 : 1;
+      ctx.lineWidth = mode === "real" || mode === "check" || mode === "density" ? Math.max(0.6, 3.2 * v.scale) * 0.7 * unit : unit;
       f.byColor.forEach((p, i) => { ctx.strokeStyle = colors[i].hex; ctx.stroke(p); });
     }
     ctx.restore();
@@ -1905,6 +1909,7 @@ const Render = (() => {
       Shapes.drawSelection3(ctx, v, dpr);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       updateZoomLabel();
+      viewMoved();
       return;
     }
     if (k !== key || !st || upto < st.upto) {
@@ -1928,7 +1933,8 @@ const Render = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const X = (u) => v.x + u * v.scale, Y = (u) => v.y + u * v.scale;
     if (mode === "check") drawRisks(ctx, X, Y, p.risks || []);
-    if (mode !== "real" && mode !== "check") {
+    if (mode === "density") drawDensity(ctx, X, Y, v.scale, ops);
+    if (mode !== "real" && mode !== "check" && mode !== "density") {
       ctx.setLineDash([4, 4]); ctx.strokeStyle = "#e03131"; ctx.lineWidth = 1;
       st.jumps.forEach(([a, b, c2, d]) => { ctx.beginPath(); ctx.moveTo(X(a), Y(b)); ctx.lineTo(X(c2), Y(d)); ctx.stroke(); });
       ctx.setLineDash([]);
@@ -1949,10 +1955,12 @@ const Render = (() => {
     $("legend").innerHTML = mode === "type"
       ? ["fill", "satin", "outline", "foundation", "moving", "lock"].map((k2, i) => `<span style="background:${KIND_COLORS[i]}"></span>${k2}`).join("") + `<span style="background:#e03131"></span>jump / thread cut`
       : mode === "direction" ? "Arrows show which way the needle sews · red dashes = jumps · red dots = thread cuts"
-      : mode === "check" ? riskLegend(p.risks || []) : "";
+      : mode === "check" ? riskLegend(p.risks || [])
+      : mode === "density" ? densityLegend(ops) : "";
     $("legend").classList.toggle("hidden", mode === "real");
     $("scrubInfo").textContent = `${st.n.toLocaleString()} stitches sewn · colour ${Math.min(st.color + 1, p.colors.length)} of ${p.colors.length}`;
     updateZoomLabel();
+    viewMoved();
   }
 
   /** The whole design, realistic, fitted into a small canvas (export summary). Drawn again
@@ -1974,11 +1982,61 @@ const Render = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
-  return { request, reset, thumbnail, now: frame };
+  // density view: needle points per cell, counted like the server's machine check
+  // (stitch/safety.py: DENSITY_CELL_MM cells, DENSITY_LIMIT per mm² = "too dense")
+  let dens = null;
+  function densityCells(ops) {
+    if (dens && dens.version === version && dens.ops === ops) return dens;
+    const cfg = state.config.density || { cell_mm: 1, limit: 40 };
+    const cu = cfg.cell_mm * 10, cells = new Map(); // ops are in 0.1 mm
+    for (let i = 0; i < ops.length; i += 4) {
+      if (ops[i] !== 0) continue;
+      const k = `${Math.floor(ops[i + 1] / cu)},${Math.floor(ops[i + 2] / cu)}`;
+      cells.set(k, (cells.get(k) || 0) + 1);
+    }
+    const perMm2 = 1 / (cfg.cell_mm * cfg.cell_mm);
+    dens = { version, ops, cells, cu, limit: cfg.limit, perMm2 };
+    return dens;
+  }
+  const densityBin = (perMm2, limit) => (perMm2 > limit ? 4 : Math.min(3, Math.floor((Math.max(perMm2, 1e-9) / limit) * 4 - 1e-9)));
+  function drawDensity(ctx, X, Y, scale, ops) {
+    const d = densityCells(ops), size = d.cu * scale;
+    ctx.globalAlpha = 0.78;
+    for (const [k, n] of d.cells) {
+      const [cx, cy] = k.split(",").map(Number);
+      ctx.fillStyle = DENSITY_COLORS[densityBin(n * d.perMm2, d.limit)];
+      ctx.fillRect(X(cx * d.cu), Y(cy * d.cu), Math.max(1, size - (size > 6 ? 1 : 0)), Math.max(1, size - (size > 6 ? 1 : 0)));
+    }
+    ctx.globalAlpha = 1;
+  }
+  function densityLegend(ops) {
+    const d = densityCells(ops), q = d.limit / 4;
+    const over = [...d.cells.values()].filter((n) => n * d.perMm2 > d.limit).length;
+    const labels = [`up to ${q}`, `${q}–${2 * q}`, `${2 * q}–${3 * q}`, `${3 * q}–${d.limit}`, `over ${d.limit} – too dense`];
+    return `Needle points per mm²: ` + labels.map((l, i) => `<span style="background:${DENSITY_COLORS[i]}"></span>${l}`).join(", ") +
+      ` · ${over ? `${over} mm² over the limit` : "nothing over the limit"}`;
+  }
+  /** Needle points per mm² at a spot (mm), for the hover note; null outside the stitching. */
+  function densityAt(xMm, yMm) {
+    const p = state.preview;
+    if (!p) return null;
+    const d = densityCells(activeOps());
+    const n = d.cells.get(`${Math.floor((xMm * 10) / d.cu)},${Math.floor((yMm * 10) / d.cu)}`);
+    return n ? { perMm2: n * d.perMm2, over: n * d.perMm2 > d.limit } : null;
+  }
+
+  return { request, reset, thumbnail, now: frame, densityAt };
 })();
+// sequential blue (light -> dark) for the four bands up to the limit, status-critical red above it
+const DENSITY_COLORS = ["#b7d3f6", "#6da7ec", "#2a78d6", "#184f95", "#d03b3b"];
 
 /** Redraw the stitch preview (on the next frame). */
 function draw() { Render.request(); }
+/** The visible view changed: the grid and the selection toolbar follow (workspace.js, shapetools.js). */
+function viewMoved() {
+  if (typeof Workspace !== "undefined") Workspace.sync();
+  if (typeof ShapeTools !== "undefined") ShapeTools.moved();
+}
 
 // the box around every stitch (stitch units, 0.1 mm), kept for the stitches last asked for
 let boundsCache = { ops: null, b: null };
@@ -2039,6 +2097,20 @@ function drawHoop(ctx, X, Y, scale, r, bad) {
 function bindCanvas() {
   const c = $("canvas");
   let drag = null;
+  // density view: the exact figure under the pointer (mouse / pen; touch shows the legend)
+  const tip = $("densityTip");
+  c.addEventListener("pointermove", (ev) => {
+    if (state.mode !== "density" || ev.pointerType === "touch" || ev.buttons) { tip.hidden = true; return; }
+    const r = c.getBoundingClientRect(), v = state.view;
+    const d = Render.densityAt((ev.clientX - r.left - v.x) / v.scale / 10, (ev.clientY - r.top - v.y) / v.scale / 10);
+    if (!d) { tip.hidden = true; return; }
+    tip.textContent = `${d.perMm2 % 1 ? d.perMm2.toFixed(1) : d.perMm2} needle points per mm²${d.over ? " – too dense" : ""}`;
+    tip.hidden = false;
+    const x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14;
+    tip.style.left = `${Math.min(x, c.clientWidth - tip.offsetWidth - 6)}px`;
+    tip.style.top = `${Math.min(y, c.clientHeight - tip.offsetHeight - 6)}px`;
+  });
+  c.addEventListener("pointerleave", () => (tip.hidden = true));
   c.addEventListener("wheel", (ev) => {
     if (!state.preview) return;
     ev.preventDefault();
@@ -2063,6 +2135,7 @@ function bindCanvas() {
       drag = null;
       return;
     }
+    if (ev.button === 2) return; // right button: the shape menu (shapetools.js), never a click-select
     drag = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY };
     c.setPointerCapture(ev.pointerId);
   });

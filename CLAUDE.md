@@ -91,7 +91,10 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   (`History.stitchChange`); extracts record themselves. Settings are compared with `state.baseline` (markers,
   reset). Style-only stitch settings are declared in `STYLE_PARAMS`.
 - User-facing help text belongs in `static/help.js`. Front-end scripts load in order:
-  help.js, auth.js, charts.js, account.js, admin.js, shapes.js, ai.js, presets.js, app.js (plain globals, no bundler).
+  help.js, auth.js, charts.js, account.js, admin.js, shapes.js, shapetools.js, ai.js, presets.js, workspace.js, app.js
+  (plain globals, no bundler). `shapetools.js` (shape menu, selection toolbar) changes shapes only through
+  `Shapes.tools` (same calls and undo as the panel); `workspace.js` = grid/rulers + resizable panels. Both follow the
+  view through `viewMoved()` (called after each stitch frame, view-box change and pane switch) - no polling.
   `presets.js` applies presets through app.js (`setStitchValues`, `History`, `Jobs.extract({step})` = one undo step).
 - Dependencies were chosen deliberately (pystitch not pyembroidery, PyMuPDF not svgelements, httpx2 not httpx,
   `import pymupdf` not `fitz`). PyMuPDF is AGPL; see README Licences.

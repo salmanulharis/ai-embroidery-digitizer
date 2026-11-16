@@ -738,15 +738,22 @@ def reset_objects(pid: str, ids: list[str] | None = None) -> dict:
 
 def shape_outlines(design: Design) -> list[dict]:
     """Outlines (SVG path data, mm) of the stitched shapes - lets the stitch preview
-    map a click to a shape."""
+    map a click to a shape; ``bbox`` [x0, y0, x1, y1] mm (a line with its width) places
+    the selection toolbar."""
     enabled = {l.index for l in design.layers if l.enabled}
     order = {l.index: i for i, l in enumerate(design.layers)}
-    return [
-        {"id": o.id, "layer": o.layer, "order": order[o.layer], "kind": o.kind, "d": object_d(o),
-         "width": o.stroke_width_mm}
-        for o in design.objects
-        if o.layer in enabled and o.enabled
-    ]
+    out = []
+    for o in design.objects:
+        if o.layer not in enabled or not o.enabled:
+            continue
+        bbox = None  # an empty geometry has NaN bounds (not valid JSON)
+        if not o.geometry.is_empty:
+            x0, y0, x1, y1 = o.geometry.bounds
+            r = (o.stroke_width_mm or 0) / 2 if o.kind == "line" else 0
+            bbox = [round(x0 - r, 2), round(y0 - r, 2), round(x1 + r, 2), round(y1 + r, 2)]
+        out.append({"id": o.id, "layer": o.layer, "order": order[o.layer], "kind": o.kind, "d": object_d(o),
+                    "width": o.stroke_width_mm, "bbox": bbox})
+    return out
 
 
 def _plan_key(design: Design, params: StitchParams) -> str:

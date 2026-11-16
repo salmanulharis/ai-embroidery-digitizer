@@ -96,6 +96,7 @@ const Shapes = (() => {
     syncList();
     updateSelCount(sel.size);
     if (state.preview && onStitches()) draw();
+    if (typeof ShapeTools !== "undefined") ShapeTools.changed();
   }
 
   function select(ids, additive = false) {
@@ -610,6 +611,7 @@ const Shapes = (() => {
       vb = { x: x0 - m, y: y0 - m, w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m };
     }
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    if (typeof viewMoved === "function") viewMoved();
     if (!onStitches()) updateZoomLabel();
   }
 
@@ -759,7 +761,9 @@ const Shapes = (() => {
     renderEditBar();
     document.querySelectorAll('[data-action="edit"]').forEach((b) => { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
     decorate();
+    toolsChanged(); // the selection toolbar steps aside while editing
   }
+  const toolsChanged = () => { if (typeof ShapeTools !== "undefined") ShapeTools.changed(); };
 
   function renderEditBar() {
     const bar = $("editBar");
@@ -837,6 +841,7 @@ const Shapes = (() => {
     guideMode = on;
     $("svgBox")?.classList.toggle("drawing", on || drawMode);
     document.querySelectorAll('[data-action="guide"]').forEach((b) => { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+    toolsChanged();
     if (on) toast("Drag a line across the selected shape: the satin or the fill rows will follow it. Press Esc to cancel.", true);
   }
 
@@ -850,6 +855,7 @@ const Shapes = (() => {
     drawMode = on;
     $("svgBox")?.classList.toggle("drawing", on);
     document.querySelectorAll('[data-action="draw"]').forEach((b) => { b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+    toolsChanged();
     if (on) toast("Drag across the design in the direction the stitches should run. Press Esc to cancel.", true);
   }
 
@@ -1068,6 +1074,63 @@ const Shapes = (() => {
     });
   }
 
+  // ------------------------------------------------------------------ for the shape menu and the selection toolbar (shapetools.js)
+  // The same changes as the selection panel (same server calls, same undo steps).
+  const chosenObjects = () => [...sel].map((id) => byId.get(id)).filter(Boolean);
+  function selectionState() {
+    const chosen = chosenObjects(), live = chosen.filter((o) => o.enabled !== false);
+    const styles = new Set(chosen.map((o) => (o.enabled === false ? "skip" : o.stitch_type || "inherit")));
+    const angles = new Set(chosen.filter((o) => o.kind === "area").map((o) => (o.angle == null ? "inherit" : o.angle)));
+    return {
+      count: chosen.length,
+      style: styles.size === 1 ? [...styles][0] : "",
+      dirApplies: chosen.some((o) => o.direction_applies && o.enabled !== false),
+      angle: angles.size === 1 ? [...angles][0] : undefined, // a number, "inherit" or undefined (mixed)
+      thickApplies: live.some((o) => o.thickness_applies),
+      spacing: same(chosen.map((o) => o.spacing_mm ?? "inherit")),
+      skipped: chosen.length > 0 && chosen.every((o) => o.enabled === false),
+      custom: chosen.some(isCustom),
+      layers: [...new Set(chosen.map((o) => o.layer))],
+    };
+  }
+  /** The shape under a screen point in the view shown, or null. */
+  function hitAt(cx, cy) {
+    if (onStitches()) {
+      const c = $("canvas"), r = c.getBoundingClientRect(), v = state.view;
+      if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return null;
+      return hit3((cx - r.left - v.x) / v.scale / 10, (cy - r.top - v.y) / v.scale / 10);
+    }
+    const e = document.elementsFromPoint(cx, cy).find((n) => n.closest?.("#svgBox") && n.closest("[data-oid]"));
+    const id = e?.closest("[data-oid]")?.dataset.oid;
+    return id && byId.has(id) && layerOn(byId.get(id)) ? id : null;
+  }
+  /** The box around the selected shapes on screen (client px), or null. */
+  function selectionRect() {
+    if (!sel.size) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
+    if (onStitches()) {
+      const r = $("canvas").getBoundingClientRect(), v = state.view, k = v.scale * 10;
+      for (const s of paths3) if (sel.has(s.id) && s.bbox) add(r.left + v.x + s.bbox[0] * k, r.top + v.y + s.bbox[1] * k, r.left + v.x + s.bbox[2] * k, r.top + v.y + s.bbox[3] * k);
+    } else {
+      const svg = svgEl();
+      if (!svg) return null;
+      for (const id of sel) svg.querySelectorAll(`[data-oid="${CSS.escape(id)}"]`).forEach((n) => { const b = n.getBoundingClientRect(); if (b.width || b.height) add(b.left, b.top, b.right, b.bottom); });
+    }
+    return x0 < Infinity ? { left: x0, top: y0, right: x1, bottom: y1 } : null;
+  }
+  const tools = {
+    selected: chosenObjects, state: selectionState, hitAt, selectionRect, select,
+    styleOptions, presets: PRESETS, thickness: THICKNESS, layerOf,
+    has: (id) => sel.has(id),
+    count: () => sel.size,
+    update: (body, label) => update({ ids: [...sel], ...body }, label).catch(() => {}),
+    reset: () => resetShapes([...sel]).catch(() => {}),
+    selectColour: (layer) => select(layerObjects(layer).filter(layerOn).map((o) => o.id)),
+    drawDirection: () => { ensureShapesPane(); setEdit(false); setDrawMode(true); },
+    busy: () => edit.on || drawMode || guideMode || !!down, // editing, drawing or dragging: no menu / toolbar
+  };
+
   return { init, afterRender, reset, select, selectLayer, setObjects, setStitchShapes, click3, drawSelection3, refresh,
-    reference, fit: fitSvg, zoomBy, pxPerMm, objects: () => objects };
+    reference, fit: fitSvg, zoomBy, pxPerMm, objects: () => objects, ctm: () => svgEl()?.getScreenCTM() || null, tools };
 })();

@@ -8,7 +8,8 @@ protocol and print PASS / FAIL per check, script exceptions and console errors. 
 |---|---|
 | `workspace.mjs` | Phase 1: sign in, example upload, auto-update, view modes, playback, selection, shapes view, edit tools, threads, undo, manual mode, export dialog + download, tablet / phone layouts, reload, account page, "nothing to stitch" error, SVG upload (45 checks) |
 | `controls.mjs` | Phase 2: undo/redo of settings and picture changes, changed markers, reset one / section, style settings, hoop outline + fit warning, Wilcom package, undo after reload (26 checks) |
-| `extras.mjs` | Phase 4 batch A: stitch types, Original loaded on demand (also across a re-stitch), Shapes list (mouse + keyboard), shortcuts (real key presses, not while typing), full screen (32 checks) |
+| `extras.mjs` | Phase 4 batch A: stitch types, Original loaded on demand (also across a re-stitch), Shapes list (mouse + keyboard), shortcuts (real key presses, not while typing), full screen (33 checks) |
+| `batchb.mjs` | Phase 4 batch B: density view + hover, grid in both views, panel resize (keys, drag, close / open, remembered, reset), shape menu (right-click, submenus, keyboard, multiple selection, Shift+F10), selection toolbar (position, actions, roving focus, hides while zooming / editing / narrow) (39 checks) |
 | `presets.mjs` | Phase 3: preset picker, apply (values, one undo step, baseline, "Changed" badge), undo/redo of a preset, save, name clash (keep both), manage + delete, app defaults, account card, admin tiers + plan limits, Free account restrictions + lock popover, suggestion after upload, tablet / phone layout (39 checks; re-runnable on the same data) |
 
 ## Run
@@ -26,9 +27,14 @@ Needs Node 22+ (built-in `fetch` and `WebSocket`) and Chrome.
    node tools/smoke/controls.mjs ./smoke-out
    node tools/smoke/presets.mjs ./smoke-out
    node tools/smoke/extras.mjs ./smoke-out
+   node tools/smoke/batchb.mjs ./smoke-out
    ```
+
+A script refuses to start when its debug port is already taken (a browser left by an interrupted run) instead of
+attaching to that browser; interrupting a script closes its browser.
 
 Settings (environment): `SMOKE_APP` (default `http://127.0.0.1:8765/`), `SMOKE_EMAIL`, `SMOKE_PASSWORD`
 (the test admin above), `SMOKE_CHROME` (browser path; defaults to the usual Chrome location),
-`SMOKE_DEBUG_PORT` (9333). Each run starts with a fresh browser profile in `<out-dir>/chrome-profile`.
+`SMOKE_DEBUG_PORT` (9333), `SMOKE_CHROME_ARGS` (extra browser flags, space-separated, e.g. `--no-sandbox` where the
+browser sandbox cannot start). Each run starts with a fresh browser profile in `<out-dir>/chrome-profile`.
 `smoke-out/` is not committed.

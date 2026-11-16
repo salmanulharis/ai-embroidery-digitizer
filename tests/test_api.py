@@ -23,6 +23,9 @@ def test_config():
     assert {"openai", "gemini", "openrouter", "anthropic", "ollama", "custom"} <= {p["id"] for p in body["ai"]}
     assert all({"label", "capabilities", "needs_key", "server_configured"} <= set(p) for p in body["ai"])
     assert set(body["ai_clean_modes"]) == {"redraw", "remove_background", "enhance"}
+    from embroidery_app.stitch import safety
+
+    assert body["density"] == {"cell_mm": safety.DENSITY_CELL_MM, "limit": safety.DENSITY_LIMIT}
 
 
 def test_page_and_scripts_are_revalidated():
@@ -57,6 +60,9 @@ def test_full_raster_workflow(logo_png):
     assert r.status_code == 200, r.text
     prev = r.json()
     assert prev["stats"]["stitches"] > 500 and len(prev["ops"]) % 4 == 0
+    # every outline carries its box (mm), inside the design
+    assert prev["shapes"] and all(len(s["bbox"]) == 4 and s["bbox"][0] <= s["bbox"][2] and s["bbox"][1] <= s["bbox"][3]
+                                  and s["bbox"][0] >= -5 and s["bbox"][2] <= prev["width_mm"] + 5 for s in prev["shapes"])
 
     for fmt in ("dst", "exp", "pes", "svg", "png", "txt"):
         r = client.get(f"/api/projects/{pid}/export/{fmt}")

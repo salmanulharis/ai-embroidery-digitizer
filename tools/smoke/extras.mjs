@@ -15,8 +15,16 @@ const PORT = +(process.env.SMOKE_DEBUG_PORT || 9333);
 mkdirSync(`${SP}/shots`, { recursive: true });
 rmSync(`${SP}/chrome-profile`, { recursive: true, force: true }); // fresh: no cached old scripts
 
+// a browser left over from an interrupted run would answer instead of ours: never attach to it
+try {
+  await fetch(`http://127.0.0.1:${PORT}/json/version`);
+  console.error(`Port ${PORT} is already used by another browser (an interrupted run?). Close it or set SMOKE_DEBUG_PORT.`);
+  process.exit(2);
+} catch (_) {}
 const chrome = spawn(CHROME, [`--remote-debugging-port=${PORT}`, `--user-data-dir=${SP}/chrome-profile`, "--headless=new",
-  "--no-first-run", "--no-default-browser-check", "--window-size=1440,900", "about:blank"], { stdio: "ignore" });
+  "--no-first-run", "--no-default-browser-check", "--window-size=1440,900",
+  ...(process.env.SMOKE_CHROME_ARGS || "").split(" ").filter(Boolean), "about:blank"], { stdio: "ignore" });
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { chrome.kill(); process.exit(1); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ws, id = 0;

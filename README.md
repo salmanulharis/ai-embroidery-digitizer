@@ -53,6 +53,11 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
 * **Keyboard shortcuts** (⌨ in the bottom bar or `?`): F fit, 1 / 2 = 100 / 200 %, + / − zoom, S Shapes / Stitches,
   O original picture, V B E L G editing tools, Enter update, Ctrl+E export. **Full screen** where the browser allows it.
 * **Design info** splits the stitches by type (fill, satin, running, foundation, travel, lock stitches).
+* **Shape menu**: right-click a shape (long-press on touch, Menu key / Shift+F10) for style, direction, thickness,
+  select the colour, don't stitch, reset; a small **toolbar** next to the selection has the most used ones.
+* **Density** view: needle points per mm², blue up to the machine check's limit, red above it.
+* **Grid and rulers** (mm, both views) and **resizable side panels** (drag the inner edge or use `[` / `]`; Reset
+  workspace in the shortcuts list).
 * **Undo / redo** cover everything in the order it happened: shape edits, threads, merging, Size / Colours /
   Picture settings (undoing one puts back the design and the setting) and the stitch settings.
 * **Changed settings** are marked against what the design started with (the stitch defaults and the picture

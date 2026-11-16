@@ -18,7 +18,7 @@ yet: deploys run on version tags only.
 | 1 | One workspace: 3 panes, bottom bar, Shapes/Stitches, auto-update, export dialog, icons | **Done** | `2fdefb4` |
 | 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
 | 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
-| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Batch A done** (objects list, shortcuts, stitch types, full screen, lazy original); B and C planned | – |
+| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Batches A + B done** (A: shapes list, shortcuts, stitch types, full screen, lazy original; B: shape menu, selection toolbar, grid + rulers, density view, resizable panels); C planned | – |
 | 5 | Future: thread catalogs, more formats, machine speed, theme toggle | Planned | – |
 
 Before the first release tag:
@@ -251,7 +251,7 @@ The smart analysis after upload stays the baseline; it may *suggest* a preset, n
     0.35 mm gave 108 short-stitch markers on the test logo against 4 for Standard (0.38 still gave 19).
 - Tests: `tests/test_presets.py` (17: validation, tiers, limits incl. 10 parallel creates, downgrade, account
   deletion, owner checks, audit, migration, every built-in ≤ 7 mm with risks ≈ Standard's, stitch-count band) and
-  fingerprints in `tests/golden/presets.json` (±3 %). Browser: `tools/smoke/presets.mjs` (26 checks).
+  fingerprints in `tests/golden/presets.json` (±3 %). Browser: `tools/smoke/presets.mjs` (39 checks).
 - Suggestion: `presets.suggest` picks a built-in from the upload analysis (photo → Photo, lettering under 6 mm →
   Small text & logos, wider than 200 mm → Large design, grainy / low-resolution → Clean logo), only among presets the
   account can apply; `/ai/suggest` returns it as `preset` and the smart-settings box offers it with an Apply button.
@@ -265,12 +265,12 @@ The smart analysis after upload stays the baseline; it may *suggest* a preset, n
 | Item | Spec | Notes |
 |---|---|---|
 | Objects list | Tab in Threads: every shape grouped by colour, keyboard navigable, selects on click (keyboard path to every shape – accessibility) | **Done**: "Shapes" tab, WAI-ARIA listbox (↑ ↓ Home End PgUp PgDn, Enter = only this, Space = add/remove, Ctrl+A, Ctrl/Shift+click), tab remembered |
-| Context menu | Right-click / long-press on a shape: Stitch style ▸, Direction ▸, Select same colour, Don't stitch, Reset | reuse shape-panel actions |
-| Floating selection toolbar | Next to the selection box: style, direction, thickness, don't stitch, "Details →"; repositions to stay on screen; hidden while panning | bounding box from `paths3` / SVG bbox |
-| Grid + rulers | mm rulers on two edges, grid 10 mm (1 mm when zoomed in); toggles in the overlay toolbar | exact (canvas works in 0.1 mm) |
-| Density view | Fifth preview mode: needle points per mm² on a grid, colour scale; exact counts, visual interpretation | client-side from ops |
+| Context menu | Right-click / long-press on a shape: Stitch style ▸, Direction ▸, Select same colour, Don't stitch, Reset | **Done** (`shapetools.js`): right-click, long-press (touch), Menu key / Shift+F10; WAI-ARIA menu with submenus (→ ← Esc, type-ahead); a right-click inside a multiple selection keeps it; same calls + undo as the panel (`Shapes.tools`) |
+| Floating selection toolbar | Next to the selection box: style, direction, thickness, don't stitch, "Details →"; repositions to stay on screen; hidden while panning | **Done**: above (or below) the selection, inside the preview; one tab stop, ← → between controls; hidden while zooming / dragging, editing, with the menu open and below 900 px (the panel sheet has everything). Event-driven: follows stitch frames, the shapes view box, pane switches and resizes (`viewMoved()`); `shape_outlines` now sends each shape's `bbox` |
+| Grid + rulers | mm rulers on two edges, grid 10 mm (1 mm when zoomed in); toggles in the overlay toolbar | **Done** (`workspace.js`): one overlay for both views (mm from the stitch view or the SVG screen matrix), rulers on the bottom + left edges (the floating bars are at the top), 1 / 10 mm lines by zoom, repainted only when the mapping changes |
+| Density view | Fifth preview mode: needle points per mm² on a grid, colour scale; exact counts, visual interpretation | **Done**: counted like `safety.machine_check` (cell + limit from `/api/config` `density`); 4 blue sequential bands up to the limit + status red above; legend in words incl. mm² over the limit; hover shows the exact figure |
 | Stitch type distribution | Design info: fill / satin / running / underlay / travel / tie counts (exact, from `kind`) | **Done** (follows Optimised / Original) |
-| Resizable / collapsible panels | Drag inner edge (240–420 px), `[` / `]` to collapse, remembered in localStorage, "Reset workspace" | keyboard-operable separators |
+| Resizable / collapsible panels | Drag inner edge (240–420 px), `[` / `]` to collapse, remembered in localStorage, "Reset workspace" | **Done**: drag or keyboard separator (← → ±16, Shift ±64, Home / End, Enter), open / close button and `[` / `]`, double-click = standard width, remembered per browser, Reset workspace in the shortcuts dialog; only while a panel sits beside the preview |
 | Full screen | Fullscreen API toggle (feature-detected) | **Done** (whole app, so dialogs still show; headless browsers refuse it, so the smoke test checks the note) |
 | Keyboard shortcuts | F fit, 1 = 100 %, 2 = 200 %, +/−, Space-drag pan (both views), S / A panes, O original, V B E L G tools, Enter = Update (manual mode), Ctrl+E export, ? sheet; only when focus is not in a field | **Done**: each key presses its button (same code path); **S toggles** Shapes / Stitches (no second pane key); not in fields, dialogs, lists or tabs; ⌨ button + `?` list |
 | Merge similar colours | Server suggests pairs below a CIEDE2000 threshold; preview list; apply via existing merge (undoable) | new service fn + test |
@@ -359,6 +359,7 @@ DATA_DIR=/tmp/smokedata SUPER_ADMIN_EMAIL=smoke@example.com SUPER_ADMIN_PASSWORD
 node tools/smoke/workspace.mjs ./smoke-out     # Phase 1: 45 checks, screenshots in ./smoke-out/shots
 node tools/smoke/controls.mjs  ./smoke-out     # Phase 2: 26 checks
 node tools/smoke/presets.mjs   ./smoke-out     # Phase 3: 39 checks
-node tools/smoke/extras.mjs    ./smoke-out     # Phase 4 batch A: 32 checks
+node tools/smoke/extras.mjs    ./smoke-out     # Phase 4 batch A: 33 checks
+node tools/smoke/batchb.mjs    ./smoke-out     # Phase 4 batch B: 39 checks
 ```
 Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.

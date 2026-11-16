@@ -68,6 +68,16 @@ const HELP = {
     why: "You always see what you changed, and can go back without remembering the old values. Resetting can be undone like any other change.",
     eg: "The starting values are the app's stitch defaults and the picture settings found right after the upload.",
   },
+  shape_menu: {
+    t: "Shape menu and toolbar",
+    what: "Right-click a shape (long-press on a touch screen, or press the Menu key) for its stitch style, direction, thickness, “select all of this colour”, “don't stitch” and reset. A small toolbar next to the selection has the most used ones.",
+    why: "Change a shape where you are looking instead of in the panel. The panel's Selection section still has every setting (“Details”).",
+  },
+  grid: {
+    t: "Grid and rulers",
+    what: "A millimetre grid over the design, with rulers along the bottom and left edges measured from the design's top-left corner. Lines every 10 mm, every millimetre when you zoom in.",
+    why: "Check sizes and line things up without leaving the editor. Shown in both views; remembered in this browser.",
+  },
   objects_list: {
     t: "Shapes list",
     what: "Every shape of the design, grouped by thread colour, with its size, stitch style and direction. Selecting here is the same as clicking the shape in the preview.",
@@ -593,8 +603,8 @@ const HELP = {
   },
   view: {
     t: "Preview style",
-    what: "Realistic: how the finished embroidery will look. Direction: arrows show which way the needle moves. Types: each kind of stitch in its own colour. Check: circles mark spots where the thread may break or a detail may not show.",
-    why: "Use Types to spot loose jumps (red dashes) and thread cuts (red dots). Use Check before sending small lettering to the machine – orange circles are strokes too thin to sew cleanly: make the design bigger or choose fine 60 wt thread.",
+    what: "Realistic: how the finished embroidery will look. Direction: arrows show which way the needle moves. Types: each kind of stitch in its own colour. Check: circles mark spots where the thread may break or a detail may not show. Density: how many needle points land on each square millimetre, from light blue (few) to dark blue, red where it is too dense.",
+    why: "Use Types to spot loose jumps (red dashes) and thread cuts (red dots). Use Check before sending small lettering to the machine – orange circles are strokes too thin to sew cleanly: make the design bigger or choose fine 60 wt thread. Use Density to find areas that will sew stiff or cut the fabric; point at a square to see its exact figure.",
   },
   variant: {
     t: "Compare versions",

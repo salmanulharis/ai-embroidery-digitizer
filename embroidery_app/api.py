@@ -38,6 +38,7 @@ from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
 from .models import STITCH_STYLES, STITCH_TERMS, StitchParams
 from .stitch import decorative
+from .stitch.safety import DENSITY_CELL_MM, DENSITY_LIMIT
 
 log = logging.getLogger("embroidery")
 STATIC = Path(__file__).parent / "static"
@@ -217,6 +218,7 @@ def get_config():
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,
+        "density": {"cell_mm": DENSITY_CELL_MM, "limit": DENSITY_LIMIT},  # the machine check's "too dense"
         "session_days": auth.session_choices()[-1],  # longest "keep me signed in"
         "session_choices": auth.session_choices(),  # 0 = this browser session
     }
