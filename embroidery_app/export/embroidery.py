@@ -15,6 +15,7 @@ import tempfile
 
 import pystitch as pe
 
+from .. import threads
 from ..fabrics import get_fabric
 from ..models import COLOR_CHANGE, JUMP, STITCH, STOP, TRIM, StitchPlan, rgb_to_hex
 from ..stitch.safety import RISK_TEXT, summarize_risks
@@ -26,6 +27,9 @@ FORMATS: dict[str, dict[str, str]] = {
     "pes": {"label": "Brother PES", "note": "For Brother and Babylock home machines; keeps thread colours"},
     "jef": {"label": "Janome JEF", "note": "For Janome and Elna home machines"},
     "vp3": {"label": "Pfaff/Husqvarna VP3", "note": "For Husqvarna Viking and Pfaff machines; keeps thread colours"},
+    # added Nov 2026 - not yet test-sewn on a machine (see docs/ROADMAP.md, Phase 5)
+    "pec": {"label": "Brother PEC", "note": "For Brother machines and cards that read PEC; thread colours become the nearest of Brother's own. New: sew a test piece first"},
+    "xxx": {"label": "Singer XXX", "note": "For Singer machines; keeps thread colours. New: sew a test piece first"},
 }
 
 UNITS_PER_MM = 10  # pystitch works in 0.1 mm
@@ -39,10 +43,16 @@ WRITE_SETTINGS: dict[str, dict] = {"jef": {"trims": True}}
 def plan_to_pattern(plan: StitchPlan, name: str = "design") -> pe.EmbPattern:
     pattern = pe.EmbPattern()
     pattern.metadata("name", name[:16])
-    for block in plan.blocks:
+    found = threads.matches(plan.thread_chart, [b.rgb for b in plan.blocks]) or [None] * len(plan.blocks)
+    for block, match in zip(plan.blocks, found):
         thread = pe.EmbThread()
         thread.set_hex_color(rgb_to_hex(block.rgb))
         thread.description = block.name
+        if match:  # VP3 keeps these (PES version 1, as written, has no thread records)
+            thread.description = match["name"] or block.name
+            thread.catalog_number = match["number"]
+            thread.brand = match["brand"]
+            thread.chart = match["brand"]
         pattern.add_thread(thread)
 
     stitches = [(x, y) for cmd, x, y, _ in plan.ops if cmd == STITCH]
@@ -90,7 +100,8 @@ def worksheet(plan: StitchPlan, name: str) -> str:
         f"Size: {s['width_mm']} x {s['height_mm']} mm",
         f"Stitches: {s['stitches']:,}   Trims: {s['trims']}   Colour changes: {s['color_changes']}"
         + (f"   Stops: {s['stops']} (applique: lay the fabric piece, then continue)" if s.get("stops") else ""),
-        f"Estimated run time: {s['est_minutes']} min   Thread (top): ~{s['thread_m']} m",
+        f"Estimated run time: {s['est_minutes']} min at {s['machine_spm']} stitches/min   "
+        f"Thread: top ~{s['thread_m']} m, bobbin ~{s['bobbin_m']} m",
         "",
         "Colour sequence (assign needles on the machine; DST files carry no colours):",
     ]
@@ -101,8 +112,15 @@ def worksheet(plan: StitchPlan, name: str) -> str:
             color = min(color + 1, len(per_color) - 1)
         elif cmd == STITCH:
             per_color[color] += 1
+    found = threads.matches(plan.thread_chart, [b.rgb for b in plan.blocks])
     for i, block in enumerate(plan.blocks, 1):
-        lines.append(f"  {i:>2}. {block.name:<12} {rgb_to_hex(block.rgb)}   {per_color[i - 1]:,} stitches")
+        line = f"  {i:>2}. {block.name:<12} {rgb_to_hex(block.rgb)}   {per_color[i - 1]:,} stitches"
+        if found:
+            m = found[i - 1]
+            line += f"   {m['brand']} {m['number']} {m['name']} ({threads.closeness(m['delta_e'])})".rstrip()
+        lines.append(line)
+    if found:
+        lines.append(f"  Threads: nearest {found[0]['brand']} colour to each design colour - check against the real thread card.")
     fabric = get_fabric(plan.fabric)
     if fabric.id != "general":
         lines += ["", f"Fabric: {fabric.label}. Backing: {fabric.backing}."]

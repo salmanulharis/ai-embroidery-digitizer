@@ -631,7 +631,20 @@ const HELP = {
   },
   stats_stitches: { t: "Stitches", what: "Total number of needle stitches.", why: "More stitches = longer sewing and stiffer embroidery." },
   stats_trims: { t: "Thread cuts", what: "How often the machine cuts the thread to move to another area.", why: "Each cut adds a few seconds of sewing time." },
-  stats_time: { t: "Estimated sewing time", what: "A rough estimate including thread cuts and colour changes.", why: "Actual time depends on your machine speed." },
+  stats_time: { t: "Estimated sewing time", what: "A rough estimate: the stitches at your machine speed (Advanced stitch settings, 750 stitches per minute unless you change it), plus about 10 seconds per thread cut and 15 per colour change.", why: "Actual time depends on your machine and the fabric. Set the average speed your machine really reaches (slower than its top speed) to plan jobs." },
+  weave: {
+    t: "Woven fabric",
+    what: "Shows a fine woven texture under the stitches, on the light or the dark fabric.",
+    why: "Only for the look: it helps to judge how the design sits on cloth. It does not change the stitches or the files.",
+  },
+  thread_chart: {
+    t: "Thread brand",
+    what: "Finds the nearest thread of this brand's colour chart for every design colour (CIEDE2000 colour difference). The Thread order list, the worksheet and VP3 files then show brand, number and name.",
+    why: "Pick the cones to load without guessing. The stitches stay the same; your own colours stay as they are.",
+    eg: "Screens and printed cards differ: check each match against the real thread card. The charts are added by the administrator.",
+  },
+  stats_thread: { t: "Thread used", what: "Top thread for the whole design, with 10 % for tie-ins and waste. The bobbin uses roughly a third of that; the worksheet lists both.", why: "Check you have enough thread on each cone before a long run." },
+  machine_spm: { t: "Machine speed", what: "The average speed your machine sews this kind of design at, in stitches per minute - including the slowdowns for satin and small details, so lower than its top speed. Used only for the time estimate; the stitches stay the same.", why: "Commercial multi-needle machines often average 700-1000, home machines 400-700.", eg: "A WONYO machine set to 1000 that averages about 800 on logos: enter 800." },
   sequence: {
     t: "Thread order",
     what: "The order in which the machine sews the colours.",

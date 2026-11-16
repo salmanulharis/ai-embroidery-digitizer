@@ -19,7 +19,7 @@ yet: deploys run on version tags only.
 | 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
 | 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
 | 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Done** (A: shapes list, shortcuts, stitch types, full screen, lazy original; B: shape menu, selection toolbar, grid + rulers, density view, resizable panels; C: merge similar colours, split view, 100 % calibration) | – |
-| 5 | Future: thread catalogs, more formats, machine speed, theme toggle | Planned | – |
+| 5 | Thread catalogs, more formats, machine speed, theme toggle | **Done** – sew-outs of PEC / XXX and real thread charts still open (§6) | – |
 
 Before the first release tag:
 1. Click through on a real design (desktop, tablet, phone).
@@ -79,7 +79,7 @@ Before the first release tag:
 
 ## 3. How the new editor code works (read before changing it)
 
-All in `embroidery_app/static/` (plain scripts, load order: help, auth, charts, account, admin, shapes, shapetools, ai, presets, workspace, app).
+All in `embroidery_app/static/` (plain scripts; `theme.js` in `<head>`, then: help, auth, charts, account, admin, shapes, shapetools, ai, presets, workspace, app).
 
 | Piece | Where | Job |
 |---|---|---|
@@ -280,16 +280,28 @@ The smart analysis after upload stays the baseline; it may *suggest* a preset, n
 
 ---
 
-## 6. Phase 5 – Future
+## 6. Phase 5 – built (Nov 2026)
 
-- **Thread catalogs** (Madeira, Isacord, Robison-Anton): nearest match per colour, brand + number in worksheet
-  and PES/VP3 metadata. Check colour-chart licensing first.
-- **More machine formats**: pystitch already writes `pec xxx sew tbf qcc pmv edr inf col csv json gcode plt`
-  besides the six used. Add on demand, each after a test sew-out on a real machine.
-- **Machine speed** setting for time estimates (now fixed 750 spm, 10 s per trim, 15 s per colour change);
-  bobbin estimate (≈ ⅓ of top thread).
-- **Theme toggle** (light / dark / system) and textured fabric backgrounds (cosmetic).
-- **EMB via Wilcom's Embroidery Web API** only with a business case (paid, cloud, no better fidelity) – §7.
+- **Thread catalogs** (`threads.py`): charts are **files in `THREAD_CHARTS_DIR`** (default
+  `DATA_DIR/thread-charts`), none bundled - brands own their charts, and the good public ones (Ink/Stitch's
+  palettes) are GPL-3 while the app has no third-party copyleft. GIMP `.gpl` (Ink/Stitch's format works as is)
+  or CSV (`number,name,hex` or `r,g,b`); re-read when the folder changes; 2 MB / 5000 threads / 60 charts max.
+  Nearest thread per colour by CIEDE2000. The design setting `thread_chart` changes only figures (not in the
+  plan cache key, like `machine_spm`): Thread order list, worksheet (brand, number, name, closeness + "check
+  against the real card") and **VP3** thread records. **PES is written as version 1, which has no thread
+  records**; version 6 would carry them but changes every PES file - only after a sew-out on older and newer
+  Brother machines.
+- **More machine formats**: **Brother PEC** and **Singer XXX** (pystitch). Jumps split to the format limit,
+  trims kept (`tests/test_export_limits.py`); the export dialog says "sew a test piece first" until tested.
+  pystitch also writes `sew tbf qcc pmv edr inf col csv json gcode plt` - add on demand the same way.
+- **Machine speed** (`machine_spm`, 300-1500, default 750, Advanced stitch settings): time estimate only, the
+  cached plan is reused; worksheet shows the speed and a **bobbin estimate** (≈ ⅓ of the top thread).
+- **Theme**: System / Light / Dark in the account menu (`theme.js`, loaded in `<head>` so there is no flash;
+  `<html data-theme>`, each dark block also answers to the choice; `color-scheme` for form controls; canvases
+  that read theme colours repaint on `themechange`). **Woven** fabric texture for the stitch preview
+  (cosmetic, remembered per browser).
+- Still open: **EMB via Wilcom's Embroidery Web API** only with a business case (paid, cloud, no better
+  fidelity) – §7. Sew-outs of PEC and XXX; real thread charts (from the supplier, or checked public ones).
 
 ---
 
@@ -362,5 +374,6 @@ node tools/smoke/presets.mjs   ./smoke-out     # Phase 3: 39 checks
 node tools/smoke/extras.mjs    ./smoke-out     # Phase 4 batch A: 33 checks
 node tools/smoke/batchb.mjs    ./smoke-out     # Phase 4 batch B: 39 checks
 node tools/smoke/batchc.mjs    ./smoke-out     # Phase 4 batch C: 28 checks
+node tools/smoke/phase5.mjs    ./smoke-out     # Phase 5: 20 checks (server with THREAD_CHARTS_DIR, see tools/smoke/README.md)
 ```
 Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.

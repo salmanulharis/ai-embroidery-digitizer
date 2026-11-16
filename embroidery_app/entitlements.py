@@ -52,7 +52,7 @@ FEATURES: dict[str, Feature] = {f.key: f for f in (
     Feature("server_ai", "The app's AI keys",
             "When the user has no key of their own, the AI keys configured on the server are used for them "
             "(you pay the AI provider for these requests).", False),
-    Feature("all_formats", "All machine formats", "EXP, U01, PES, JEF and VP3 downloads besides DST.", True),
+    Feature("all_formats", "All machine formats", "EXP, U01, PES, JEF, VP3, PEC and XXX downloads besides DST.", True),
     Feature("zip_export", "Several files as one ZIP", "Download the chosen files together as a ZIP archive.", True),
     Feature("photo_stitch", "Photo stitch", "Sew a whole picture as a photo texture (stitch settings).", True),
     Feature("presets_basic", "Built-in presets", "Apply the app's standard settings presets (Standard, Small text & logos, ...).", True),

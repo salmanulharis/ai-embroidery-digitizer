@@ -849,8 +849,13 @@ def shape_outlines(design: Design) -> list[dict]:
     return out
 
 
+# settings that change only the figures, not the stitches: a cached plan is reused
+_FIGURES_ONLY = ("machine_spm", "thread_chart")
+
+
 def _plan_key(design: Design, params: StitchParams) -> str:
-    raw = json.dumps([design.to_dict(), params.to_dict()], sort_keys=True)
+    p = {k: v for k, v in params.to_dict().items() if k not in _FIGURES_ONLY}
+    raw = json.dumps([design.to_dict(), p], sort_keys=True)
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
@@ -866,6 +871,8 @@ def get_plan(pid: str, params: StitchParams | None = None) -> StitchPlan:
     with _lock:
         cached = _plan_cache.get(pid, {}).get(key)
         if cached is not None:
+            cached.machine_spm = params.machine_spm  # the figures follow the latest machine speed
+            cached.thread_chart = params.thread_chart  # ... and thread chart
             return cached
     plan = plan_stitches(design, params)
     if not plan.ops:

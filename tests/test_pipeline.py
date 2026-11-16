@@ -167,7 +167,7 @@ def test_disabled_layer_is_skipped():
 
 # ---------------------------------------------------------------- export
 
-@pytest.mark.parametrize("fmt", ["dst", "exp", "pes", "jef", "vp3", "u01"])
+@pytest.mark.parametrize("fmt", ["dst", "exp", "pes", "jef", "vp3", "u01", "pec", "xxx"])
 def test_export_roundtrip(fmt, tmp_path):
     plan = plan_stitches(_design(), StitchParams())
     data = export_embroidery(plan, fmt, "test")

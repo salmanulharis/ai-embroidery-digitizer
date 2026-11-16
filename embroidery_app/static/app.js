@@ -255,6 +255,7 @@ async function init() {
   Similar.init();
   Split.init();
   Calibration.init();
+  Theme.init();
   bindCanvas();
   await Auth.start(state.config); // the sign-in screen until someone is signed in
   document.body.classList.remove("booting", "signed-out");
@@ -758,6 +759,7 @@ const PARAMS = [
   ["running_stitch_length_mm", "Outline stitch length (mm)", 1, 5, 0.1, true],
   ["underlay_spacing_mm", "Foundation spacing (mm)", 1.5, 5, 0.1, true],
   ["push_compensation_mm", "Push compensation – shorten ends (mm)", 0, 0.5, 0.05, true],
+  ["machine_spm", "Machine speed for the time estimate (stitches/min)", 300, 1500, 50, true],
   ["border_width_mm", "Zigzag / E-stitch border width (mm)", 1, 6, 0.1, true],
   ["border_spacing_mm", "Zigzag / E-stitch border gap (mm)", 0.5, 4, 0.1, true],
   ["stipple_spacing_mm", "Stipple / maze line gap (mm)", 1, 6, 0.1, true],
@@ -839,6 +841,13 @@ function buildStitchForm() {
       fabrics.map((fb) => `<option value="${fb.id}" ${fb.id === d.fabric ? "selected" : ""}>${fb.label}</option>`).join("") +
       `</select><span class="muted small hint" id="fabricNote"></span></label>`
     : "";
+  const charts = state.config.thread_charts || [];
+  const chartField = charts.length // brand charts the server has (THREAD_CHARTS_DIR); none bundled
+    ? `<label class="full"><span class="lbl">Thread brand ${Tip.icon("thread_chart")}</span><select name="thread_chart">` +
+      `<option value="">None – colours only</option>` +
+      charts.map((c) => `<option value="${esc(c.id)}" ${c.id === d.thread_chart ? "selected" : ""}>${esc(c.name)} (${c.count} colours)</option>`).join("") +
+      `</select></label>`
+    : "";
   const field = ([k, label, min, max, step]) =>
     `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
   const select = ([k, kind, label]) =>
@@ -851,6 +860,7 @@ function buildStitchForm() {
     `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight">` +
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
     `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
+    chartField +
     PARAMS.filter((p) => !p[5]).map(field).join("") +
     CHECKS.slice(1, 4).map(checkbox).join("") +
     `<div class="style-params full" id="styleParams" hidden><p class="style-title">Style settings ${Tip.icon("style_settings")}</p>` +
@@ -1059,6 +1069,7 @@ function stitchParams() {
   CHECKS.forEach(([k]) => (p[k] = f.elements[k].checked));
   p.thread_weight = +f.elements.thread_weight.value;
   if (f.elements.fabric) p.fabric = f.elements.fabric.value;
+  if (f.elements.thread_chart) p.thread_chart = f.elements.thread_chart.value; // only when the server has charts
   UNDERLAY_FIELDS.forEach(([k]) => (p[k] = f.elements[k].value));
   p.running_repeats = p.triple_run ? 3 : 1;
   delete p.triple_run;
@@ -1462,12 +1473,14 @@ const shownStats = () => {
   const c = state.preview.comparison;
   return c && !c.reverted ? (state.variant === "original" ? c.original : c.optimized) : state.preview.stats;
 };
+// same words as the worksheet (threads.closeness)
+const threadCloseness = (de) => (de < 2 ? "same colour" : de < 3.5 ? "very close" : de < 6 ? "close" : "nearest available");
 function renderStats() {
   const s = shownStats();
   const items = [
     [s.stitches.toLocaleString(), "stitches", "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)"],
     [s.colors, "colours"], [s.trims, "thread cuts", "stats_trims"], [s.color_changes, "colour changes"],
-    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used (est.)"],
+    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used (est.)", "stats_thread"],
   ];
   $("statsEmpty").classList.add("hidden");
   $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
@@ -1477,7 +1490,9 @@ function renderStats() {
   if (hf && !hf.fits && !hf.turned) warnings.push(`The design (${s.width_mm} × ${s.height_mm} mm) is larger than the ${hf.hoop.name} hoop. Choose a smaller width or a bigger hoop.`);
   $("warnings3").innerHTML = warnings.map((w) => `<div>${esc(w)}</div>`).join("");
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
-  $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span></div>`).join("");
+  $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span>` +
+    (c.thread ? `<span class="seq-thread"><i style="background:${c.thread.hex}" aria-hidden="true"></i>${esc(c.thread.brand)} <b>${esc(c.thread.number)}</b> ${esc(c.thread.name)} <span class="muted">· ${threadCloseness(c.thread.delta_e)}</span></span>` : "") +
+    `</div>`).join("");
   renderStatus();
 }
 
@@ -2398,6 +2413,12 @@ function bindCanvas() {
     if (state.viewMoved) draw(); else fit();
   }).observe($("canvasWrap"));
   $("showFabric").onchange = () => { $("canvasWrap").classList.toggle("dark", $("showFabric").checked); draw(); };
+  try { $("showWeave").checked = localStorage.getItem("weave") === "1"; } catch (_) {}
+  $("canvasWrap").classList.toggle("weave", $("showWeave").checked);
+  $("showWeave").onchange = () => {
+    $("canvasWrap").classList.toggle("weave", $("showWeave").checked);
+    try { localStorage.setItem("weave", $("showWeave").checked ? "1" : "0"); } catch (_) {}
+  };
   $("viewMode").addEventListener("click", (ev) => {
     const m = ev.target.closest("[data-mode]")?.dataset.mode;
     if (!m) return;

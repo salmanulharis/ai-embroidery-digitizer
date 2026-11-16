@@ -554,6 +554,8 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
     limits = _limits(params)
     plan.thread_weight = limits.weight
     plan.fabric = params.fabric
+    plan.machine_spm = params.machine_spm
+    plan.thread_chart = params.thread_chart
     plan.ops = assemble(blocks, geoms, params, stroke_oids)
     # always on: no stitch shorter than the thread can take (thread breaks / needle cuts)
     # (kept below the smallest fill row gap: the turn-around between two rows is not a fault)

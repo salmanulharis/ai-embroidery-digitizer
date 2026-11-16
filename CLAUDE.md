@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 AI Embroidery Digitizer: raster (PNG/JPG/WEBP) and vector (SVG/AI/PDF) artwork → machine embroidery files
-(Tajima DST first; EXP, U01, PES, JEF, VP3), plus SVG/PNG/worksheet/ZIP. FastAPI backend, no-build vanilla JS
+(Tajima DST first; EXP, U01, PES, JEF, VP3, PEC, XXX), plus SVG/PNG/worksheet/ZIP. FastAPI backend, no-build vanilla JS
 front end, SQLite for accounts. `README.md` is the authoritative feature/API reference; read its
 "How the stitch engine works" and "Extending" sections before changing stitching.
 `docs/ROADMAP.md` is the editor redesign plan: status, how the editor code works, and detailed specs for the
@@ -63,6 +63,8 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
 - `rows.py`/`generators.py`: scan lines, tatami, satin, running, underlay primitives.
 - Styles: `fills.py`, `outlines.py`, `decorative.py` (+ `library/motifs.json`), `guided.py` (guide lines),
   `photo.py`, `strokes.py` (small lettering), `smart.py` (smart direction), `underlay.py`.
+- Figures-only settings (`service._FIGURES_ONLY`: `machine_spm`, `thread_chart`) are left out of the plan cache key
+  and set on the cached plan; thread charts are files in `THREAD_CHARTS_DIR` (`threads.py`), never bundled.
 - `optimize.py`: smart stitch reduction (removes drops only, coverage-checked, falls back if it fails).
 - `safety.py`: `cap_stitch_length` guarantees ≤ 7 mm stitches whatever a generator does.
 
@@ -91,7 +93,7 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   (`History.stitchChange`); extracts record themselves. Settings are compared with `state.baseline` (markers,
   reset). Style-only stitch settings are declared in `STYLE_PARAMS`.
 - User-facing help text belongs in `static/help.js`. Front-end scripts load in order:
-  help.js, auth.js, charts.js, account.js, admin.js, shapes.js, shapetools.js, ai.js, presets.js, workspace.js, app.js
+  theme.js (in `<head>`), then help.js, auth.js, charts.js, account.js, admin.js, shapes.js, shapetools.js, ai.js, presets.js, workspace.js, app.js
   (plain globals, no bundler). `shapetools.js` (shape menu, selection toolbar) changes shapes only through
   `Shapes.tools` (same calls and undo as the panel); `workspace.js` = grid/rulers + resizable panels. Both follow the
   view through `viewMoved()` (called after each stitch frame, view-box change and pane switch) - no polling.

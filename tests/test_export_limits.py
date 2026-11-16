@@ -20,7 +20,7 @@ from embroidery_app.models import COLOR_CHANGE, JUMP, STITCH, TRIM, ColorBlock, 
 from embroidery_app.stitch.safety import cap_stitch_length
 
 # longest single move each format can hold, in 0.1 mm (None: no jump command)
-FORMAT_MAX = {"dst": 121, "exp": 127, "u01": 127, "jef": 127, "pes": 2047, "vp3": None}
+FORMAT_MAX = {"dst": 121, "exp": 127, "u01": 127, "jef": 127, "pes": 2047, "vp3": None, "pec": 2047, "xxx": 127}
 
 
 def _long_jumps_plan() -> StitchPlan:

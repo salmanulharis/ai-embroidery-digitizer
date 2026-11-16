@@ -202,6 +202,7 @@ const Workspace = (() => {
     try { grid = localStorage.getItem("showGrid") === "1"; } catch (_) {}
     setGrid(grid, false);
     $("btnResetWorkspace").onclick = reset;
+    window.addEventListener("themechange", () => { lastKey = ""; sync(); }); // the rulers use theme colours
   }
 
   return { init, toggle, reset, setGrid, sync, grid: () => gridOn };

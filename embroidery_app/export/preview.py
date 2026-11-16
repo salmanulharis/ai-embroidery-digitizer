@@ -5,6 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from .. import threads
 from ..models import COLOR_CHANGE, JUMP, STITCH, STOP, TRIM, StitchPlan, rgb_to_hex
 
 CMD_CODES = {STITCH: 0, JUMP: 1, TRIM: 2, COLOR_CHANGE: 3, STOP: 4}
@@ -16,10 +17,13 @@ def plan_preview_json(plan: StitchPlan) -> dict:
     data: list[int] = []
     for cmd, x, y, kind in plan.ops:
         data.extend((CMD_CODES[cmd], int(round(x * 10)), int(round(y * 10)), KIND_CODES.get(kind, 6)))
+    colors = [{"hex": rgb_to_hex(b.rgb), "name": b.name} for b in plan.blocks]
+    for c, m in zip(colors, threads.matches(plan.thread_chart, [b.rgb for b in plan.blocks]) or []):
+        c["thread"] = m  # nearest thread of the chosen chart
     return {
         "width_mm": plan.width_mm,
         "height_mm": plan.height_mm,
-        "colors": [{"hex": rgb_to_hex(b.rgb), "name": b.name} for b in plan.blocks],
+        "colors": colors,
         "kinds": list(KIND_CODES),
         "ops": data,
         "stats": plan.stats(),

@@ -7,7 +7,7 @@ WONYO (Dahao-controller) machines and Wilcom EmbroideryStudio.
 
 ```
 Upload ──► Prepare shapes ─────► Stitch & preview ──► Export
- image     background removal     fill / satin / run     DST ★, EXP, U01, PES, JEF, VP3
+ image     background removal     fill / satin / run     DST ★, EXP, U01, PES, JEF, VP3, PEC, XXX
  vector    color reduction        underlay, pull comp.   SVG (clean vector), PNG preview,
            vector shapes (mm)     trims, locks, order    production worksheet, ZIP
            per-color settings     simulator + stats
@@ -56,6 +56,10 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
 * **Shape menu**: right-click a shape (long-press on touch, Menu key / Shift+F10) for style, direction, thickness,
   select the colour, don't stitch, reset; a small **toolbar** next to the selection has the most used ones.
 * **Density** view: needle points per mm², blue up to the machine check's limit, red above it.
+* **Thread brand** (Fabric & thread): with thread charts in `THREAD_CHARTS_DIR`, the nearest thread of that brand
+  for every colour, in the Thread order list, the worksheet and VP3 files. No chart is bundled (see Licences).
+* **Machine speed** (Advanced stitch settings) for the time estimate; the worksheet also estimates the bobbin thread.
+* **Theme** (account menu: System / Light / Dark) and a **woven** fabric texture under the stitches.
 * **Merge similar colours** (threads list): pairs of threads that look alike (CIEDE2000), each merged into the
   colour that covers more; all in one step, one Undo separates them.
 * **Split view**: with Original on, Split divides the stitch preview into the original (left) and the stitches
@@ -535,6 +539,10 @@ for the built-in algorithms.
 
 The app's own code has no third-party copyleft. Dependency licences: pystitch (MIT), shapely (BSD), OpenCV
 (Apache-2), NumPy (BSD), Pillow (MIT-CMU), FastAPI (MIT), httpx2 (BSD).
+
+**Thread charts are not bundled.** Brands own their colour charts, and the best public ones (Ink/Stitch's
+palettes) are GPL-3. Put charts you may use (from your thread supplier, or public ones whose licence you
+have checked) as `.gpl` or `.csv` files into `THREAD_CHARTS_DIR`; see `embroidery_app/threads.py`.
 
 **PyMuPDF is AGPL-3.0, and it now handles all vector import (SVG, AI and PDF).** If you distribute the app
 or offer it as a public network service without releasing your source, buy an Artifex commercial licence.

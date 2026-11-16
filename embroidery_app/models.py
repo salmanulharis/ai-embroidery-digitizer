@@ -8,6 +8,7 @@ thread-colour layers). A ``StitchPlan`` is the machine-ready result.
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from dataclasses import asdict, dataclass, field, replace
 from typing import Iterable, Literal, Optional
@@ -218,6 +219,7 @@ STITCH_RANGES: dict[str, tuple[float, float]] = {
     "photo_row_mm": (0.6, 3.0),
     "trim_threshold_mm": (1.0, 20.0),
     "min_object_area_mm2": (0.0, 10.0),
+    "machine_spm": (300.0, 1500.0),  # average machine speed for the time estimate (no effect on stitches)
     # not offered in the editor
     "satin_min_width_mm": (0.5, 2.0),
     "max_stitch_mm": (3.0, 7.0),  # the 7 mm cap (stitch/safety.py) can be lowered, never raised
@@ -526,6 +528,8 @@ class StitchParams:
     trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
     tie_stitches: bool = True
     max_stitch_mm: float = 7.0
+    machine_spm: int = 750  # average speed incl. slowdowns (stitches/min): time estimate only, see StitchPlan.stats
+    thread_chart: str = ""  # brand thread chart for the nearest thread per colour (threads.py); "" = none
     optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
     optimize_order: bool = True  # 2-opt sewing order within each colour (fewer, shorter jumps)
     thread_weight: int = 40  # 40 = standard thread; 60 = fine thread for small lettering
@@ -557,6 +561,8 @@ class StitchParams:
             self.photo_style = "rows"
         if self.satin_underlay not in SATIN_UNDERLAYS:
             self.satin_underlay = "edge"
+        if not isinstance(self.thread_chart, str) or not re.fullmatch(r"[a-z0-9-]{0,48}", self.thread_chart):
+            self.thread_chart = ""  # a chart id (file name); unknown ids are ignored where charts are used
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "StitchParams":
@@ -614,6 +620,8 @@ class StitchPlan:
     optimization: dict = field(default_factory=dict)  # smart reduction report (empty when off)
     thread_weight: int = 40
     fabric: str = "general"  # fabric preset id (worksheet advice), see fabrics.py
+    machine_spm: float = 750  # average machine speed for the time estimate (StitchParams.machine_spm)
+    thread_chart: str = ""  # brand chart for the nearest threads (worksheet, PES/VP3, preview), see threads.py
     # machine check: spots where the thread may break or detail may not show
     # [{"x", "y", "type", "count"}], see stitch/safety.py
     risks: list[dict] = field(default_factory=list)
@@ -633,8 +641,9 @@ class StitchPlan:
                 prev = (x, y)
         xs = [op[1] for op in self.ops if op[0] == STITCH] or [0]
         ys = [op[2] for op in self.ops if op[0] == STITCH] or [0]
-        # ~750 stitches/min average incl. slowdowns, ~10 s per trim, ~15 s per colour change
-        minutes = stitches / 750 + trims * 10 / 60 + (changes + stops) * 15 / 60
+        # machine speed (default ~750 stitches/min average incl. slowdowns), ~10 s per trim,
+        # ~15 s per colour change or stop
+        minutes = stitches / (self.machine_spm or 750) + trims * 10 / 60 + (changes + stops) * 15 / 60
         return {
             "stitches": stitches,
             "jumps": jumps,
@@ -646,5 +655,7 @@ class StitchPlan:
             "height_mm": round(max(ys) - min(ys), 1),
             # top thread ~ stitched length * 1.0, bobbin ~ 1/3; report top thread metres
             "thread_m": round(thread_mm / 1000 * 1.1, 1),
+            "bobbin_m": round(thread_mm / 1000 * 1.1 / 3, 1),  # bobbin thread ~ a third of the top thread
             "est_minutes": round(minutes, 1),
+            "machine_spm": int(self.machine_spm or 750),
         }
