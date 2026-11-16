@@ -283,6 +283,12 @@ const HELP = {
     what: "Colours are sewn from top to bottom. Use the arrows to change the order.",
     why: "Large background areas should go first and small details last, so details sit on top.",
   },
+  merge_similar: {
+    t: "Merge similar colours",
+    what: "Finds thread colours that look alike (measured with CIEDE2000, the colour difference that follows what people see) and merges each into the colour that covers more of the design. Tick the pairs you want; all are merged in one step.",
+    why: "Pictures often come out with two or three shades of the same colour. Merging them saves thread changes and stitches the area as one smooth region.",
+    eg: "Around 2 is the smallest difference most people notice side by side; under about 5 the threads are hard to tell apart on fabric. One Undo separates them all again.",
+  },
   layers_merge: {
     t: "Merge into",
     what: "Combines this colour into another one, so both are sewn with one thread as one smooth area.",
@@ -571,6 +577,18 @@ const HELP = {
   },
 
   // ---------------------------------------------------------------- preview & results
+  calibrate: {
+    t: "Calibrate 100 %",
+    what: "Screens have different pixel sizes, so 100 % zoom is only approximate until you measure your screen once: match the box to a bank card held against the screen.",
+    why: "Then 100 % shows a design at the size it will be sewn - handy to judge small lettering and details.",
+    eg: "If the box is wider than the card, move the slider left until both edges line up. Standard size undoes the calibration.",
+  },
+  ref_split: {
+    t: "Split view",
+    what: "Divides the stitch preview: the original on the left, the stitches on the right, exactly lined up. Drag the handle (or focus it and use the arrow keys, Home and End) to move the split.",
+    why: "See where the stitches follow the artwork and where they drift, without fading one into the other.",
+    eg: "Drag the handle slowly across a lettering edge to check the satin columns cover the letter outline.",
+  },
   reference: {
     t: "Reference",
     what: "Shows the original picture (or the design as first extracted) faded under your shapes or stitches, exactly lined up with them - also when you zoom or move.",

@@ -18,7 +18,7 @@ yet: deploys run on version tags only.
 | 1 | One workspace: 3 panes, bottom bar, Shapes/Stitches, auto-update, export dialog, icons | **Done** | `2fdefb4` |
 | 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
 | 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
-| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Batches A + B done** (A: shapes list, shortcuts, stitch types, full screen, lazy original; B: shape menu, selection toolbar, grid + rulers, density view, resizable panels); C planned | – |
+| 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Done** (A: shapes list, shortcuts, stitch types, full screen, lazy original; B: shape menu, selection toolbar, grid + rulers, density view, resizable panels; C: merge similar colours, split view, 100 % calibration) | – |
 | 5 | Future: thread catalogs, more formats, machine speed, theme toggle | Planned | – |
 
 Before the first release tag:
@@ -79,7 +79,7 @@ Before the first release tag:
 
 ## 3. How the new editor code works (read before changing it)
 
-All in `embroidery_app/static/` (plain scripts, load order: help, auth, charts, account, admin, shapes, ai, app).
+All in `embroidery_app/static/` (plain scripts, load order: help, auth, charts, account, admin, shapes, shapetools, ai, presets, workspace, app).
 
 | Piece | Where | Job |
 |---|---|---|
@@ -273,9 +273,9 @@ The smart analysis after upload stays the baseline; it may *suggest* a preset, n
 | Resizable / collapsible panels | Drag inner edge (240–420 px), `[` / `]` to collapse, remembered in localStorage, "Reset workspace" | **Done**: drag or keyboard separator (← → ±16, Shift ±64, Home / End, Enter), open / close button and `[` / `]`, double-click = standard width, remembered per browser, Reset workspace in the shortcuts dialog; only while a panel sits beside the preview |
 | Full screen | Fullscreen API toggle (feature-detected) | **Done** (whole app, so dialogs still show; headless browsers refuse it, so the smoke test checks the note) |
 | Keyboard shortcuts | F fit, 1 = 100 %, 2 = 200 %, +/−, Space-drag pan (both views), S / A panes, O original, V B E L G tools, Enter = Update (manual mode), Ctrl+E export, ? sheet; only when focus is not in a field | **Done**: each key presses its button (same code path); **S toggles** Shapes / Stitches (no second pane key); not in fields, dialogs, lists or tabs; ⌨ button + `?` list |
-| Merge similar colours | Server suggests pairs below a CIEDE2000 threshold; preview list; apply via existing merge (undoable) | new service fn + test |
-| Split before/after | Draggable split: original picture vs stitches, aligned via `reference_info` | reuse Original overlay |
-| 100 % calibration | Optional: match a card on screen, stored per browser | approximate otherwise |
+| Merge similar colours | Server suggests pairs below a CIEDE2000 threshold; preview list; apply via existing merge (undoable) | **Done**: `colors.ciede2000` (checked against Sharma et al. 2005); `GET …/layers/similar?max_de=` (stitched colours only, smaller into larger, no chains, range in `service.SIMILAR_RANGE` via `/api/config` `similar`); `POST …/layers/merge-many` = one undo step, same result as single merges; dialog from the threads list |
+| Split before/after | Draggable split: original picture vs stitches, aligned via `reference_info` | **Done**: Split in the Original bar (stitch view): the reference at full strength left of the handle, the stitches (without the faded copy) right; slider handle (drag, ← → 5 %, PgUp / PgDn, Home / End), remembered per browser |
+| 100 % calibration | Optional: match a card on screen, stored per browser | **Done**: Calibrate 100 % (shortcuts list): match a bank card (ISO ID-1); stored as device pixels per mm, so browser zoom keeps it right; Standard size undoes it |
 | Lazy `original_ops` | Send the original stitches only when Compare is opened (`GET …/stitch/original`) – halves the preview payload | **Done**: `original_ref` ties the request to the stitches on screen (404 when stale); test logo 83 → 48 KB per update (−42 %) |
 
 ---
@@ -340,7 +340,7 @@ github.com/EmbroidePy/pyembroidery, inkstitch.org/docs/file-formats.
 - **History vs server**: if a design change reaches the server but the reply is lost, the client timeline
   misses one step; `History` falls back to the server's undo stack and drops steps the server no longer has.
 - **AI tasks** still use the blocking overlay (explicit, long, rare) – fine, but could move to inline progress.
-- **100 % zoom** is approximate (96 px/inch); labelled in the tooltip.
+- **100 % zoom** is approximate (96 px/inch) until the user calibrates it (per browser and screen); the tooltip says which.
 - **Static caching**: scripts are revalidated every load; if a CDN is added later, use versioned file names.
 
 ---
@@ -361,5 +361,6 @@ node tools/smoke/controls.mjs  ./smoke-out     # Phase 2: 26 checks
 node tools/smoke/presets.mjs   ./smoke-out     # Phase 3: 39 checks
 node tools/smoke/extras.mjs    ./smoke-out     # Phase 4 batch A: 33 checks
 node tools/smoke/batchb.mjs    ./smoke-out     # Phase 4 batch B: 39 checks
+node tools/smoke/batchc.mjs    ./smoke-out     # Phase 4 batch C: 28 checks
 ```
 Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.

@@ -56,6 +56,11 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
 * **Shape menu**: right-click a shape (long-press on touch, Menu key / Shift+F10) for style, direction, thickness,
   select the colour, don't stitch, reset; a small **toolbar** next to the selection has the most used ones.
 * **Density** view: needle points per mm², blue up to the machine check's limit, red above it.
+* **Merge similar colours** (threads list): pairs of threads that look alike (CIEDE2000), each merged into the
+  colour that covers more; all in one step, one Undo separates them.
+* **Split view**: with Original on, Split divides the stitch preview into the original (left) and the stitches
+  (right); drag the handle or use the arrow keys.
+* **Calibrate 100 %** (shortcuts list): match a bank card on screen once, then 100 % zoom is the real size.
 * **Grid and rulers** (mm, both views) and **resizable side panels** (drag the inner edge or use `[` / `]`; Reset
   workspace in the shortcuts list).
 * **Undo / redo** cover everything in the order it happened: shape edits, threads, merging, Size / Colours /
@@ -481,6 +486,8 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | POST | `/api/projects/{id}/extract` | `{options:{width_mm, num_colors, background, min_feature_mm, …}}` |
 | PUT | `/api/projects/{id}/layers` | edit layers: enabled, thread color, stitch type, angle, order |
 | POST | `/api/projects/{id}/layers/merge` | `{source, target}` |
+| GET | `/api/projects/{id}/layers/similar?max_de=` | suggested merges of look-alike colours (CIEDE2000 below `max_de`, range in `/api/config` `similar`) |
+| POST | `/api/projects/{id}/layers/merge-many` | `{pairs: [{source, target}]}`, one undo step |
 | PUT | `/api/projects/{id}/objects` | per-shape settings `{ids, scope: selected\|colour\|all, stitch_type, angle, enabled, spacing_mm, pull_mm, bold}`. `"inherit"` = same as colour or design |
 | POST | `/api/projects/{id}/objects/reset` | `{ids}` back to colour settings (empty = all shapes) |
 | POST | `/api/projects/{id}/undo` | undo the last design change (one level) |

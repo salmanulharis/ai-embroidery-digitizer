@@ -611,6 +611,40 @@ body.page-editor .toast { bottom: calc(70px + env(safe-area-inset-bottom)); }
 .thr.off .thr-row > :not(:nth-child(2)):not(.thr-toggle) { opacity: .45; }
 .thr-more { padding: 6px 10px 10px; border-top: 1px solid var(--line); display: grid; gap: 8px; font-size: var(--text-md); }
 .thr-more label { margin: 0; }
+.thr-foot { display: flex; align-items: center; gap: 4px; padding-top: 2px; }
+/* merge similar colours */
+.similar-list { display: grid; gap: 4px; max-height: min(50vh, 360px); overflow-y: auto; margin: 8px 0 12px; }
+.similar-list[aria-busy="true"] { opacity: .6; }
+.sim-row { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; align-items: start; margin: 0;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); }
+.sim-row input { margin-top: 2px; }
+.sim-row > .muted { grid-column: 2; }
+.sim-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.sim-pair b { font-weight: 600; overflow-wrap: anywhere; }
+.sim-chip { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); flex: none; }
+#similarDe { width: 100%; }
+/* calibrate 100 %: a box the size of a bank card */
+.calib-stage { display: flex; align-items: center; justify-content: center; min-height: 230px; margin: 8px 0; overflow: auto;
+  border: 1px dashed var(--line); border-radius: var(--radius-sm); background: var(--raised); }
+.calib-card { display: flex; align-items: flex-end; justify-content: flex-end; flex: none; padding: 6px 8px; border-radius: 3.18mm;
+  border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: var(--text-xs); color: var(--muted); }
+#calibSize { width: 100%; }
+/* split view: the handle between the original (left) and the stitches (right) */
+.split-handle { position: absolute; top: 0; bottom: 0; width: 24px; margin-left: -12px; z-index: 3; cursor: ew-resize; touch-action: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.split-handle[hidden] { display: none; }
+.split-handle::before { content: ""; position: absolute; top: 0; bottom: 0; left: 11px; width: 2px; background: var(--card); box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.split-grip { position: relative; width: 22px; height: 36px; border-radius: 11px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.split-grip::before, .split-grip::after { content: ""; position: absolute; top: 11px; bottom: 11px; width: 2px; border-radius: 1px; background: var(--muted); }
+.split-grip::before { left: 7px; }
+.split-grip::after { right: 7px; }
+.split-handle:focus-visible { outline: none; }
+.split-handle:focus-visible .split-grip { box-shadow: var(--focus); border-color: var(--accent); }
+.split-tag { position: absolute; top: calc(50% + 26px); padding: 2px 8px; border-radius: 999px; background: var(--card); color: var(--text); border: 1px solid var(--line);
+  font-size: var(--text-xs); white-space: nowrap; pointer-events: none; }
+.split-tag.l { right: 18px; }
+.split-tag.r { left: 18px; }
+#editor[data-view="stitches"] .refbar.split-on .refop { display: none; }
 .thr-more select, .thr-more input[type=number] { display: block; width: 100%; margin-top: 3px; min-height: 32px; padding: 3px 8px; border: 1px solid var(--line);
   border-radius: 6px; background: var(--raised); color: var(--text); font: inherit; }
 .thr-more .row { gap: 6px; }

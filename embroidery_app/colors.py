@@ -43,6 +43,41 @@ def delta_e(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.sqrt(np.sum((np.asarray(a) - np.asarray(b)) ** 2, axis=-1))
 
 
+def ciede2000(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """CIEDE2000 colour difference between LAB colours (broadcasting; kL = kC = kH = 1).
+
+    Closer to what people see than CIE76, mainly for blues, greys and saturated
+    colours - used where the user is told two threads "look alike"."""
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    L1, a1, b1 = a[..., 0], a[..., 1], a[..., 2]
+    L2, a2, b2 = b[..., 0], b[..., 1], b[..., 2]
+    c_bar = (np.hypot(a1, b1) + np.hypot(a2, b2)) / 2
+    g = 0.5 * (1 - np.sqrt(c_bar**7 / (c_bar**7 + 25.0**7)))
+    a1p, a2p = (1 + g) * a1, (1 + g) * a2
+    c1p, c2p = np.hypot(a1p, b1), np.hypot(a2p, b2)
+    h1p = np.degrees(np.arctan2(b1, a1p)) % 360
+    h2p = np.degrees(np.arctan2(b2, a2p)) % 360
+    dlp, dcp = L2 - L1, c2p - c1p
+    dh = h2p - h1p
+    dh = np.where(dh > 180, dh - 360, np.where(dh < -180, dh + 360, dh))
+    dh = np.where(c1p * c2p == 0, 0.0, dh)
+    dhp = 2 * np.sqrt(c1p * c2p) * np.sin(np.radians(dh) / 2)
+    lbp, cbp = (L1 + L2) / 2, (c1p + c2p) / 2
+    hsum = h1p + h2p
+    hbp = np.where(np.abs(h1p - h2p) > 180, np.where(hsum < 360, (hsum + 360) / 2, (hsum - 360) / 2), hsum / 2)
+    hbp = np.where(c1p * c2p == 0, hsum, hbp)
+    t = (1 - 0.17 * np.cos(np.radians(hbp - 30)) + 0.24 * np.cos(np.radians(2 * hbp))
+         + 0.32 * np.cos(np.radians(3 * hbp + 6)) - 0.20 * np.cos(np.radians(4 * hbp - 63)))
+    d_theta = 30 * np.exp(-(((hbp - 275) / 25) ** 2))
+    rc = 2 * np.sqrt(cbp**7 / (cbp**7 + 25.0**7))
+    sl = 1 + 0.015 * (lbp - 50) ** 2 / np.sqrt(20 + (lbp - 50) ** 2)
+    sc = 1 + 0.045 * cbp
+    sh = 1 + 0.015 * cbp * t
+    rt = -np.sin(np.radians(2 * d_theta)) * rc
+    return np.sqrt((dlp / sl) ** 2 + (dcp / sc) ** 2 + (dhp / sh) ** 2 + rt * (dcp / sc) * (dhp / sh))
+
+
 _NAMED_LAB = {name: rgb_to_lab(np.array(rgb)) for name, rgb in _NAMED.items()}
 
 

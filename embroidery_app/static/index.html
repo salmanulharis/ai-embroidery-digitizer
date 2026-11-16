@@ -251,11 +251,12 @@
               </select></label>
             <label class="small refop"><span class="lbl">Opacity <output id="refOpOut">40%</output></span>
               <input type="range" id="refOpacity" min="5" max="100" step="5" value="40" aria-label="Reference opacity"></label>
+            <label class="check small stitch-only"><input type="checkbox" id="refSplit"> Split <i data-help="ref_split"></i></label>
           </div>
           <div class="editbar hidden shapes-only" id="editBar" role="toolbar" aria-label="Shape editing tools"></div>
         </div>
         <div class="ed-view ed-shapes checker editable" id="svgBox" aria-label="Prepared design - click a shape to change its stitching, scroll to zoom, drag to move"></div>
-        <div class="ed-view ed-stitches canvasWrap" id="canvasWrap"><canvas id="canvas" aria-label="Stitch preview - click a shape to select it, scroll to zoom, drag to move"></canvas><div id="legend" class="legend hidden"></div><div id="densityTip" class="density-tip" role="status" hidden></div></div>
+        <div class="ed-view ed-stitches canvasWrap" id="canvasWrap"><canvas id="canvas" aria-label="Stitch preview - click a shape to select it, scroll to zoom, drag to move"></canvas><div id="splitHandle" class="split-handle" role="slider" tabindex="0" aria-label="Split between the original and the stitches" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" hidden><span class="split-tag l" aria-hidden="true">Original</span><span class="split-grip" aria-hidden="true"></span><span class="split-tag r" aria-hidden="true">Stitches</span></div><div id="legend" class="legend hidden"></div><div id="densityTip" class="density-tip" role="status" hidden></div></div>
         <canvas id="gridLayer" class="grid-layer" aria-hidden="true" hidden></canvas>
         <div class="ed-empty" id="stageEmpty" role="status"><span class="spinner dark" aria-hidden="true"></span><span id="stageEmptyText">Preparing your design…</span></div>
         <div class="ed-progress" id="edProgress" hidden><span></span></div>
@@ -590,7 +591,37 @@
     <p class="small muted">They work in the editor while you are not typing in a field.</p>
     <table class="keys" id="keysTable"></table>
     <p class="small muted">Panel sizes and the grid are remembered in this browser.</p>
-    <div class="row end"><button type="button" class="ghost" id="btnResetWorkspace">Reset workspace</button><button type="submit" class="primary">OK</button></div>
+    <div class="row end"><button type="button" class="ghost" id="btnCalibrate" aria-haspopup="dialog">Calibrate 100 %…</button><button type="button" class="ghost" id="btnResetWorkspace">Reset workspace</button><button type="submit" class="primary">OK</button></div>
+  </form>
+</dialog>
+
+<dialog id="calibDialog" class="form-dialog" aria-labelledby="calibTitle" aria-describedby="calibIntro">
+  <form method="dialog" class="ai-dialog">
+    <div class="row between">
+      <h2 id="calibTitle">Calibrate 100 %</h2>
+      <button type="submit" class="ghost" aria-label="Close">&times;</button>
+    </div>
+    <p class="small muted" id="calibIntro">Hold a bank card (85.6 × 54 mm) against the screen and change the size until the box below is exactly as wide as the card. 100 % zoom then shows designs at their real size. <i data-help="calibrate"></i></p>
+    <div class="calib-stage"><div class="calib-card" id="calibCard" aria-hidden="true"><span>85.6 × 54 mm</span></div></div>
+    <label class="small"><span class="lbl">Size <output id="calibOut"></output></span>
+      <input type="range" id="calibSize" step="0.01" aria-describedby="calibIntro"></label>
+    <p class="small muted">Kept in this browser, for this screen.</p>
+    <div class="row end"><button type="button" class="ghost" id="calibReset">Standard size</button><button type="submit" class="ghost">Cancel</button><button type="button" class="primary" id="calibSave">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="similarDialog" class="form-dialog" aria-labelledby="similarTitle" aria-describedby="similarIntro">
+  <form method="dialog" class="ai-dialog">
+    <div class="row between">
+      <h2 id="similarTitle">Merge similar colours</h2>
+      <button type="submit" class="ghost" aria-label="Close">&times;</button>
+    </div>
+    <p class="small muted" id="similarIntro">Colours that look alike as thread. Each one merges into the colour that covers more, so the main thread stays; one Undo separates them all again.</p>
+    <label class="small"><span class="lbl">How different may they be? <output id="similarOut"></output> <i data-help="merge_similar"></i></span>
+      <input type="range" id="similarDe" step="0.5" aria-describedby="similarScale"></label>
+    <p class="small muted" id="similarScale">Left: only colours that look the same · right: also clearly different shades</p>
+    <div id="similarList" class="similar-list" role="group" aria-label="Suggested merges" aria-live="polite"></div>
+    <div class="row end"><button type="submit" class="ghost">Cancel</button><button type="button" class="primary" id="similarApply" disabled>Merge</button></div>
   </form>
 </dialog>
 

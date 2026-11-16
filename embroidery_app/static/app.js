@@ -252,6 +252,9 @@ async function init() {
   bindEditor();
   Workspace.init(); // grid + rulers, resizable panels (workspace.js)
   ShapeTools.init(); // shape menu + selection toolbar (shapetools.js)
+  Similar.init();
+  Split.init();
+  Calibration.init();
   bindCanvas();
   await Auth.start(state.config); // the sign-in screen until someone is signed in
   document.body.classList.remove("booting", "signed-out");
@@ -509,7 +512,8 @@ function renderLayers() {
         <label><span class="lbl">Merge into ${Tip.icon("layers_merge")}</span><select data-merge aria-label="Merge ${n} into another colour"><option value="">–</option>${L.filter((o) => o.index !== l.index).map((o) => `<option value="${o.index}">${esc(o.name)}</option>`).join("")}</select></label>
       </div>
     </div>`;
-  }).join("");
+  }).join("") + (L.filter((l) => l.enabled).length > 1
+    ? `<div class="thr-foot"><button type="button" class="ghost small" data-similar aria-haspopup="dialog">Merge similar colours…</button> ${Tip.icon("merge_similar")}</div>` : "");
 }
 
 $("layers").addEventListener("change", async (ev) => {
@@ -527,6 +531,7 @@ $("layers").addEventListener("change", async (ev) => {
   await saveLayers();
 });
 $("layers").addEventListener("click", async (ev) => {
+  if (ev.target.closest("[data-similar]")) return Similar.open();
   const toggle = ev.target.closest("[data-expand]");
   if (toggle) {
     const idx = +toggle.closest("[data-index]").dataset.index;
@@ -573,6 +578,80 @@ async function mergeColours(source, target) {
   Jobs.stitch();
   toast(`${from} merged into ${to}. Use Undo to separate them again.`, true);
 }
+
+// Merge similar colours: the server suggests pairs that look alike as thread (CIEDE2000
+// below the slider's value, the smaller colour into the larger one); the chosen ones merge
+// in one step, so one Undo separates them all again.
+const Similar = (() => {
+  let seq = 0, timer = 0, pairs = [];
+  const dlg = () => $("similarDialog");
+  const word = (de) => de < 2 ? "almost identical" : de < 3.5 ? "very close" : de < 6 ? "close" : "similar shade";
+  const chip = (idx) => `<i class="sim-chip" style="background:${state.design.layers.find((l) => l.index === idx)?.hex || "#999"}"></i>`;
+
+  function render(res) {
+    pairs = res.pairs;
+    const box = $("similarList");
+    box.innerHTML = pairs.length
+      ? pairs.map((p, i) => `<label class="check sim-row"><input type="checkbox" data-i="${i}" checked>
+          <span class="sim-pair">${chip(p.source)}<b>${esc(layerName(p.source))}</b> <span aria-hidden="true">→</span><span class="visually-hidden"> into </span> ${chip(p.target)}<b>${esc(layerName(p.target))}</b></span>
+          <span class="muted small">${word(p.delta_e)} · ΔE ${p.delta_e.toFixed(1)}</span></label>`).join("")
+      : `<p class="small muted">No colours are this alike. Move the slider to the right to include more different shades.</p>`;
+    count();
+  }
+
+  function count() {
+    const n = $("similarList").querySelectorAll("input:checked").length;
+    $("similarApply").disabled = !n;
+    $("similarApply").textContent = n ? `Merge ${n} colour${n === 1 ? "" : "s"}` : "Merge";
+  }
+
+  async function load() {
+    const my = ++seq, de = +$("similarDe").value;
+    $("similarOut").textContent = `${de.toFixed(1)} – ${word(de)}`;
+    $("similarList").setAttribute("aria-busy", "true");
+    try {
+      const res = await work("Finding similar colours…", () => api(`/api/projects/${state.project.id}/layers/similar?max_de=${de}`), { quiet: true });
+      if (my === seq) render(res);
+    } catch (e) {
+      if (my === seq) { $("similarList").innerHTML = `<p class="small error">${esc(e.message)}</p>`; pairs = []; count(); }
+    } finally {
+      if (my === seq) $("similarList").removeAttribute("aria-busy");
+    }
+  }
+
+  function open() {
+    if (!state.project || !state.design) return;
+    const cfg = state.config.similar || { min: 1, max: 15, default: 5 };
+    const r = $("similarDe");
+    r.min = cfg.min; r.max = cfg.max;
+    if (!r.dataset.set) { r.value = cfg.default; r.dataset.set = "1"; } // the value is kept while the page is open
+    $("similarList").innerHTML = "";
+    pairs = []; count();
+    dlg().showModal();
+    load();
+  }
+
+  async function apply() {
+    const chosen = [...$("similarList").querySelectorAll("input:checked")].map((c) => pairs[+c.dataset.i]).filter(Boolean);
+    if (!chosen.length) return;
+    dlg().close();
+    const res = await work(`Merging ${chosen.length} similar colour${chosen.length === 1 ? "" : "s"}…`, () =>
+      api(`/api/projects/${state.project.id}/layers/merge-many`, json("POST", { pairs: chosen.map(({ source, target }) => ({ source, target })) }))).catch(() => null);
+    if (!res) return;
+    chosen.forEach((p) => openThreads.delete(p.source));
+    History.designChange(`merge ${chosen.length} similar colour${chosen.length === 1 ? "" : "s"}`);
+    renderDesign(res);
+    Jobs.stitch();
+    toast(`${chosen.length} similar colour${chosen.length === 1 ? "" : "s"} merged. Use Undo to separate them again.`, true);
+  }
+
+  function init() {
+    $("similarDe").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 200); });
+    $("similarList").addEventListener("change", count);
+    $("similarApply").addEventListener("click", apply);
+  }
+  return { open, init };
+})();
 
 // Drag a colour (handle in the threads list, or a colour chip) and drop it on another one.
 // Pointer events, so it works with a mouse, a pen and touch alike.
@@ -1487,7 +1566,7 @@ function bindEditor() {
   $("showHoop").onchange = hoopChanged;
   $("btnZoomIn").onclick = () => zoomBy(1.25);
   $("btnZoomOut").onclick = () => zoomBy(1 / 1.25);
-  $("zoomPct").onclick = () => zoomTo(ACTUAL_PX_PER_MM);
+  $("zoomPct").onclick = () => zoomTo(actualPxPerMm());
   bindFullscreen();
   bindShortcuts();
   Export.init();
@@ -1551,8 +1630,8 @@ function bindShortcuts() {
     const tool = (name) => press(document.querySelector(`#editBar [data-tool="${name}"]`));
     const done = {
       f: () => press($("btnFit")),
-      1: () => zoomTo(ACTUAL_PX_PER_MM),
-      2: () => zoomTo(2 * ACTUAL_PX_PER_MM),
+      1: () => zoomTo(actualPxPerMm()),
+      2: () => zoomTo(2 * actualPxPerMm()),
       "+": () => zoomBy(1.25), "=": () => zoomBy(1.25),
       "-": () => zoomBy(1 / 1.25), _: () => zoomBy(1 / 1.25),
       s: () => setPane(state.pane === "stitches" ? "shapes" : "stitches", { user: true }),
@@ -1570,12 +1649,65 @@ function bindShortcuts() {
   });
 }
 
-// Zoom: 100% = actual size, assuming the usual 96 screen pixels per inch (screens differ).
-const ACTUAL_PX_PER_MM = 96 / 25.4;
+// Zoom: 100% = actual size. Without calibration the usual 96 screen pixels per inch (screens
+// differ); "Calibrate 100 %" measures this screen against a bank card. Kept per browser as
+// device pixels per mm, so it stays right when the browser zoom changes.
+const STANDARD_PX_PER_MM = 96 / 25.4;
+const Calibration = (() => {
+  const KEY = "screenPxPerMm", CARD_MM = 85.6; // ISO/IEC 7810 ID-1 (bank card): 85.60 × 53.98 mm
+  const RANGE = [0.5, 2]; // of the standard size
+  let device = null;
+  try { const v = parseFloat(localStorage.getItem(KEY)); if (v > 0) device = v; } catch (_) {}
+  const dpr = () => window.devicePixelRatio || 1;
+  const ppm = () => (device ? device / dpr() : STANDARD_PX_PER_MM);
+  const label = () => $("zoomPct").title = device
+    ? "Show at actual size (calibrated for this screen)"
+    : "Show at actual size (approximate: screens differ - Calibrate 100 % in the shortcuts list)";
+
+  function show(v) {
+    $("calibCard").style.width = `${CARD_MM * v}px`;
+    $("calibCard").style.height = `${53.98 * v}px`;
+    $("calibOut").textContent = `${Math.round((100 * v) / STANDARD_PX_PER_MM)} % of the standard size`;
+  }
+
+  function open() {
+    const r = $("calibSize");
+    r.min = (STANDARD_PX_PER_MM * RANGE[0]).toFixed(2);
+    r.max = (STANDARD_PX_PER_MM * RANGE[1]).toFixed(2);
+    r.value = ppm().toFixed(2);
+    show(+r.value);
+    $("calibDialog").showModal();
+  }
+
+  function save(v) {
+    device = v === null ? null : v * dpr();
+    try { if (device) localStorage.setItem(KEY, device.toFixed(4)); else localStorage.removeItem(KEY); } catch (_) {}
+    label();
+    updateZoomLabel();
+  }
+
+  function init() {
+    label();
+    $("calibSize").addEventListener("input", (ev) => show(+ev.target.value));
+    $("calibSave").addEventListener("click", () => {
+      save(+$("calibSize").value);
+      $("calibDialog").close();
+      toast("100 % now shows designs at their real size on this screen.", true);
+    });
+    $("calibReset").addEventListener("click", () => {
+      save(null);
+      $("calibSize").value = STANDARD_PX_PER_MM.toFixed(2);
+      show(STANDARD_PX_PER_MM);
+    });
+    $("btnCalibrate").addEventListener("click", () => { $("keysDialog").close(); open(); });
+  }
+  return { ppm, open, init, calibrated: () => device !== null };
+})();
+const actualPxPerMm = () => Calibration.ppm();
 function pxPerMm() { return state.pane === "stitches" ? state.view.scale * 10 : Shapes.pxPerMm(); }
 function updateZoomLabel() {
   const ppm = pxPerMm();
-  $("zoomPct").textContent = ppm ? `${Math.round((100 * ppm) / ACTUAL_PX_PER_MM)}%` : "–";
+  $("zoomPct").textContent = ppm ? `${Math.round((100 * ppm) / actualPxPerMm())}%` : "–";
 }
 function zoomBy(f) {
   if (state.pane !== "stitches") return Shapes.zoomBy(f);
@@ -1810,6 +1942,14 @@ const Render = (() => {
     }
     return ref.ok ? ref.img : null;
   }
+  // split view: left of x (CSS px) the original at full strength instead of the stitches
+  function drawSplit(ctx, v, spec, x) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, x, 1e6); ctx.clip();
+    ctx.clearRect(0, 0, x, 1e6);
+    drawRef(ctx, v, { ...spec, opacity: 1 });
+    ctx.restore();
+  }
   function drawRef(ctx, v, spec) {
     const img = refImage(spec);
     if (!img) return;
@@ -1897,7 +2037,9 @@ const Render = (() => {
     const ctx = c.getContext("2d");
     const v = state.view, ops = activeOps(), mode = state.mode, total = ops.length / 4;
     const upto = Math.min(state.upto, total);
-    const spec = Shapes.reference();
+    const refSpec = Shapes.reference();
+    const split = Split.at(refSpec); // split view: the original on the left, the stitches (without the faded one) on the right
+    const spec = split === null ? refSpec : null;
     const k = [w, h, dpr, v.scale, v.x, v.y, mode, state.variant, version, spec ? `${spec.url}@${spec.opacity}:${ref.ok && ref.url === spec.url}` : ""].join("|");
 
     if (interacting && k !== key && upto >= total) { // quick version, the full one follows
@@ -1906,8 +2048,10 @@ const Render = (() => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drawRef(ctx, v, spec);
       drawFast(ctx, v, dpr, ops, mode, p.colors);
+      if (split !== null) drawSplit(ctx, v, refSpec, (w / dpr) * split);
       Shapes.drawSelection3(ctx, v, dpr);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      Split.place(split);
       updateZoomLabel();
       viewMoved();
       return;
@@ -1950,8 +2094,10 @@ const Render = (() => {
       ctx.strokeStyle = "#e03131"; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(X(st.px), Y(st.py), 6, 0, 7); ctx.stroke();
     }
+    if (split !== null) drawSplit(ctx, v, refSpec, (w / dpr) * split);
     Shapes.drawSelection3(ctx, v, dpr);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    Split.place(split);
     $("legend").innerHTML = mode === "type"
       ? ["fill", "satin", "outline", "foundation", "moving", "lock"].map((k2, i) => `<span style="background:${KIND_COLORS[i]}"></span>${k2}`).join("") + `<span style="background:#e03131"></span>jump / thread cut`
       : mode === "direction" ? "Arrows show which way the needle sews · red dashes = jumps · red dots = thread cuts"
@@ -2032,6 +2178,74 @@ const DENSITY_COLORS = ["#b7d3f6", "#6da7ec", "#2a78d6", "#184f95", "#d03b3b"];
 
 /** Redraw the stitch preview (on the next frame). */
 function draw() { Render.request(); }
+
+// Split view (stitch preview): a handle divides the original picture (left) from the stitches
+// (right), lined up like the faded reference. Drag it or use the arrow keys; remembered per browser.
+const Split = (() => {
+  let at = 0.5;
+  try { const s = parseFloat(localStorage.getItem("splitAt")); if (s >= 0 && s <= 1) at = s; } catch (_) {}
+  const handle = () => $("splitHandle");
+  /** Where the split is (0..1 of the width), or null when there is none to show. */
+  const where = (spec) => ($("refSplit")?.checked && spec && state.pane === "stitches" ? at : null);
+
+  function place(split) {
+    const h = handle();
+    if (!h) return;
+    h.hidden = split === null;
+    if (split === null) return;
+    const pct = Math.round(at * 100);
+    h.style.left = `clamp(12px, ${at * 100}%, calc(100% - 12px))`; // grabbable at the edges too
+    h.setAttribute("aria-valuenow", pct);
+    h.setAttribute("aria-valuetext", `${pct} % original, ${100 - pct} % stitches`);
+  }
+
+  function set(v) {
+    at = Math.min(1, Math.max(0, v));
+    try { localStorage.setItem("splitAt", at.toFixed(3)); } catch (_) {}
+    draw();
+  }
+
+  function sync() {
+    $("refBar").classList.toggle("split-on", !!$("refSplit").checked);
+    draw();
+  }
+
+  function init() {
+    const h = handle();
+    $("refSplit").addEventListener("change", sync);
+    sync();
+    let drag = null;
+    h.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      ev.preventDefault();
+      h.setPointerCapture(ev.pointerId);
+      drag = ev.pointerId;
+      h.focus({ preventScroll: true });
+    });
+    h.addEventListener("pointermove", (ev) => {
+      if (drag !== ev.pointerId) return;
+      const r = $("canvasWrap").getBoundingClientRect();
+      if (r.width) set((ev.clientX - r.left) / r.width);
+    });
+    const end = (ev) => { if (drag === ev.pointerId) drag = null; };
+    h.addEventListener("pointerup", end);
+    h.addEventListener("pointercancel", end);
+    h.addEventListener("keydown", (ev) => {
+      const step = { ArrowLeft: -0.05, ArrowDown: -0.05, ArrowRight: 0.05, ArrowUp: 0.05, PageDown: -0.2, PageUp: 0.2 }[ev.key];
+      if (step !== undefined) set(at + step);
+      else if (ev.key === "Home") set(0);
+      else if (ev.key === "End") set(1);
+      else return;
+      ev.preventDefault();
+    });
+    // zooming over the handle zooms the preview, as anywhere else
+    h.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      $("canvas").dispatchEvent(new WheelEvent("wheel", ev));
+    }, { passive: false });
+  }
+  return { at: where, place, init };
+})();
 /** The visible view changed: the grid and the selection toolbar follow (workspace.js, shapetools.js). */
 function viewMoved() {
   if (typeof Workspace !== "undefined") Workspace.sync();

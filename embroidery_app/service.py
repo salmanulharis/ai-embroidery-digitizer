@@ -448,12 +448,105 @@ def merge_layers(pid: str, source: int, target: int) -> dict:
     if source == target:
         raise ValueError("Pick two different colours to merge.")
     design.layer(source), design.layer(target)  # validate
+    _merge_into(design, {source: target})
+    _save_design(pid, design)
+    return design_payload(design, pid)
+
+
+def _merge_into(design: Design, into: dict[int, int]) -> None:
+    """Every shape of colour ``s`` takes colour ``into[s]``; the merged colours disappear
+    and each target's shades are fused into one region, so they stitch like a single
+    solid colour. ``into`` must not chain (a target is never itself merged)."""
     for obj in design.objects:
-        if obj.layer == source:
-            obj.layer = target
-    design.layers = [l for l in design.layers if l.index != source]
-    # fuse the merged shades into one region, so they stitch like a single solid colour
-    design.normalize(layers=[target])
+        if obj.layer in into:
+            obj.layer = into[obj.layer]
+    design.layers = [l for l in design.layers if l.index not in into]
+    design.normalize(layers=sorted(set(into.values())))
+
+
+# Merge similar colours: CIEDE2000 below this suggests "these threads look alike".
+# Around 2 is the smallest difference most people notice side by side; thread colours
+# under ~5 are hard to tell apart on fabric. The editor's slider uses this range.
+SIMILAR_RANGE = (1.0, 15.0)
+SIMILAR_DEFAULT = 5.0
+
+
+def _colour_weight(design: Design, index: int) -> float:
+    """How much of the design a colour covers (mm²; a line counts its width)."""
+    return sum(o.geometry.area if o.kind == "area" else o.geometry.length * (o.stroke_width_mm or 0)
+               for o in design.objects if o.layer == index)
+
+
+def similar_colours(pid: str, max_de=None) -> dict:
+    """Suggested merges of colours that look alike (CIEDE2000 < ``max_de``).
+
+    Only stitched colours are compared. The colour covering less merges into the larger
+    one, so the main thread stays; every suggestion targets a colour that is kept (no
+    chains), and each colour is merged at most once - the suggestions can all be applied
+    together. Sorted by difference, closest first."""
+    import numpy as np  # noqa: PLC0415
+
+    from .colors import ciede2000, rgb_to_lab  # noqa: PLC0415
+    from .models import bounded  # noqa: PLC0415
+
+    limit = float(bounded(max_de, SIMILAR_RANGE, SIMILAR_DEFAULT))
+    design = load_design(pid)
+    layers = [l for l in design.layers if l.enabled]
+    weight = {l.index: _colour_weight(design, l.index) for l in layers}
+    order = {l.index: i for i, l in enumerate(design.layers)}
+    # heaviest first (ties: the one sewn first) - lighter colours are merged into heavier ones
+    layers.sort(key=lambda l: (-weight[l.index], order[l.index]))
+    labs = rgb_to_lab(np.array([l.rgb for l in layers], dtype=np.uint8)) if layers else np.zeros((0, 3))
+    kept: list[int] = []  # positions in `layers` that stay
+    pairs = []
+    for i, l in enumerate(layers):
+        best = None
+        for j in kept:
+            d = float(ciede2000(labs[i], labs[j]))
+            if d < limit and (best is None or d < best[0]):
+                best = (d, j)
+        if best is None:
+            kept.append(i)
+            continue
+        t = layers[best[1]]
+        pairs.append({"source": l.index, "target": t.index, "delta_e": round(best[0], 2),
+                      "source_mm2": round(weight[l.index], 1), "target_mm2": round(weight[t.index], 1)})
+    pairs.sort(key=lambda p: (p["delta_e"], order[p["source"]]))
+    return {"max_de": limit, "pairs": pairs}
+
+
+def merge_many(pid: str, pairs: list[dict]) -> dict:
+    """Apply several merges as one change (one undo step). ``pairs``: [{source, target}].
+    A target that is itself merged further is followed to its final colour; a colour
+    merged twice keeps the first target."""
+    design = load_design(pid)
+    known = {l.index for l in design.layers}
+    if not pairs:
+        raise ValueError("Choose at least one pair of colours to merge.")
+    into: dict[int, int] = {}
+    for p in pairs:
+        try:
+            s, t = int(p["source"]), int(p["target"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("Each merge needs a colour and the colour to merge it into.") from None
+        if s not in known or t not in known:
+            raise ValueError("One of the colours is no longer in the design - check the suggestions again.")
+        if s == t or s in into:
+            continue
+        final = t
+        while final in into:
+            final = into[final]
+        if final == s:  # would close a loop (a -> b, b -> a): the earlier merge wins
+            continue
+        into[s] = t
+    resolved = {}
+    for s, t in into.items():  # follow a -> b -> c to c (no loops, see above)
+        while t in into:
+            t = into[t]
+        resolved[s] = t
+    if not resolved:
+        raise ValueError("Pick two different colours to merge.")
+    _merge_into(design, resolved)
     _save_design(pid, design)
     return design_payload(design, pid)
 

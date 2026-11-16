@@ -114,6 +114,10 @@ class MergeBody(BaseModel):
     target: int
 
 
+class MergeManyBody(BaseModel):
+    pairs: list[MergeBody] = Field(..., max_length=256)
+
+
 class StitchBody(BaseModel):
     params: dict[str, Any] = {}
 
@@ -219,6 +223,7 @@ def get_config():
         "ai_clean_modes": list(CLEAN_MODES),
         "hoops": HOOPS,
         "density": {"cell_mm": DENSITY_CELL_MM, "limit": DENSITY_LIMIT},  # the machine check's "too dense"
+        "similar": {"min": service.SIMILAR_RANGE[0], "max": service.SIMILAR_RANGE[1], "default": service.SIMILAR_DEFAULT},
         "session_days": auth.session_choices()[-1],  # longest "keep me signed in"
         "session_choices": auth.session_choices(),  # 0 = this browser session
     }
@@ -338,6 +343,16 @@ def layers(pid: str, body: LayersBody):
 @protected.post("/api/projects/{pid}/layers/merge")
 def merge(pid: str, body: MergeBody):
     return service.merge_layers(pid, body.source, body.target)
+
+
+@protected.get("/api/projects/{pid}/layers/similar")
+def similar_colours(pid: str, max_de: Optional[float] = None):
+    return service.similar_colours(pid, max_de)
+
+
+@protected.post("/api/projects/{pid}/layers/merge-many")
+def merge_many(pid: str, body: MergeManyBody):
+    return service.merge_many(pid, [p.model_dump() for p in body.pairs])
 
 
 @protected.post("/api/projects/{pid}/stitch")
