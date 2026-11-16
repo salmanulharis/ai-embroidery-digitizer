@@ -194,6 +194,58 @@ SPACING_RANGE_MM = (0.25, 1.0)  # gap between fill rows / satin stitches
 PULL_RANGE_MM = (0.0, 0.8)  # extra width (shrink compensation)
 PUSH_RANGE_MM = (0.0, 0.5)  # push compensation (columns / fills shortened at each end)
 
+# Allowed range of every numeric design-wide stitch setting: the one table the editor's
+# controls (static/app.js PARAMS, checked by tests/test_param_ranges.py), presets
+# (presets.py) and the assistant (ai/builtin.py) follow. StitchParams clamps to it, so no
+# request can ask for stitches the machine cannot sew or work the server cannot finish.
+STITCH_RANGES: dict[str, tuple[float, float]] = {
+    "fill_spacing_mm": SPACING_RANGE_MM,
+    "satin_spacing_mm": SPACING_RANGE_MM,
+    "pull_compensation_mm": PULL_RANGE_MM,
+    "push_compensation_mm": PUSH_RANGE_MM,
+    "fill_angle": (0.0, 180.0),  # outside: folded back into 0-180 (same direction)
+    "fill_stitch_length_mm": (2.0, 7.0),
+    "satin_max_width_mm": (3.0, 12.0),
+    "running_stitch_length_mm": (1.0, 5.0),
+    "underlay_spacing_mm": (1.5, 5.0),
+    "border_width_mm": (1.0, 6.0),
+    "border_spacing_mm": (0.5, 4.0),
+    "stipple_spacing_mm": (1.0, 6.0),
+    "cross_cell_mm": (1.5, 6.0),
+    "motif_size_mm": (3.0, 20.0),
+    "pattern_size_mm": (3.0, 30.0),
+    "jagged_mm": (0.3, 5.0),
+    "photo_row_mm": (0.6, 3.0),
+    "trim_threshold_mm": (1.0, 20.0),
+    "min_object_area_mm2": (0.0, 10.0),
+    # not offered in the editor
+    "satin_min_width_mm": (0.5, 2.0),
+    "max_stitch_mm": (3.0, 7.0),  # the 7 mm cap (stitch/safety.py) can be lowered, never raised
+}
+RUNNING_REPEATS = (1, 3)  # how often outlines are sewn: once ... three times (bean / triple stitch)
+
+
+def bounded(value, bounds: tuple[float, float], default):
+    """``value`` when it is a finite number within ``bounds`` (unchanged, so valid settings
+    give byte-identical stitches), else clamped to them; ``default`` for non-numbers."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if isinstance(value, bool) or not math.isfinite(v):
+        return default
+    lo, hi = bounds
+    if lo <= v <= hi:
+        return value
+    return min(max(v, lo), hi)
+
+
+def _as_bool(value) -> bool:
+    """A switch from a request: JSON true/false, or "true"/"false"/"1"/"0" from a form."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
+
 
 def _in_range(value, bounds: tuple[float, float]) -> Optional[float]:
     """Stored value -> float within bounds, or None (= use the design setting)."""
@@ -494,23 +546,36 @@ class StitchParams:
             self.fill_pattern = "standard"
         if self.pattern not in FILL_PATTERN_TILES:
             self.pattern = "diamonds"
-        self.motif_size_mm = min(max(float(self.motif_size_mm), 3.0), 20.0)
-        self.pattern_size_mm = min(max(float(self.pattern_size_mm), 3.0), 30.0)
-        self.jagged_mm = min(max(float(self.jagged_mm), 0.3), 5.0)
-        self.photo_row_mm = min(max(float(self.photo_row_mm), 0.6), 3.0)
+        defaults = type(self).__dataclass_fields__
+        for name, bounds in STITCH_RANGES.items():
+            value = getattr(self, name)
+            if name == "fill_angle" and isinstance(value, (int, float)) and math.isfinite(value) and not 0 <= value <= 180:
+                value = value % 180  # -45 and 135 are the same direction
+            setattr(self, name, bounded(value, bounds, defaults[name].default))
+        self.running_repeats = int(round(bounded(self.running_repeats, RUNNING_REPEATS, 1)))
         if self.photo_style not in ("rows", "reef", "colour"):
             self.photo_style = "rows"
         if self.satin_underlay not in SATIN_UNDERLAYS:
             self.satin_underlay = "edge"
-        self.push_compensation_mm = min(max(float(self.push_compensation_mm), PUSH_RANGE_MM[0]), PUSH_RANGE_MM[1])
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "StitchParams":
         params = cls()
+        names = cls.__dataclass_fields__
         for key, value in (d or {}).items():
-            if hasattr(params, key) and value is not None:
+            if key in names and value is not None:
                 current = getattr(params, key)
-                setattr(params, key, type(current)(value) if not isinstance(current, bool) else bool(value))
+                if isinstance(current, bool):
+                    setattr(params, key, _as_bool(value))
+                elif isinstance(current, (int, float)):
+                    # numbers outside the ranges are clamped by __post_init__
+                    try:
+                        number = float(value)
+                        setattr(params, key, int(number) if isinstance(current, int) else number)
+                    except (TypeError, ValueError, OverflowError):
+                        raise ValueError(f"Stitch setting {key}: enter a number.") from None
+                else:
+                    setattr(params, key, str(value))
         params.__post_init__()
         return params
 

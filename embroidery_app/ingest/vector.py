@@ -28,7 +28,16 @@ from shapely.ops import unary_union
 
 from ..colors import color_name, merge_palette, rgb_to_lab
 from ..geometry import clean_polygonal, iter_lines, iter_polygons
-from ..models import ColorLayer, Design, DesignObject
+from ..models import ColorLayer, Design, DesignObject, bounded
+
+
+# Allowed range of every numeric artwork setting; VectorOptions clamps to it.
+VECTOR_RANGES: dict[str, tuple[float, float]] = {
+    "width_mm": (10.0, 500.0),
+    "num_colors": (1, 15),
+    "underlap_mm": (0.0, 2.0),
+    "min_area_mm2": (0.0, 20.0),
+}
 
 
 @dataclass
@@ -39,6 +48,18 @@ class VectorOptions:
     underlap_mm: float = 0.3
     drop_canvas_background: bool = True
     min_area_mm2: float = 0.5
+
+    def __post_init__(self) -> None:
+        """Clamp to VECTOR_RANGES (valid values stay exactly as they are)."""
+        defaults = type(self).__dataclass_fields__
+        if self.num_colors in (None, "", 0):
+            self.num_colors = None  # keep the artwork's colours
+        for name, bounds in VECTOR_RANGES.items():
+            value = getattr(self, name)
+            if value is None:
+                continue
+            value = bounded(value, bounds, defaults[name].default)
+            setattr(self, name, int(round(value)) if value is not None and name == "num_colors" else value)
 
 
 def pymupdf_module():

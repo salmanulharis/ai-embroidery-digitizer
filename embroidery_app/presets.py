@@ -38,7 +38,8 @@ from dataclasses import dataclass, field
 from . import db, entitlements
 from .entitlements import EntitlementError
 from .fabrics import FABRIC_IDS
-from .models import FILL_PATTERN_TILES, FILL_PATTERNS, FILL_UNDERLAYS, SATIN_UNDERLAYS, THREAD_WEIGHTS
+from .ingest.raster import BACKGROUNDS, RASTER_RANGES
+from .models import FILL_PATTERN_TILES, FILL_PATTERNS, FILL_UNDERLAYS, SATIN_UNDERLAYS, STITCH_RANGES, THREAD_WEIGHTS
 
 SCHEMA = 1
 SECTIONS = ("stitch", "fabric", "image", "size")
@@ -87,26 +88,26 @@ def _enum(section, values):
 _BOOL_S = Key("stitch", "bool")
 _BOOL_F = Key("fabric", "bool")
 
-# Ranges are the editor's (static/app.js PARAMS, index.html); keep them in step.
+# Ranges come from models.STITCH_RANGES and ingest/raster.RASTER_RANGES (the editor's).
 KEYS: dict[str, Key] = {
     # stitch
-    "fill_spacing_mm": _num("stitch", 0.25, 1.0),
-    "satin_spacing_mm": _num("stitch", 0.25, 1.0),
-    "fill_angle": _num("stitch", 0, 180),
-    "fill_stitch_length_mm": _num("stitch", 2, 7),
-    "satin_max_width_mm": _num("stitch", 3, 12),
-    "running_stitch_length_mm": _num("stitch", 1, 5),
+    "fill_spacing_mm": _num("stitch", *STITCH_RANGES["fill_spacing_mm"]),
+    "satin_spacing_mm": _num("stitch", *STITCH_RANGES["satin_spacing_mm"]),
+    "fill_angle": _num("stitch", *STITCH_RANGES["fill_angle"]),
+    "fill_stitch_length_mm": _num("stitch", *STITCH_RANGES["fill_stitch_length_mm"]),
+    "satin_max_width_mm": _num("stitch", *STITCH_RANGES["satin_max_width_mm"]),
+    "running_stitch_length_mm": _num("stitch", *STITCH_RANGES["running_stitch_length_mm"]),
     "running_repeats": _enum("stitch", (1, 3)),
-    "border_width_mm": _num("stitch", 1, 6),
-    "border_spacing_mm": _num("stitch", 0.5, 4),
-    "stipple_spacing_mm": _num("stitch", 1, 6),
-    "cross_cell_mm": _num("stitch", 1.5, 6),
-    "motif_size_mm": _num("stitch", 3, 20),
-    "pattern_size_mm": _num("stitch", 3, 30),
-    "jagged_mm": _num("stitch", 0.3, 5),
-    "photo_row_mm": _num("stitch", 0.6, 3),
-    "trim_threshold_mm": _num("stitch", 1, 20),
-    "min_object_area_mm2": _num("stitch", 0, 10),
+    "border_width_mm": _num("stitch", *STITCH_RANGES["border_width_mm"]),
+    "border_spacing_mm": _num("stitch", *STITCH_RANGES["border_spacing_mm"]),
+    "stipple_spacing_mm": _num("stitch", *STITCH_RANGES["stipple_spacing_mm"]),
+    "cross_cell_mm": _num("stitch", *STITCH_RANGES["cross_cell_mm"]),
+    "motif_size_mm": _num("stitch", *STITCH_RANGES["motif_size_mm"]),
+    "pattern_size_mm": _num("stitch", *STITCH_RANGES["pattern_size_mm"]),
+    "jagged_mm": _num("stitch", *STITCH_RANGES["jagged_mm"]),
+    "photo_row_mm": _num("stitch", *STITCH_RANGES["photo_row_mm"]),
+    "trim_threshold_mm": _num("stitch", *STITCH_RANGES["trim_threshold_mm"]),
+    "min_object_area_mm2": _num("stitch", *STITCH_RANGES["min_object_area_mm2"]),
     "fill_pattern": _enum("stitch", FILL_PATTERNS),
     "pattern": _enum("stitch", FILL_PATTERN_TILES),
     "motif": Key("stitch", "motif"),
@@ -122,25 +123,25 @@ KEYS: dict[str, Key] = {
     # fabric & thread
     "fabric": _enum("fabric", FABRIC_IDS),
     "thread_weight": _enum("fabric", THREAD_WEIGHTS),
-    "pull_compensation_mm": _num("fabric", 0, 0.8),
-    "push_compensation_mm": _num("fabric", 0, 0.5),
+    "pull_compensation_mm": _num("fabric", *STITCH_RANGES["pull_compensation_mm"]),
+    "push_compensation_mm": _num("fabric", *STITCH_RANGES["push_compensation_mm"]),
     "underlay": _BOOL_F,
-    "underlay_spacing_mm": _num("fabric", 1.5, 5),
+    "underlay_spacing_mm": _num("fabric", *STITCH_RANGES["underlay_spacing_mm"]),
     "fill_underlay": _enum("fabric", FILL_UNDERLAYS),
     "satin_underlay": _enum("fabric", SATIN_UNDERLAYS),
     "knockdown": _BOOL_F,
     # picture (raster designs)
-    "background": _enum("image", ("auto", "none", "color", "ai")),
+    "background": _enum("image", BACKGROUNDS),
     "text_mode": _enum("image", ("auto", "sharp", "standard", "simple")),
-    "brightness": _int("image", -100, 100),
-    "contrast": _int("image", -100, 100),
-    "sharpen": _int("image", 0, 3),
-    "denoise": _int("image", 0, 3),
-    "min_feature_mm": _num("image", 0.1, 3),
-    "min_area_mm2": _num("image", 0.2, 20),
+    "brightness": _int("image", *RASTER_RANGES["brightness"]),
+    "contrast": _int("image", *RASTER_RANGES["contrast"]),
+    "sharpen": _int("image", *RASTER_RANGES["sharpen"]),
+    "denoise": _int("image", *RASTER_RANGES["denoise"]),
+    "min_feature_mm": _num("image", *RASTER_RANGES["min_feature_mm"]),
+    "min_area_mm2": _num("image", *RASTER_RANGES["min_area_mm2"]),
     # size & colours
-    "width_mm": _num("size", 10, 500),
-    "num_colors": Key("size", "colours", 1, 15),
+    "width_mm": _num("size", *RASTER_RANGES["width_mm"]),
+    "num_colors": Key("size", "colours", *RASTER_RANGES["num_colors"]),
 }
 
 

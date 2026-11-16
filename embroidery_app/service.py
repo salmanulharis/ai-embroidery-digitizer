@@ -286,6 +286,7 @@ def _options(cls, values: dict):
                 setattr(obj, k, type(cur)(v))
             else:
                 setattr(obj, k, int(v) if k == "num_colors" else v)
+    obj.__post_init__()  # clamp to the allowed ranges, like StitchParams.from_dict
     return obj
 
 

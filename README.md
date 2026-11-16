@@ -504,8 +504,12 @@ for the built-in algorithms.
 
 * Without **Smart direction**, satin on irregular shapes, such as some letters, falls back to fill. With it,
   narrow shapes up to the satin width get satin along their centre lines; shapes wider than that are still
-  filled in one direction per section (no curved or contour fill yet).
-* No specialty stitches yet (motif, contour/spiral fill, 3D puff, appliqué, sequins).
+  filled in one direction per section. Curved fills (contour, spiral, radial) exist as stitch styles to choose per
+  colour or shape; the automatic choice does not pick them by itself.
+* Not built: 3D puff (foam) and sequins. Motif, pattern, contour / spiral fills, raised satin and appliqué are
+  available as stitch styles.
+* Design-wide settings are limited to the ranges the editor offers (`models.STITCH_RANGES`,
+  `ingest/raster.RASTER_RANGES`); values outside are clamped by the server, and the 7 mm stitch cap cannot be raised.
 * Text inside SVGs must be converted to outlines. EPS and CorelDRAW must be exported to SVG or PDF first.
 * Thread brand catalogs (Madeira, Isacord…) aren't bundled. Colors are free RGB that you can edit per layer.
 

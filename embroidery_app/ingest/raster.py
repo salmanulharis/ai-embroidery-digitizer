@@ -28,7 +28,7 @@ from shapely import affinity
 from ..colors import color_name, delta_e, lab_to_rgb, merge_palette, rgb_to_lab
 from ..config import settings
 from ..geometry import mask_to_polygons
-from ..models import ColorLayer, Design, DesignObject
+from ..models import ColorLayer, Design, DesignObject, bounded
 
 BG = -1
 
@@ -39,6 +39,24 @@ MARK_SOLID_DE = 12.0  # pixel counts as "solid" (full colour) when this close (Î
 # Thin strokes are mostly anti-aliased edge pixels, so the core can be a small share.
 MARK_MIN_SOLID = 0.2
 MARK_MIN_FILL = 0.3  # area / bounding box: dots and dashes are compact, slivers are not
+
+
+BACKGROUNDS = ("auto", "none", "color", "ai")
+MAX_COLOURS = 15  # the editor's "Number of thread colours" choices
+# Allowed range of every numeric picture setting (the editor's controls in index.html,
+# checked by tests/test_param_ranges.py); RasterOptions clamps to it.
+RASTER_RANGES: dict[str, tuple[float, float]] = {
+    "width_mm": (10.0, 500.0),
+    "num_colors": (1, MAX_COLOURS),
+    "max_auto_colors": (1, MAX_COLOURS),
+    "bg_tolerance": (1.0, 60.0),  # Î”E; not in the editor
+    "min_feature_mm": (0.1, 3.0),
+    "min_area_mm2": (0.2, 20.0),
+    "denoise": (0, 3),
+    "brightness": (-100, 100),
+    "contrast": (-100, 100),
+    "sharpen": (0, 3),
+}
 
 
 @dataclass
@@ -55,6 +73,23 @@ class RasterOptions:
     brightness: int = 0  # -100..100
     contrast: int = 0  # -100..100
     sharpen: int = 0  # 0..3 - crisper letter edges in soft / blurry pictures
+
+    def __post_init__(self) -> None:
+        """Clamp to RASTER_RANGES (valid values stay exactly as they are)."""
+        defaults = type(self).__dataclass_fields__
+        if self.num_colors in (None, "", 0):
+            self.num_colors = None  # automatic
+        for name, bounds in RASTER_RANGES.items():
+            value = getattr(self, name)
+            if value is None:
+                continue
+            default = defaults[name].default
+            value = bounded(value, bounds, default)
+            if value is not None and (isinstance(default, int) or name == "num_colors"):
+                value = int(round(value))
+            setattr(self, name, value)
+        if self.background not in BACKGROUNDS:
+            self.background = "auto"
 
 
 def load_raster(data: bytes) -> np.ndarray:

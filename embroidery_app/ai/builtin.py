@@ -16,17 +16,12 @@ import numpy as np
 
 from ..colors import merge_palette, rgb_to_lab
 from ..ingest.raster import _assign, _border_background, _denoise, _fold_edge_shades, _kmeans_lab
-from ..models import GUIDED_STYLES, THREAD_WEIGHTS, Design, StitchParams, StitchPlan
+from ..models import GUIDED_STYLES, STITCH_RANGES, THREAD_WEIGHTS, Design, StitchParams, StitchPlan
 
-# Valid ranges for settings the assistant may change (same limits as the UI).
+# Settings the assistant may change, with their valid ranges (models.STITCH_RANGES, as in the UI).
 STITCH_LIMITS: dict[str, tuple] = {
-    "fill_spacing_mm": (0.25, 1.0),
-    "fill_stitch_length_mm": (2.0, 7.0),
-    "satin_spacing_mm": (0.25, 1.0),
-    "satin_max_width_mm": (3.0, 12.0),
-    "pull_compensation_mm": (0.0, 0.8),
-    "trim_threshold_mm": (1.0, 20.0),
-    "min_object_area_mm2": (0.0, 10.0),
+    **{k: STITCH_RANGES[k] for k in ("fill_spacing_mm", "fill_stitch_length_mm", "satin_spacing_mm", "satin_max_width_mm",
+                                     "pull_compensation_mm", "trim_threshold_mm", "min_object_area_mm2")},
     "underlay": (bool,),
     "optimize": (bool,),
     "optimize_order": (bool,),

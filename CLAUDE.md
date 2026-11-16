@@ -68,6 +68,9 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
 
 ## Conventions and invariants
 
+- Setting ranges: `models.STITCH_RANGES` and `ingest/raster.RASTER_RANGES` / `vector.VECTOR_RANGES` are the only
+  place; `StitchParams` / the options clamp to them (valid values unchanged), presets and the assistant derive from
+  them, and `tests/test_param_ranges.py` checks the editor's controls (app.js `PARAMS`, index.html) match.
 - Units: mm everywhere in the engine; exports use 0.1 mm. Angles are y-down (45° = top-left → bottom-right).
 - Stitching must be deterministic (fixed seeds). With an option off, output must stay byte-identical.
   `tests/golden/plans.json.gz` enforces this; don't regenerate it to make a failing test pass.
