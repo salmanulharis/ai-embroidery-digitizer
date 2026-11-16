@@ -94,6 +94,18 @@ const Account = (() => {
         : `<p class="small">AI services are not included in your plan. The built-in assistant still suggests settings and checks stitches.</p>`}
       <button type="button" id="accAiOpen">&#9881; Open AI settings</button>`;
     $("accAiOpen").onclick = () => AI.open();
+    const ps = data.presets || { count: 0, limit: 0, feature: false };
+    const psCount = ps.limit == null ? `${ps.count} saved` : `${ps.count} of ${ps.limit} saved`;
+    $("accPresets").innerHTML = `<h3>My presets ${Tip.icon("presets")}</h3>
+      <p class="big-num">${esc(psCount)}</p>
+      <p class="small muted">${!ps.feature
+        ? ps.count ? "Your plan no longer includes saving presets. The ones you have can still be applied, edited and deleted."
+          : "Saving your own presets is not included in your plan. The built-in presets are in the editor's settings panel."
+        : ps.can_save ? "Save the settings of a design as a preset in the editor (Settings → Save as preset…)."
+          : "You have reached your plan's number of presets. Delete one to save a new preset; the others stay usable."}</p>
+      <p class="small muted">Presets hold settings only, never your pictures or designs.</p>
+      <button type="button" id="accPresetsOpen">Manage presets</button>`;
+    $("accPresetsOpen").onclick = () => Presets.openManage();
     $("accProfile").innerHTML = `<h3>Profile</h3>
       <form id="profileForm" class="stack">
         <label><span class="lbl">Name</span><input type="text" id="profileName" maxlength="80" value="${esc(u.display_name || "")}" autocomplete="name"></label>

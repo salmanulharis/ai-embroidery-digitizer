@@ -1,5 +1,5 @@
 """The app's small SQLite database: accounts, login sessions, each user's AI settings,
-plans and subscriptions, usage metadata, app settings and the audit log.
+plans and subscriptions, usage metadata, saved settings presets, app settings and the audit log.
 
 Project files stay as temporary folders under DATA_DIR/projects (temp_projects.py); the
 database only knows a project's id, owner and timestamps, never its content. The schema is upgraded in place at startup (``MIGRATIONS``, tracked with SQLite's
@@ -209,6 +209,30 @@ MIGRATIONS = [
         FROM users u, plans p WHERE p.code = 'free';
     INSERT INTO subscription_history (user_id, event, to_plan_id, note, at)
         SELECT user_id, 'assigned', plan_id, 'Default plan at upgrade', started_at FROM subscriptions;
+    """,
+    # 4: settings presets (presets.py): each account's own presets, and numeric limits
+    # (entitlements.LIMITS) on plans and overrides. The seeded plans get the preset
+    # features and limits (Free: built-in only; Basic: 5 own; Pro: 25 own + premium).
+    """
+    CREATE TABLE user_presets (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        settings    TEXT NOT NULL,
+        schema      INTEGER NOT NULL DEFAULT 1,
+        created_at  REAL NOT NULL,
+        updated_at  REAL NOT NULL,
+        UNIQUE (user_id, name)
+    );
+    CREATE INDEX user_presets_user ON user_presets(user_id);
+    ALTER TABLE plans ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE entitlement_overrides ADD COLUMN limits TEXT NOT NULL DEFAULT '{}';
+    UPDATE plans SET limits = '{"max_custom_presets": 0}' WHERE code = 'free';
+    UPDATE plans SET limits = '{"max_custom_presets": 5}',
+        features = json_set(features, '$.custom_presets', json('true')) WHERE code = 'basic';
+    UPDATE plans SET limits = '{"max_custom_presets": 25}',
+        features = json_set(features, '$.custom_presets', json('true'), '$.presets_premium', json('true')) WHERE code = 'pro';
     """,
 ]
 

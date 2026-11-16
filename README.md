@@ -52,6 +52,15 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
   Picture settings (undoing one puts back the design and the setting) and the stitch settings.
 * **Changed settings** are marked against what the design started with (the stitch defaults and the picture
   settings found after the upload): ↺ resets one setting, "Reset" a section, "Reset all" everything.
+* **Presets** (top of the settings panel): choose one and press **Apply** to fill in a set of settings at once.
+  Built-in presets (Standard, Small text & logos, Lightweight, Clean logo, High contrast; Premium: Fine detail, Dense
+  coverage, Large design, Satin-forward, Fill-forward, Soft colours, Photo) are by plan tier; *Save as preset…*
+  keeps the current settings (stitch, fabric & thread; optionally picture and size) under a name, *Manage…* applies,
+  edits, updates, duplicates and deletes them. Applying is one undo step and makes the preset the baseline, so the
+  changed marks show what differs from it. Presets hold settings only, never the picture, shapes or threads.
+  After an upload the smart analysis may *suggest* a preset (e.g. Small text & logos for lettering under 6 mm),
+  offered with a button and never applied by itself. Locked presets show which plan includes them.
+  Built-in values are starting points to confirm with a sew-out, like the fabric presets.
 * **Style settings** (borders, stipple, cross stitch, motifs, pattern / jagged fills, photo stitch) are listed only
   for the styles the design uses; *Show the settings of every stitch style* lists them all.
 * **Hoop**: the hoop chosen under Size is drawn around the design, centred like on the machine; it turns red and
@@ -93,10 +102,14 @@ holds undo/redo, the preview style, the sewing simulation, zoom (100% = actual s
 - **Plans** (*Admin console → Subscription plans*): Free (default, 10 designs per month), Basic (100 per month) and Pro
   (unlimited) are created on the first start; all values are editable and plans can be added, disabled or deleted (when
   unused). A plan has an allowance (a number per calendar month in UTC, a number in total, or **unlimited** - a state
-  of its own, never a big number), and feature switches: own AI service, the app's AI keys, all machine formats, ZIP
-  downloads, photo stitch. Every new account gets the default plan.
+  of its own, never a big number), feature switches (own AI service, the app's AI keys, all machine formats, ZIP
+  downloads, photo stitch, built-in presets, premium presets, saving own presets) and limits (how many own presets:
+  Free 0, Basic 5, Pro 25 by default). Every new account gets the default plan. The built-in presets table on the
+  same page moves a preset between the Basic and Premium tiers.
+- **Presets after a downgrade** stay usable (apply, rename, edit, delete); only saving new ones is refused until the
+  account is under its limit again. The limit is checked and the preset saved in one transaction.
 - **Per account** (*Users → Details*): change the plan (upgrade / downgrade), set or remove an end date, give a custom
-  allowance or unlimited downloads, switch single features on or off, reset the usage counter. Overrides win over the
+  allowance or unlimited downloads, switch single features on or off, set a limit of its own, reset the usage counter. Overrides win over the
   plan; an ended subscription falls back to the default plan; the Super Admin always has everything.
 - **Safety:** the allowance is checked and the design reserved in one database transaction, and a unique index allows
   only one charge per design, so parallel or repeated requests cannot overspend or double-charge. A failed download is
@@ -371,6 +384,7 @@ embroidery_app/
   models.py           Design (vector, mm) · StitchParams · StitchPlan
   config.py           settings from env / .env
   fabrics.py          fabric presets (stitch settings): fill in compensation, density, foundation; backing + needle on the worksheet
+  presets.py          settings presets: allowed keys + ranges, built-in presets by tier, each account's own presets (limits)
   colors.py, geometry.py
   ingest/
     __init__.py       file-type detection
@@ -416,7 +430,8 @@ embroidery_app/
   app_settings.py     settings the admin can change (validated), audit.py: audit log
   user_ai.py          each account's AI settings, encrypted; used for that account's AI requests
   static/             index.html, app.js, auth.js, account.js (plan chip, My account, downloads), admin.js (console),
-                      charts.js (small SVG charts), shapes.js, ai.js, help.js, style.css (no build step)
+                      charts.js (small SVG charts), shapes.js, ai.js, presets.js (preset bar + dialogs), help.js,
+                      style.css (no build step)
 tests/                pytest suite
 ```
 
@@ -433,13 +448,18 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | GET | `/api/me/account` · `/api/me/usage` | your plan, allowance, features, AI status and sessions · just the allowance |
 | PATCH | `/api/me/profile` | `{display_name}` |
 | DELETE · POST | `/api/me/sessions/{id}` · `/api/me/sessions/revoke-others` | sign out another device · all other devices |
+| GET | `/api/presets` | built-in presets for your plan (locked ones without their settings) + the section of every preset key |
+| GET · POST | `/api/me/presets` | your presets + `{count, limit, feature, can_save}` · `{name, description, sections}` → 201; 403 `feature_unavailable` / `preset_limit`, 409 `name_taken` (with `existing_id`) |
+| PUT · DELETE | `/api/me/presets/{id}` | `{name?, description?, sections?}` · delete (your own presets only; allowed after a downgrade) |
+| POST | `/api/me/presets/{id}/duplicate` | a copy ("… (copy)"), counts toward the limit |
 | GET · PUT | `/api/me/ai` | your AI settings (keys only as `has_key` / `key_hint`); PUT keeps a saved key unless a new `api_key` or `remove_key` is sent |
 | GET | `/api/me/ai/status` | which service and model you use, and whether it is ready (no keys) |
 | GET · POST | `/api/admin/users` | Super Admin: list (`q, plan, status, usage_status, sort, page`) / create `{email, password, username?, display_name?, role?, plan_id?}` |
 | GET · PATCH · DELETE | `/api/admin/users/{id}` | Super Admin: usage details / `{email?, username?, display_name?, active?, role?}` / delete |
 | POST | `/api/admin/users/{id}/password` · `/sessions/revoke` · `/usage/reset` | new password · sign out everywhere · reset the usage counter |
-| PUT | `/api/admin/users/{id}/subscription` · `/expiry` · `/overrides` | `{plan_id, keep_expiry, expires_at}` · `{expires_at}` · `{limit_type, generation_limit, features, note}` |
-| GET · POST · PATCH · DELETE | `/api/admin/plans[/{id}]` | plans and the feature catalogue |
+| PUT | `/api/admin/users/{id}/subscription` · `/expiry` · `/overrides` | `{plan_id, keep_expiry, expires_at}` · `{expires_at}` · `{limit_type, generation_limit, features, limits, note}` |
+| GET · POST · PATCH · DELETE | `/api/admin/plans[/{id}]` | plans (with `features` and `limits`) and the feature and limit catalogues |
+| GET · PUT | `/api/admin/presets` | built-in presets with their tier and counts of saved presets · `{access: {id: "basic" or "premium" or null}}` |
 | GET | `/api/admin/analytics` · `/api/admin/ai` | `?start=YYYY-MM-DD&end=…` aggregated analytics · AI overview |
 | GET · PUT | `/api/admin/settings` | application settings (validated ranges) |
 | GET | `/api/admin/audit` | `?q, before, user_id` |

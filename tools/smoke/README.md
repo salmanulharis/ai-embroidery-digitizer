@@ -8,6 +8,7 @@ protocol and print PASS / FAIL per check, script exceptions and console errors. 
 |---|---|
 | `workspace.mjs` | Phase 1: sign in, example upload, auto-update, view modes, playback, selection, shapes view, edit tools, threads, undo, manual mode, export dialog + download, tablet / phone layouts, reload, account page, "nothing to stitch" error, SVG upload (45 checks) |
 | `controls.mjs` | Phase 2: undo/redo of settings and picture changes, changed markers, reset one / section, style settings, hoop outline + fit warning, Wilcom package, undo after reload (26 checks) |
+| `presets.mjs` | Phase 3: preset picker, apply (values, one undo step, baseline, "Changed" badge), undo/redo of a preset, save, name clash (keep both), manage + delete, app defaults, account card, admin tiers + plan limits, Free account restrictions + lock popover, suggestion after upload, tablet / phone layout (39 checks; re-runnable on the same data) |
 
 ## Run
 
@@ -22,6 +23,7 @@ Needs Node 22+ (built-in `fetch` and `WebSocket`) and Chrome.
    ```bash
    node tools/smoke/workspace.mjs ./smoke-out
    node tools/smoke/controls.mjs ./smoke-out
+   node tools/smoke/presets.mjs ./smoke-out
    ```
 
 Settings (environment): `SMOKE_APP` (default `http://127.0.0.1:8765/`), `SMOKE_EMAIL`, `SMOKE_PASSWORD`

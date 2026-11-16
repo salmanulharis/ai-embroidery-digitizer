@@ -24,9 +24,9 @@ from typing import Any, Optional, Union
 from fastapi import APIRouter, Depends, FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import auth, entitlements, maintenance, service, temp_projects, usage, user_ai
+from . import auth, entitlements, maintenance, presets, service, temp_projects, usage, user_ai
 from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
@@ -88,6 +88,11 @@ async def _ai_error(_: Request, exc: AIError):
 @app.exception_handler(EntitlementError)
 async def _entitlement(_: Request, exc: EntitlementError):
     return JSONResponse({"detail": str(exc), "code": exc.code, "usage": exc.usage}, status_code=exc.status)
+
+
+@app.exception_handler(presets.NameTaken)
+async def _name_taken(_: Request, exc: presets.NameTaken):
+    return JSONResponse({"detail": str(exc), "code": exc.code, "existing_id": exc.existing_id}, status_code=exc.status)
 
 
 @app.exception_handler(usage.RateLimited)
@@ -419,8 +424,17 @@ def ai_revert(pid: str):
 
 @protected.post("/api/projects/{pid}/ai/suggest")
 def ai_suggest(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
-    """Recommended preparation settings: built-in analysis, refined by AI when configured."""
-    return _ai_task(user, "ai_suggest", body, lambda ai: service.ai_suggest(pid, ai, body.width_mm))
+    """Recommended preparation settings: built-in analysis, refined by AI when configured.
+    ``preset``: a built-in preset that suits the picture (offered, never applied), or null."""
+    def run(ai):
+        result = service.ai_suggest(pid, ai, body.width_mm)
+        try:
+            result["preset"] = presets.suggest(result, float(body.width_mm or 100), user["id"])
+        except Exception:  # a suggestion is a convenience: the analysis still counts
+            log.exception("preset suggestion failed")
+            result["preset"] = None
+        return result
+    return _ai_task(user, "ai_suggest", body, run)
 
 
 @protected.post("/api/projects/{pid}/ai/analyze")
@@ -452,6 +466,18 @@ class PasswordBody(BaseModel):
 
 class ProfileBody(BaseModel):
     display_name: Optional[str] = None
+
+
+class PresetBody(BaseModel):
+    name: str = Field(max_length=200)
+    description: str = Field("", max_length=1000)
+    sections: dict[str, dict[str, Any]]
+
+
+class PresetPatch(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    description: Optional[str] = Field(None, max_length=1000)
+    sections: Optional[dict[str, dict[str, Any]]] = None
 
 
 @app.post("/api/auth/login")
@@ -498,6 +524,7 @@ def my_account(user: dict = Depends(auth.require_user)):
         "features": [{"key": k, "label": f.label, "help": f.help, "on": ent.has(k)} for k, f in entitlements.FEATURES.items()],
         "ai": user_ai.status(user["id"]),
         "sessions": auth.list_sessions(user["id"], user.get("sid")),
+        "presets": presets.status(user["id"]),
     }
 
 
@@ -543,6 +570,41 @@ def save_my_ai(body: dict[str, Any], user: dict = Depends(auth.require_user)):
 @protected.get("/api/me/ai/status")
 def my_ai_status(user: dict = Depends(auth.require_user)):
     return user_ai.status(user["id"])
+
+
+# --------------------------------------------------------------------------- settings presets (presets.py)
+
+@protected.get("/api/presets")
+def builtin_presets(user: dict = Depends(auth.require_user)):
+    """Built-in presets; locked ones (plan tier) come without their settings. ``keys``: the
+    section of every setting a preset may hold (the save dialog groups by it)."""
+    return {"presets": presets.builtins_for(user["id"]), "keys": {k: v.section for k, v in presets.KEYS.items()}}
+
+
+@protected.get("/api/me/presets")
+def my_presets(user: dict = Depends(auth.require_user)):
+    return presets.list_mine(user["id"])
+
+
+@protected.post("/api/me/presets", status_code=201)
+def create_my_preset(body: PresetBody, user: dict = Depends(auth.require_user)):
+    return presets.create(user["id"], body.name, body.description, body.sections)
+
+
+@protected.put("/api/me/presets/{preset_id}")
+def update_my_preset(preset_id: int, body: PresetPatch, user: dict = Depends(auth.require_user)):
+    return presets.update(user["id"], preset_id, body.name, body.description, body.sections)
+
+
+@protected.post("/api/me/presets/{preset_id}/duplicate", status_code=201)
+def duplicate_my_preset(preset_id: int, user: dict = Depends(auth.require_user)):
+    return presets.duplicate(user["id"], preset_id)
+
+
+@protected.delete("/api/me/presets/{preset_id}")
+def delete_my_preset(preset_id: int, user: dict = Depends(auth.require_user)):
+    presets.delete(user["id"], preset_id)
+    return {"deleted": True}
 
 
 app.include_router(protected)

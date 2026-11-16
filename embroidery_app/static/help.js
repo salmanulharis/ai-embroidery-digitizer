@@ -68,6 +68,23 @@ const HELP = {
     why: "You always see what you changed, and can go back without remembering the old values. Resetting can be undone like any other change.",
     eg: "The starting values are the app's stitch defaults and the picture settings found right after the upload.",
   },
+  presets: {
+    t: "Presets",
+    what: "A preset fills in a set of settings at once – stitch density, fabric and thread, picture clean-up – for a kind of design. Choose one and press Apply; every value stays editable afterwards.",
+    why: "Good starting values in one step, and the same settings again for every design of the same kind. After applying, changed settings are marked against the preset.",
+    eg: "“Small text & logos” for a left-chest logo with lettering under 6 mm. Applying can be undone like any other change.",
+  },
+  preset_modified: {
+    t: "Changed since the preset",
+    what: "You changed settings after applying the preset. The marks next to the settings show which ones.",
+    why: "Save as preset… keeps your version for next time; Reset all goes back to the preset's values.",
+  },
+  preset_save: {
+    t: "Save as preset",
+    what: "Saves the current settings under a name so you can apply them to other designs. Choose which groups to include – stitch settings and fabric & thread are on; picture settings and size are off unless you want them.",
+    why: "Only settings are saved, never your picture or design. Your presets are private to your account.",
+    eg: "Save “Polo piqué logos” once and apply it to every polo order.",
+  },
   style_settings: {
     t: "Style settings",
     what: "Settings that only matter for some stitch styles – zigzag and E-stitch borders, stipple, cross stitch, motifs, pattern and jagged fills, photo stitch. Only those used in your design are shown.",

@@ -255,6 +255,7 @@ async function init() {
   document.body.classList.remove("booting", "signed-out");
   await AI.init(state.config); // this account's AI settings
   Account.init(state.config); // plan + usage chip, account page, admin console
+  Presets.init(); // built-in and own settings presets (presets.js)
   history.replaceState({ page: "upload" }, "");
   await resumeDesign();
 }
@@ -340,6 +341,7 @@ async function smartDefaults() {
     (r.notes || []).slice(0, 2).map((n) => `<span class="small muted">${esc(n)}</span>`).join("") +
     `<span class="small muted">Change anything below if the result is not what you want.</span>`;
   $("smartInfo").classList.remove("hidden");
+  Presets.offer(r.preset); // a preset that suits the picture, offered with a button (never applied by itself)
 }
 
 function aspect() {
@@ -394,6 +396,7 @@ function openProject(meta) {
   Shapes.reset();
   Render.reset();
   History.reset();
+  Presets.reset();
   document.querySelectorAll("#leftPanel label.mod, #leftPanel .ed-sec.mod").forEach((n) => n.classList.remove("mod"));
   $("modSummary").classList.add("hidden");
   const raster = meta.kind === "raster";
@@ -900,6 +903,7 @@ function markModified() {
   document.querySelectorAll(".ed-sec[data-sec]").forEach((s) => s.classList.toggle("mod", !!s.querySelector("label.mod")));
   $("modSummary").classList.toggle("hidden", !n);
   $("modCount").textContent = `${n} setting${n === 1 ? "" : "s"} changed`;
+  Presets.sync();
 }
 
 /** Back to the baseline: ``keys`` (one setting or a section) or everything (null). */
@@ -1011,10 +1015,14 @@ const Jobs = (() => {
     return idle();
   }
 
-  /** Prepare the design again (extract) with the current settings; the stitches follow. */
-  function extract({ delay = 250 } = {}) {
+  /** Prepare the design again (extract) with the current settings; the stitches follow.
+   *  ``step``: {label, stitch: {before, after}} makes the undo step also cover stitch
+   *  settings changed together with the picture (a preset). */
+  let nextStep = null;
+  function extract({ delay = 250, step = null } = {}) {
     if (!state.project) return Promise.resolve();
     wantExtract = true;
+    if (step) nextStep = step;
     return kick(delay);
   }
   /** Create the stitches again. ``report``: tell how the stitch count changed (shape edits).
@@ -1039,10 +1047,11 @@ const Jobs = (() => {
         if (wantExtract) {
           wantExtract = false;
           try {
-            const pid = state.project.id, had = !!state.design, used = extractValues();
+            const pid = state.project.id, had = !!state.design, used = extractValues(), step = nextStep;
+            nextStep = null;
             const res = await work("Preparing your design…", () => api(`/api/projects/${pid}/extract`, json("POST", { options: extractOptions() })));
             if (state.project?.id !== pid) continue;
-            History.extracted(used, had);
+            History.extracted(used, had, step);
             renderDesign(res);
             error = "";
             if (autoOn() || !state.preview) wantStitch = true;
@@ -1150,11 +1159,16 @@ const History = (() => {
   function designChange(label) { push({ type: "design", label: label || "design change" }); }
   /** The design was prepared again with these settings; ``had``: a design existed before
    *  (only then the server keeps a step to go back to). */
-  function extracted(used, had) {
+  function extracted(used, had, step = null) {
+    const st = step?.stitch && changedKeys(step.stitch.before, step.stitch.after).length ? step.stitch : null;
     if (had) {
       const keys = changedKeys(lastExtract, used);
-      push({ type: "design", label: keys.length ? keys.slice(0, 2).map(settingName).join(", ") : "prepare design", ext: { before: lastExtract, after: used } });
+      const label = step?.label || (keys.length ? keys.slice(0, 2).map(settingName).join(", ") : "prepare design");
+      push({ type: "design", label, ext: { before: lastExtract, after: used }, ...(st ? { st } : {}) });
+    } else if (st) {
+      push({ type: "settings", label: step.label, before: st.before, after: st.after, t: 0 });
     }
+    if (st) lastStitch = st.after;
     lastExtract = used;
   }
   /** The stitch settings changed (a field, a fabric, a reset). Quick repeats of the same
@@ -1203,6 +1217,11 @@ const History = (() => {
         const v = back ? e.ext.before : e.ext.after;
         setExtractValues(v);
         lastExtract = v;
+      }
+      if (e.st) { // stitch settings changed in the same step (a preset)
+        const v = back ? e.st.before : e.st.after;
+        setStitchValues(v);
+        lastStitch = v;
       }
       to.push(e);
       renderDesign(res);

@@ -7,7 +7,7 @@
 
 const Admin = (() => {
   let tab = "overview";
-  let plans = [], features = [];
+  let plans = [], features = [], limits = [];
   let range = { preset: "30", start: "", end: "" };
   const users = { q: "", plan: "", status: "", usage_status: "", sort: "email", page: 1, list: [], total: 0 };
   const usageView = { q: "", plan: "", usage_status: "", sort: "used", page: 1 };
@@ -80,6 +80,7 @@ const Admin = (() => {
     const r = await api("/api/admin/plans");
     plans = r.plans;
     features = r.features;
+    limits = r.limits || [];
   }
 
   // ------------------------------------------------------------------ overview
@@ -334,8 +335,14 @@ const Admin = (() => {
             <option value="true" ${cur === "true" ? "selected" : ""}>On for this account</option>
             <option value="false" ${cur === "false" ? "selected" : ""}>Off for this account</option></select></label>`;
         }).join("")}</div>
+        ${limits.length ? `<h3>Limits</h3><div class="feature-grid">${limits.map((l) => {
+          const planVal = e.plan.limits?.[l.key] ?? l.default;
+          return `<label><span class="lbl">${esc(l.label)} <i class="help-inline" title="${esc(l.help)}">?</i></span>
+            <input type="number" data-limit="${l.key}" min="${l.min}" max="${l.max}" step="1" value="${ov.limits?.[l.key] ?? ""}"
+              placeholder="From the plan (${planVal})" aria-describedby="dLimitsHint"></label>`;
+        }).join("")}</div><p class="small muted" id="dLimitsHint">Empty = the plan's value.</p>` : ""}
         <label><span class="lbl">Note <span class="muted">(why; visible to admins only)</span></span><input type="text" id="dNote" maxlength="300" value="${esc(ov.note || "")}"></label>
-        <button type="submit" class="primary">Save features</button>
+        <button type="submit" class="primary">Save features and limits</button>
       </form>
       <h3>Designs downloaded – last 30 days</h3>
       <div id="dChart"></div>
@@ -377,8 +384,10 @@ const Admin = (() => {
     $("dFeatForm").onsubmit = (ev) => detailSave(ev, async () => {
       const f = {};
       $("dFeatForm").querySelectorAll("[data-feature]").forEach((s) => (f[s.dataset.feature] = s.value === "" ? null : s.value === "true"));
-      await api(`/api/admin/users/${id}/overrides`, json("PUT", { features: f, note: $("dNote").value }));
-      return "Features saved.";
+      const lim = {};
+      $("dFeatForm").querySelectorAll("[data-limit]").forEach((i) => (lim[i.dataset.limit] = i.value === "" ? null : +i.value));
+      await api(`/api/admin/users/${id}/overrides`, json("PUT", { features: f, limits: lim, note: $("dNote").value }));
+      return "Features and limits saved.";
     });
     $("dRevoke")?.addEventListener("click", () => {
       if (!confirm(`Sign ${u.email} out on every device? Their open design is removed.`)) return;
@@ -400,7 +409,9 @@ const Admin = (() => {
   // ------------------------------------------------------------------ plans
   async function plansTab() {
     await loadPlans();
-    const featLabel = (p) => features.filter((f) => (p.features[f.key] ?? f.default)).map((f) => esc(f.label)).join(", ") || "None";
+    const featLabel = (p) => (features.filter((f) => (p.features[f.key] ?? f.default)).map((f) => esc(f.label)).join(", ") || "None") +
+      limits.map((l) => `<br><span class="muted">${esc(l.label)}: ${num(p.limits?.[l.key] ?? l.default)}</span>`).join("");
+    const pv = await api("/api/admin/presets");
     main().innerHTML = `
       <div class="row between"><p class="small muted">Plans decide each account's design allowance and features. Accounts can also get individual overrides (Users &rarr; Details).
         No payments are processed yet: plan changes are manual.</p>
@@ -412,7 +423,23 @@ const Admin = (() => {
         <td data-label="Features" class="small">${featLabel(p)}</td>
         <td data-label="Accounts">${num(p.subscribers)}</td>
         <td data-label="Status"><span class="status ${p.enabled ? "good" : "bad"}">${p.enabled ? "&#9679; Enabled" : "&#9675; Disabled"}</span></td>
-        <td class="user-actions"><button type="button" class="ghost small" data-plan="${p.id}">Edit</button></td></tr>`).join("")}</table></div>`;
+        <td class="user-actions"><button type="button" class="ghost small" data-plan="${p.id}">Edit</button></td></tr>`).join("")}</table></div>
+      ${section("Built-in presets", `<p class="small muted">Accounts get the Basic presets with the "Built-in presets" feature and the Premium ones
+        with "Premium presets". Move a preset to the other tier here. Saved presets: ${num(pv.saved.presets)} by ${num(pv.saved.accounts)}
+        account${pv.saved.accounts === 1 ? "" : "s"} (their settings are private and not shown).</p>
+        <div class="tableWrap"><table class="users"><tr><th scope="col">Preset</th><th scope="col">Sets</th><th scope="col">Tier</th></tr>
+        ${pv.builtins.map((b) => `<tr><td data-label="Preset"><b>${esc(b.label)}</b><br><span class="small muted">${esc(b.description)}</span>
+          ${b.needs.length ? `<br><span class="small muted">Also needs: ${esc(b.needs.join(", "))}</span>` : ""}</td>
+          <td data-label="Sets" class="small">${b.settings} setting${b.settings === 1 ? "" : "s"} · ${esc(b.kinds.join(", "))}</td>
+          <td data-label="Tier"><select class="preset-tier" data-tier="${esc(b.id)}" aria-label="Tier of ${esc(b.label)}">
+            ${["basic", "premium"].map((t) => `<option value="${t}" ${t === b.tier ? "selected" : ""}>${t === "basic" ? "Basic" : "Premium"}${t === b.default_tier ? " (its own)" : ""}</option>`).join("")}
+          </select></td></tr>`).join("")}</table></div>`)}`;
+    main().querySelectorAll("[data-tier]").forEach((sel) => (sel.onchange = async () => {
+      try {
+        await api("/api/admin/presets", json("PUT", { access: { [sel.dataset.tier]: sel.value } }));
+        toast("Preset tier saved.", true);
+      } catch (e) { toast(e.message); plansTab(); }
+    }));
     $("addPlan").onclick = () => openPlan(null);
     main().querySelectorAll("[data-plan]").forEach((b) => (b.onclick = () => openPlan(plans.find((p) => p.id === +b.dataset.plan))));
   }
@@ -435,6 +462,9 @@ const Admin = (() => {
     $("planPriceRef").value = p?.provider_price_ref || "";
     $("planFeatures").innerHTML = features.map((f) => `<label class="check"><input type="checkbox" data-pf="${f.key}" ${(p ? p.features[f.key] ?? f.default : f.default) ? "checked" : ""}>
       <span>${esc(f.label)}<br><span class="small muted">${esc(f.help)}</span></span></label>`).join("");
+    $("planLimits").innerHTML = limits.map((l) => `<label><span class="lbl">${esc(l.label)}</span>
+      <input type="number" data-pl="${l.key}" min="${l.min}" max="${l.max}" step="1" value="${p?.limits?.[l.key] ?? l.default}">
+      <span class="small muted">${esc(l.help)}</span></label>`).join("");
     $("planDelete").classList.toggle("hidden", !p || p.is_default || p.subscribers > 0);
     syncPlanForm();
     Auth.formStatus("planStatus", p && p.subscribers ? `${p.subscribers} account${p.subscribers === 1 ? "" : "s"} use this plan; changes apply to them at once.` : "");
@@ -449,10 +479,12 @@ const Admin = (() => {
     ev.preventDefault();
     const f = {};
     $("planFeatures").querySelectorAll("[data-pf]").forEach((c) => (f[c.dataset.pf] = c.checked));
+    const lim = {};
+    $("planLimits").querySelectorAll("[data-pl]").forEach((i) => (lim[i.dataset.pl] = i.value === "" ? 0 : +i.value));
     const body = {
       name: $("planName").value.trim(), code: $("planCode").value.trim().toLowerCase(), description: $("planDesc").value.trim(),
       limit_type: $("planLimitType").value, generation_limit: +$("planLimit").value || 0, period: $("planPeriod").value,
-      features: f, enabled: $("planEnabled").checked, sort_order: +$("planOrder").value || 0,
+      features: f, limits: lim, enabled: $("planEnabled").checked, sort_order: +$("planOrder").value || 0,
       price_cents: $("planPrice").value === "" ? null : +$("planPrice").value, currency: $("planCurrency").value.trim() || null,
       provider_price_ref: $("planPriceRef").value.trim() || null,
     };
@@ -606,7 +638,7 @@ const Admin = (() => {
         run it now to remove closed, idle and expired designs at once.</p><button type="button" id="runClean">Run clean-up now</button>`)}
       ${section("What is stored", `<ul class="small plain-list">
         <li><b>Kept:</b> accounts (email, username, name, role, password hash), sign-in sessions (hashed), plans and plan history, per-account overrides,
-          encrypted AI keys, usage metadata (what was done, when, success, AI service and model, duration, token counts) and this audit log.</li>
+          encrypted AI keys, saved presets (settings, name and description only; deleted with the account), usage metadata (what was done, when, success, AI service and model, duration, token counts) and this audit log.</li>
         <li><b>Never kept:</b> uploaded files, generated stitch files, designs, prompts or AI answers. Designs exist only as temporary files while in use.</li>
         <li>Usage records and audit entries are deleted after the retention periods above.</li></ul>`)}`;
     $("setForm").onsubmit = async (ev) => {
@@ -631,7 +663,7 @@ const Admin = (() => {
     "subscription.upgraded": "Upgraded plan", "subscription.downgraded": "Downgraded plan", "subscription.changed": "Changed plan",
     "subscription.expiry": "Changed plan end date", "entitlement.update": "Changed allowance / features", "entitlement.unlimited": "Granted unlimited",
     "usage.reset": "Reset usage", "plan.create": "Created plan", "plan.update": "Edited plan", "plan.delete": "Deleted plan",
-    "settings.update": "Changed settings", "maintenance.run": "Ran clean-up",
+    "settings.update": "Changed settings", "maintenance.run": "Ran clean-up", "presets.access": "Moved built-in presets",
   };
   async function auditTab(more = false) {
     if (!more) {

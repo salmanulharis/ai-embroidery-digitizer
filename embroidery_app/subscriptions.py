@@ -17,7 +17,7 @@ import re
 import time
 
 from . import db
-from .entitlements import FEATURES, plan_dict
+from .entitlements import FEATURES, LIMITS, clean_limits, plan_dict
 
 _CODE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 MAX_LIMIT = 1_000_000
@@ -78,6 +78,8 @@ def _clean_plan(data: dict, partial: bool) -> dict:
         out["period"] = data["period"]
     if has("features"):
         out["features"] = json.dumps(_clean_features(data["features"]))
+    if has("limits"):
+        out["limits"] = json.dumps(clean_limits(data["limits"]))
     for flag in ("enabled", "is_default"):
         if has(flag):
             if not isinstance(data[flag], bool):
@@ -291,11 +293,11 @@ def history(user_id: int, limit: int = 50) -> list[dict]:
 # --------------------------------------------------------------------------- per-account overrides
 
 def set_override(user_id: int, actor_id: int | None, limit_type: str | None = "keep", generation_limit: int | None | str = "keep",
-                 features: dict | None = None, note: str | None = None) -> dict | None:
+                 features: dict | None = None, note: str | None = None, limits: dict | None = None) -> dict | None:
     """Change an account's overrides. ``limit_type``: "unlimited", "limited" (with
     ``generation_limit`` = the custom allowance) or None (= the plan's). ``features``:
-    {feature: true | false | null}, null removes that override. Returns the new overrides
-    (None when nothing is overridden any more)."""
+    {feature: true | false | null}, null removes that override; ``limits`` likewise
+    {limit: number | null}. Returns the new overrides (None when nothing is overridden any more)."""
     now = time.time()
     with db.tx() as c:
         if not c.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
@@ -304,6 +306,7 @@ def set_override(user_id: int, actor_id: int | None, limit_type: str | None = "k
         cur_type = row["limit_type"] if row else None
         cur_limit = row["generation_limit"] if row else None
         cur_features = json.loads(row["features"]) if row else {}
+        cur_limits = json.loads(row["limits"] or "{}") if row else {}
         cur_note = row["note"] if row else ""
         if limit_type != "keep":
             if limit_type not in (None, "limited", "unlimited"):
@@ -327,14 +330,22 @@ def set_override(user_id: int, actor_id: int | None, limit_type: str | None = "k
                     cur_features[k] = v
                 else:
                     raise ValueError(f"Feature {k} is true, false or null.")
+        if limits is not None:
+            for k, v in clean_limits(limits, allow_null=True).items():
+                if v is None:
+                    cur_limits.pop(k, None)
+                else:
+                    cur_limits[k] = v
+        cur_limits = {k: v for k, v in cur_limits.items() if k in LIMITS}
         if note is not None:
             cur_note = str(note).strip()[:300]
-        if cur_type is None and not cur_features and not cur_note:
+        if cur_type is None and not cur_features and not cur_limits and not cur_note:
             c.execute("DELETE FROM entitlement_overrides WHERE user_id = ?", (user_id,))
             return None
-        c.execute("INSERT INTO entitlement_overrides (user_id, limit_type, generation_limit, features, note, updated_by, updated_at) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET limit_type = excluded.limit_type, "
-                  "generation_limit = excluded.generation_limit, features = excluded.features, note = excluded.note, "
-                  "updated_by = excluded.updated_by, updated_at = excluded.updated_at",
-                  (user_id, cur_type, cur_limit, json.dumps(cur_features), cur_note, actor_id, now))
-    return {"limit_type": cur_type, "generation_limit": cur_limit, "features": cur_features, "note": cur_note}
+        c.execute("INSERT INTO entitlement_overrides (user_id, limit_type, generation_limit, features, limits, note, updated_by, "
+                  "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET limit_type = excluded.limit_type, "
+                  "generation_limit = excluded.generation_limit, features = excluded.features, limits = excluded.limits, "
+                  "note = excluded.note, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+                  (user_id, cur_type, cur_limit, json.dumps(cur_features), json.dumps(cur_limits), cur_note, actor_id, now))
+    return {"limit_type": cur_type, "generation_limit": cur_limit, "features": cur_features, "limits": cur_limits,
+            "note": cur_note}

@@ -111,6 +111,19 @@
         <h2 id="leftTitle">Settings</h2>
         <button type="button" class="ghost ib" data-close-sheet aria-label="Close settings"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
+      <div class="preset-bar" id="presetBar" role="group" aria-labelledby="presetLbl">
+        <div class="preset-pick">
+          <label><span class="lbl" id="presetLbl">Preset <i data-help="presets"></i></span>
+            <select id="presetPick" aria-describedby="presetHint"></select></label>
+          <button type="button" id="btnPresetApply" disabled>Apply</button>
+        </div>
+        <p class="small muted preset-hint" id="presetHint" aria-live="polite"></p>
+        <div class="row preset-actions">
+          <span class="badge hidden" id="presetModified">Changed <i data-help="preset_modified"></i></span>
+          <button type="button" class="ghost small" id="btnPresetSave">Save as preset…</button>
+          <button type="button" class="ghost small" id="btnPresetManage">Manage…</button>
+        </div>
+      </div>
       <div class="ed-scroll">
         <p class="muted small ed-file" id="fileInfo"></p>
         <div id="smartInfo" class="smart hidden" aria-live="polite"></div>
@@ -335,6 +348,7 @@
     <div class="dash-grid">
       <div class="card" id="accPlan"></div>
       <div class="card" id="accAi"></div>
+      <div class="card" id="accPresets"></div>
       <div class="card" id="accProfile"></div>
       <div class="card" id="accSessions"></div>
     </div>
@@ -490,6 +504,7 @@
       <label id="planPeriodRow"><span class="lbl">Counted</span><select id="planPeriod"><option value="month">Per calendar month (resets on the 1st, UTC)</option><option value="total">In total, while the plan is assigned</option></select></label>
     </fieldset>
     <fieldset class="group"><legend>Features</legend><div id="planFeatures" class="feature-list"></div></fieldset>
+    <fieldset class="group"><legend>Limits</legend><div id="planLimits" class="form-2"></div></fieldset>
     <div class="form-2">
       <label class="check"><input type="checkbox" id="planEnabled"> Can be assigned (enabled)</label>
       <label class="check"><input type="checkbox" id="planDefault"> Default plan for new accounts</label>
@@ -540,6 +555,45 @@
   </div>
 </dialog>
 
+<dialog id="presetDialog" class="form-dialog" aria-labelledby="presetDialogTitle">
+  <form method="dialog" class="ai-dialog" id="presetForm" novalidate>
+    <div class="row between">
+      <h2 id="presetDialogTitle">Save as preset</h2>
+      <button type="button" class="ghost" data-close aria-label="Close">&times;</button>
+    </div>
+    <label><span class="lbl">Name</span><input type="text" id="presetName" maxlength="60" required autocomplete="off"></label>
+    <label><span class="lbl">Description <span class="muted">(optional)</span></span><input type="text" id="presetDesc" maxlength="300" autocomplete="off"></label>
+    <label class="check hidden" id="presetReplaceRow"><input type="checkbox" id="presetReplace"> Replace its settings with the current settings</label>
+    <fieldset class="group" id="presetInclude"><legend>Include <i data-help="preset_save"></i></legend>
+      <label class="check"><input type="checkbox" data-inc="stitch" checked> Stitch settings</label>
+      <label class="check"><input type="checkbox" data-inc="fabric" checked> Fabric &amp; thread</label>
+      <label class="check"><input type="checkbox" data-inc="image"> Picture settings</label>
+      <label class="check"><input type="checkbox" data-inc="size"> Size &amp; number of colours</label>
+    </fieldset>
+    <p class="small" id="presetSummary"></p>
+    <p class="small muted">Only settings are saved, never your picture or design.</p>
+    <p class="small" id="presetStatus" role="status"></p>
+    <div class="row end hidden" id="presetClash">
+      <button type="button" class="ghost" id="presetKeepBoth">Keep both</button>
+      <button type="button" class="primary" id="presetOverwrite">Replace it</button>
+    </div>
+    <div class="row end" id="presetButtons">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary" id="presetSubmit">Save preset</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="presetsDialog" class="form-dialog wide-dialog" aria-labelledby="presetsTitle">
+  <div class="ai-dialog">
+    <div class="row between">
+      <h2 id="presetsTitle">Presets</h2>
+      <button type="button" class="ghost" data-close aria-label="Close">&times;</button>
+    </div>
+    <div id="presetsBody"></div>
+  </div>
+</dialog>
+
 <dialog id="quotaDialog" class="form-dialog" aria-labelledby="quotaTitle">
   <form method="dialog" class="ai-dialog">
     <h2 id="quotaTitle">You have reached your limit</h2>
@@ -560,6 +614,7 @@
 <script src="/static/admin.js"></script>
 <script src="/static/shapes.js"></script>
 <script src="/static/ai.js"></script>
+<script src="/static/presets.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

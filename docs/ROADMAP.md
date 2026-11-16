@@ -17,14 +17,15 @@ yet: deploys run on version tags only.
 | 0 | Safety net + foundations: request queue, canvas renderer, server lock | **Done** (browser tests in CI still open, see §8) | `2fdefb4` |
 | 1 | One workspace: 3 panes, bottom bar, Shapes/Stitches, auto-update, export dialog, icons | **Done** | `2fdefb4` |
 | 2 | Control quality: undo for settings, changed markers + reset, style settings, hoop outline, Wilcom package, plan cache | **Done** | `cbb43a5` |
-| 3 | Presets: built-in + custom, plan limits, admin | **Next** – needs 3 product decisions (§4.1) | – |
+| 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
 | 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | Planned | – |
 | 5 | Future: thread catalogs, more formats, machine speed, theme toggle | Planned | – |
 
 Before the first release tag:
 1. Click through on a real design (desktop, tablet, phone).
 2. Have someone with Wilcom EmbroideryStudio open a "Continue in Wilcom" ZIP (checklist in §7.4).
-3. `python -m pytest -q -W error::DeprecationWarning` and both smoke tests (§9) green.
+3. `python -m pytest -q -W error::DeprecationWarning` and the three smoke tests (§9) green.
+4. A physical sew-out of every built-in preset (§4.8) before calling the presets production values.
 
 ---
 
@@ -102,7 +103,7 @@ appended to `db.MIGRATIONS`; deterministic stitching (golden plans untouched by 
 
 Goal: reusable settings. Built-in presets everyone (by plan) can apply; custom presets paying plans can save.
 
-### 4.1 Decisions needed before starting (defaults in brackets)
+### 4.1 Decisions (taken 2026-11-16: all four recommended defaults below)
 1. **Built-in preset access**: by tier – `presets_basic` / `presets_premium` features – plus an admin
    override moving one preset between tiers **[recommended]**, or a full preset × plan matrix?
 2. **Custom preset limits per plan**: **[Free 0, Basic 5, Pro 25]** – existing plans must get values in the
@@ -231,6 +232,34 @@ The smart analysis after upload stays the baseline; it may *suggest* a preset, n
 
 ---
 
+### 4.9 What was built (and where it differs from the plan above)
+- Backend: `presets.py` (keys + ranges, `clean`, `BUILTINS`, tier overrides, own presets), migration 4 in `db.py`,
+  `entitlements.LIMITS` + `limit_of`, plan / override `limits` (`subscriptions.py`, admin routes), routes in `api.py`
+  and `admin_api.py` (`GET/PUT /api/admin/presets`, audited as `presets.access`).
+- Seeded plans: Free = built-in basic presets, 0 own; Basic = + save own, 5; Pro = + premium presets, save own, 25.
+  (The acceptance line "existing plans migrate to presets_basic on, rest off" was read together with decision 2:
+  Basic and Pro need `custom_presets` on for their limits to mean anything.)
+- Downgrade (decision 3): PUT and DELETE stay allowed without `custom_presets`; only POST and duplicate are refused.
+- Front end: `static/presets.js` (bar, save + manage dialogs), account card, admin limits + tier table, help entries.
+  The picker is a select + **Apply** button (a select that applies on change would apply while arrowing through it).
+  "Reset to app defaults" resets the stitch settings only (picture settings come from the upload's analysis).
+- One undo step: when a preset changes picture settings, the extract step also carries the stitch change
+  (`Jobs.extract({step})`, `History.extracted(..., step)`); otherwise one stitch-settings step.
+- Built-in values changed from §4.6:
+  - **Standard**: smart direction left off. It is still opt-in until it has been sewn.
+  - **Dense coverage**: fill spacing stays 0.40 (satin 0.35, double lattice foundation, pull 0.25). Fill rows at
+    0.35 mm gave 108 short-stitch markers on the test logo against 4 for Standard (0.38 still gave 19).
+- Tests: `tests/test_presets.py` (17: validation, tiers, limits incl. 10 parallel creates, downgrade, account
+  deletion, owner checks, audit, migration, every built-in ≤ 7 mm with risks ≈ Standard's, stitch-count band) and
+  fingerprints in `tests/golden/presets.json` (±3 %). Browser: `tools/smoke/presets.mjs` (26 checks).
+- Suggestion: `presets.suggest` picks a built-in from the upload analysis (photo → Photo, lettering under 6 mm →
+  Small text & logos, wider than 200 mm → Large design, grainy / low-resolution → Clean logo), only among presets the
+  account can apply; `/ai/suggest` returns it as `preset` and the smart-settings box offers it with an Apply button.
+- Locked built-ins: a "🔒 Premium" badge (picker hint and Manage dialog) opens a popover naming the plans that include
+  them ("included in the Pro plan"; `plans` in `GET /api/presets`). Escape or a click elsewhere closes it.
+- Checked on tablet (1024 px) and phone (390 px): the bar fits the settings sheet, dialogs and popover fit the screen.
+- Open: a physical sew-out of every built-in preset.
+
 ## 5. Phase 4 – Professional extras (about 2–3 weeks; each item ships on its own)
 
 | Item | Spec | Notes |
@@ -319,7 +348,7 @@ github.com/EmbroidePy/pyembroidery, inkstitch.org/docs/file-formats.
 ## 9. How to test
 
 ```bash
-python -m pytest -q -W error::DeprecationWarning      # everything CI runs (423 tests at cbb43a5)
+python -m pytest -q -W error::DeprecationWarning      # everything CI runs (443 tests with Phase 3)
 ```
 
 Browser smoke tests (no dependencies; Node 22+ and Chrome or Edge), see `tools/smoke/README.md`:
@@ -329,5 +358,6 @@ DATA_DIR=/tmp/smokedata SUPER_ADMIN_EMAIL=smoke@example.com SUPER_ADMIN_PASSWORD
 # 2. in another shell
 node tools/smoke/workspace.mjs ./smoke-out     # Phase 1: 45 checks, screenshots in ./smoke-out/shots
 node tools/smoke/controls.mjs  ./smoke-out     # Phase 2: 26 checks
+node tools/smoke/presets.mjs   ./smoke-out     # Phase 3: 39 checks
 ```
 Use a fresh browser profile (the scripts delete theirs on start) – a cached `app.js` gives false failures.

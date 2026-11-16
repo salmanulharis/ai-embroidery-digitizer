@@ -9,7 +9,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from . import analytics, app_settings, audit, auth, entitlements, maintenance, subscriptions, temp_projects, user_ai
+from . import analytics, app_settings, audit, auth, entitlements, maintenance, presets, subscriptions, temp_projects, user_ai
 from .ai import catalog as ai_catalog
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(auth.require_admin)])
@@ -143,16 +143,19 @@ def change_expiry(uid: int, body: ExpiryBody, admin: dict = Depends(auth.require
 @router.put("/users/{uid}/overrides")
 def change_overrides(uid: int, body: dict[str, Any], admin: dict = Depends(auth.require_admin)):
     """Body keys are optional: ``limit_type`` ("unlimited" | "limited" | null = plan's),
-    ``generation_limit`` (with "limited"), ``features`` {key: true | false | null}, ``note``."""
-    unknown = set(body) - {"limit_type", "generation_limit", "features", "note"}
+    ``generation_limit`` (with "limited"), ``features`` {key: true | false | null},
+    ``limits`` {key: number | null} (entitlements.LIMITS), ``note``."""
+    unknown = set(body) - {"limit_type", "generation_limit", "features", "limits", "note"}
     if unknown:
         raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
     result = subscriptions.set_override(
         uid, admin["id"], body.get("limit_type", "keep"), body.get("generation_limit", "keep"), body.get("features"),
-        body.get("note"))
+        body.get("note"), body.get("limits"))
     detail = {"limit_type": (result or {}).get("limit_type") or "plan", "limit": (result or {}).get("generation_limit")}
     for k, v in ((result or {}).get("features") or {}).items():
         detail[f"feature.{k}"] = v
+    for k, v in ((result or {}).get("limits") or {}).items():
+        detail[f"limit.{k}"] = v
     action = "entitlement.unlimited" if (result or {}).get("limit_type") == "unlimited" else "entitlement.update"
     audit.record(admin, action, "user", uid, _label(uid), detail)
     return entitlements.effective(uid).to_dict()
@@ -171,7 +174,7 @@ def reset_usage(uid: int, admin: dict = Depends(auth.require_admin)):
 
 @router.get("/plans")
 def plans():
-    return {"plans": subscriptions.list_plans(), "features": entitlements.catalog()}
+    return {"plans": subscriptions.list_plans(), "features": entitlements.catalog(), "limits": entitlements.limits_catalog()}
 
 
 @router.post("/plans")
@@ -195,6 +198,27 @@ def delete_plan(plan_id: int, admin: dict = Depends(auth.require_admin)):
     plan = subscriptions.delete_plan(plan_id)
     audit.record(admin, "plan.delete", "plan", plan_id, plan["name"])
     return {"deleted": True}
+
+
+# --------------------------------------------------------------------------- built-in presets
+
+@router.get("/presets")
+def builtin_presets():
+    """Every built-in preset with its tier, and how many presets accounts saved (counts only)."""
+    return presets.admin_view()
+
+
+@router.put("/presets")
+def change_preset_tiers(body: dict[str, Any], admin: dict = Depends(auth.require_admin)):
+    """``{"access": {preset id: "basic" | "premium" | null}}``: move built-ins between tiers
+    (null = back to the preset's own tier)."""
+    if set(body) - {"access"}:
+        raise ValueError("Send {\"access\": {preset: tier}}.")
+    changes = presets.set_access(body.get("access") or {}, admin["id"])
+    if changes:
+        audit.record(admin, "presets.access", "settings", "", "Built-in presets",
+                     {k: f"{a} -> {b}" for k, (a, b) in changes.items()})
+    return presets.admin_view()
 
 
 # --------------------------------------------------------------------------- analytics, AI, settings, audit

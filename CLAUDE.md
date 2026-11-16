@@ -5,7 +5,7 @@ AI Embroidery Digitizer: raster (PNG/JPG/WEBP) and vector (SVG/AI/PDF) artwork �
 front end, SQLite for accounts. `README.md` is the authoritative feature/API reference; read its
 "How the stitch engine works" and "Extending" sections before changing stitching.
 `docs/ROADMAP.md` is the editor redesign plan: status, how the editor code works, and detailed specs for the
-remaining phases (presets next). Browser smoke tests: `tools/smoke/`.
+remaining phases (presets built, professional extras next). Browser smoke tests: `tools/smoke/`.
 
 ## Commands
 
@@ -35,8 +35,14 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
 
 - `auth.py` sessions (sid, chosen length, revocable) + roles; `admin_api.py` Super Admin routes (each change → `audit.record`).
 - `entitlements.effective(uid)` is the ONLY place to ask what an account may do (plan → override → role; expired
-  subscription → default plan). Features are declared in `entitlements.FEATURES`; limits/switches live in the DB.
-  Never hardcode limits or check plans elsewhere.
+  subscription → default plan). Features are declared in `entitlements.FEATURES`, numeric limits in
+  `entitlements.LIMITS` (`ent.limit_of(name)`, None = no limit); values live in the DB (plans / overrides `features`
+  + `limits`). Never hardcode limits or check plans elsewhere.
+- `presets.py`: settings presets. `KEYS` is the whitelist + ranges (mirrors the editor's ranges in app.js); every
+  preset goes through `presets.clean` on save and on read. Built-ins live in `BUILTINS` (tier, values) and are checked
+  by `tests/test_presets.py` + `tests/golden/presets.json` (`UPDATE_GOLDEN=1` after a deliberate change). Own presets:
+  `custom_presets` + `max_custom_presets`, counted in the write transaction; after a downgrade they stay usable, only
+  create / duplicate are refused. Premium built-in values are never sent without the tier.
 - `usage.generation(uid, pid, feature)` wraps every stitch-output download: one charge per design (partial unique
   index `usage_one_charge`), atomic check+reserve, refunded on error. Re-downloads are free; SVG artwork is free.
 - `temp_projects` is the ownership authority for projects (not meta.json). Projects are temporary: deleted on new
@@ -82,7 +88,8 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   (`History.stitchChange`); extracts record themselves. Settings are compared with `state.baseline` (markers,
   reset). Style-only stitch settings are declared in `STYLE_PARAMS`.
 - User-facing help text belongs in `static/help.js`. Front-end scripts load in order:
-  help.js, auth.js, shapes.js, ai.js, app.js (plain globals, no bundler).
+  help.js, auth.js, charts.js, account.js, admin.js, shapes.js, ai.js, presets.js, app.js (plain globals, no bundler).
+  `presets.js` applies presets through app.js (`setStitchValues`, `History`, `Jobs.extract({step})` = one undo step).
 - Dependencies were chosen deliberately (pystitch not pyembroidery, PyMuPDF not svgelements, httpx2 not httpx,
   `import pymupdf` not `fitz`). PyMuPDF is AGPL; see README Licences.
 

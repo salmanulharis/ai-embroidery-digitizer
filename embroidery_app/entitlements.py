@@ -9,6 +9,10 @@ The effective entitlement of an account is built in this order (later wins):
    individual features on/off);
 4. the role: the Super Admin always has every feature and no limit.
 
+Besides features (on/off) an account has numeric limits (``LIMITS``, e.g. how many custom
+presets it may keep). They merge the same way: the declared default, the plan's
+``limits``, the override's ``limits``; the Super Admin has none (``None`` = unlimited).
+
 Usage comes from ``usage_records`` (usage.py): counted generations since the start of the
 current period (calendar month in UTC, or since the subscription started for "total"
 plans), or since the last manual reset if that is later.
@@ -51,7 +55,72 @@ FEATURES: dict[str, Feature] = {f.key: f for f in (
     Feature("all_formats", "All machine formats", "EXP, U01, PES, JEF and VP3 downloads besides DST.", True),
     Feature("zip_export", "Several files as one ZIP", "Download the chosen files together as a ZIP archive.", True),
     Feature("photo_stitch", "Photo stitch", "Sew a whole picture as a photo texture (stitch settings).", True),
+    Feature("presets_basic", "Built-in presets", "Apply the app's standard settings presets (Standard, Small text & logos, ...).", True),
+    Feature("presets_premium", "Premium presets",
+            "Apply the specialist built-in presets (Fine detail, Dense coverage, Photo, ...).", False),
+    Feature("custom_presets", "Save own presets",
+            "Save the current settings as a named preset to apply to other designs (up to the plan's preset limit).", False),
 )}
+
+
+@dataclass(frozen=True)
+class Limit:
+    """A numeric limit of an account (not the design allowance, which has its own columns)."""
+
+    key: str
+    label: str
+    help: str
+    default: int
+    minimum: int
+    maximum: int
+
+
+LIMITS: dict[str, Limit] = {lim.key: lim for lim in (
+    Limit("max_custom_presets", "Saved presets",
+          "How many presets of their own the account can keep. Presets above the limit after a downgrade "
+          "stay usable; no new ones can be saved.", 0, 0, 1000),
+)}
+
+
+def clean_limits(value, allow_null: bool = False) -> dict:
+    """Validate a ``{limit: whole number}`` object (``None`` removes an override's value
+    when ``allow_null``). Raises ValueError with a message for the admin."""
+    if not isinstance(value, dict):
+        raise ValueError("Limits must be an object of limit: number.")
+    out: dict = {}
+    for k, v in value.items():
+        lim = LIMITS.get(k)
+        if lim is None:
+            raise ValueError(f"Unknown limit: {k}")
+        if v is None or v == "":
+            if allow_null:
+                out[k] = None
+                continue
+            raise ValueError(f"{lim.label}: enter a whole number.")
+        if isinstance(v, bool):
+            raise ValueError(f"{lim.label}: enter a whole number.")
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"{lim.label}: enter a whole number.") from None
+        if float(v) != n or not lim.minimum <= n <= lim.maximum:
+            raise ValueError(f"{lim.label}: a whole number from {lim.minimum} to {lim.maximum}.")
+        out[k] = n
+    return out
+
+
+def _stored_limits(text: str | None) -> dict[str, int]:
+    """Limits from a DB column: unknown keys and bad values are ignored, never fatal."""
+    try:
+        raw = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    out = {}
+    for k, v in (raw if isinstance(raw, dict) else {}).items():
+        lim = LIMITS.get(k)
+        if lim and isinstance(v, int) and not isinstance(v, bool):
+            out[k] = max(lim.minimum, min(lim.maximum, v))
+    return out
 
 
 class EntitlementError(Exception):
@@ -79,6 +148,7 @@ class Entitlement:
     used: int
     features: dict[str, bool] = field(default_factory=dict)
     override: dict | None = None
+    limits: dict[str, int | None] = field(default_factory=dict)  # None = no limit (Super Admin)
 
     @property
     def unlimited(self) -> bool:
@@ -93,6 +163,10 @@ class Entitlement:
 
     def has(self, feature: str) -> bool:
         return bool(self.features.get(feature))
+
+    def limit_of(self, name: str) -> int | None:
+        """A numeric limit (``LIMITS``); ``None`` means no limit."""
+        return self.limits.get(name, LIMITS[name].default)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -118,8 +192,13 @@ def plan_dict(row) -> dict:
     return {"id": row["id"], "code": row["code"], "name": row["name"], "description": row["description"],
             "limit_type": row["limit_type"], "generation_limit": row["generation_limit"], "period": row["period"],
             "features": {k: bool(v) for k, v in features.items() if k in FEATURES},
+            "limits": _stored_limits(_col(row, "limits")),
             "enabled": bool(row["enabled"]), "is_default": bool(row["is_default"]), "sort_order": row["sort_order"],
             "price_cents": row["price_cents"], "currency": row["currency"], "provider_price_ref": row["provider_price_ref"]}
+
+
+def _col(row, name: str):
+    return row[name] if name in row.keys() else None
 
 
 def _override_dict(row) -> dict | None:
@@ -127,7 +206,7 @@ def _override_dict(row) -> dict | None:
         return None
     features = {k: bool(v) for k, v in json.loads(row["features"] or "{}").items() if k in FEATURES}
     return {"limit_type": row["limit_type"], "generation_limit": row["generation_limit"], "features": features,
-            "note": row["note"], "updated_at": row["updated_at"]}
+            "limits": _stored_limits(_col(row, "limits")), "note": row["note"], "updated_at": row["updated_at"]}
 
 
 # --------------------------------------------------------------------------- computation
@@ -184,9 +263,13 @@ def effective_many(user_ids: list[int] | None = None, now: float | None = None) 
             if sub and sub["usage_reset_at"]:
                 start = max(start, sub["usage_reset_at"])
             features = {k: f.default for k, f in FEATURES.items()} | plan["features"] | ((ov or {}).get("features") or {})
+            limits: dict[str, int | None] = ({k: lim.default for k, lim in LIMITS.items()} | plan.get("limits", {})
+                                             | ((ov or {}).get("limits") or {}))
             if u["role"] == SUPER_ADMIN:
                 features = {k: True for k in FEATURES}
-            out[uid] = Entitlement(uid, plan, sub_info, limit_type, limit, source, plan["period"], start, resets, 0, features, ov)
+                limits = {k: None for k in LIMITS}
+            out[uid] = Entitlement(uid, plan, sub_info, limit_type, limit, source, plan["period"], start, resets, 0, features, ov,
+                                   limits)
             starts[uid] = start
 
         # counted generations since each account's period start: one query per 400 accounts
@@ -222,9 +305,14 @@ def require_feature(user_id: int, feature: str) -> Entitlement:
 def _fallback_plan() -> dict:
     """Used only if the plans table is empty (a broken database): no allowance at all."""
     return {"id": None, "code": "none", "name": "No plan", "description": "", "limit_type": "limited",
-            "generation_limit": 0, "period": "month", "features": {}, "enabled": False, "is_default": False,
+            "generation_limit": 0, "period": "month", "features": {}, "limits": {}, "enabled": False, "is_default": False,
             "sort_order": 0, "price_cents": None, "currency": None, "provider_price_ref": None}
 
 
 def catalog() -> list[dict]:
     return [asdict(f) for f in FEATURES.values()]
+
+
+def limits_catalog() -> list[dict]:
+    return [{"key": lim.key, "label": lim.label, "help": lim.help, "default": lim.default, "min": lim.minimum,
+             "max": lim.maximum} for lim in LIMITS.values()]
