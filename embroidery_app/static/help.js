@@ -655,6 +655,12 @@ const HELP = {
     what: "The order in which the machine sews the colours.",
     why: "Load your machine's needles in this order. DST files do not store colours – the worksheet lists them too.",
   },
+  placement: {
+    t: "What is it for?",
+    what: "Where the design will be sewn. It sets the size (the longest side of the design), the smallest hoop that fits, and lets the smart analysis judge small lettering at that size – before the design is prepared, so it is right the first time.",
+    why: "The size changes everything: whether a shape is satin or fill, how small text comes out, the stitch count. Your last choice is remembered, so next time Enter is enough.",
+    eg: "Left chest ≈ 90 mm, cap front ≈ 55 mm, jacket back ≈ 280 mm. Every value stays editable in Size & colours; Custom size keeps the width you type.",
+  },
   export_machine: {
     t: "Your machine",
     what: "The embroidery machine you sew on. Its file format is ticked first and the other formats are folded away under “Other machine formats”.",

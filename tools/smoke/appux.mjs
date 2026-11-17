@@ -167,6 +167,47 @@ try {
   await shot("appux-export-phone");
   await ev(`$("exportDialog").close(); true`);
   await size(1440, 900); await sleep(400);
+  // ================================================ Batch B: start screen and "What is it for?"
+  const exampleFile = `fetch("/static/example-logo.png").then((r) => r.blob()).then((b) => new File([b], "my-logo.png", { type: "image/png" }))`;
+  await ev(`$("btnNew").click(); true`); await sleep(400);
+  check("B: start: the feature cards for someone new (no usual choices yet)", await ev(`!$("features").classList.contains("hidden") && $("startPrefs").classList.contains("hidden")`));
+  check("B: the drop zone mentions paste", await ev(`/paste/i.test($("drop").textContent)`));
+  check("B: no out-of-date hover tip", await ev(`!/hover or tap the/.test(document.body.innerText)`));
+  await ev(`${exampleFile}.then((f) => PlaceStep.show(f)).then(() => true)`); await sleep(400);
+  check("B: choosing a file asks what it is for", await ev(`!$("placeStep").classList.contains("hidden") && $("drop").offsetParent === null && $("placeChips").querySelectorAll("input").length === state.config.placements.length`));
+  check("B: nothing remembered yet: Custom size, with its width field", await ev(`$("placeChips").querySelector("input:checked").value === "custom" && !$("placeCustomRow").classList.contains("hidden")`));
+  check("B: the file name is shown", await ev(`$("placeFile").textContent === "my-logo.png"`));
+  await ev(`$("placeChips").querySelector('input[value="left_chest"]').click(); true`); await sleep(150);
+  check("B: a placement explains the size", await ev(`/about 90 mm/.test($("placeNote").textContent) && $("placeCustomRow").classList.contains("hidden")`));
+  await shot("appux-place-step");
+  await ev(`$("btnPlaceGo").click(); true`);
+  await waitFor(`currentPage === "editor" && !!state.preview && ${idle}`, 90000); await sleep(300);
+  const dims = await ev(`[state.design.width_mm, state.design.height_mm]`);
+  const longest = Math.max(...dims);
+  check("B: left chest: the longest side is about 90 mm from the first preparation", Math.abs(longest - 90) <= 9, dims.map((v) => Math.round(v)).join(" × ") + " mm");
+  check("B: …in the smallest hoop that fits", await ev(`chosenHoop()?.name === "100 x 100 mm" && hoopFit(state.design.width_mm, state.design.height_mm).fits`), await ev(`chosenHoop()?.name`));
+  check("B: the Size section shows the placement", await ev(`$("placement").value === "left_chest"`));
+  check("B: one preparation, nothing to undo", await ev(`$("btnUndo").disabled`));
+  check("B: the placement is remembered for the account", await ev(`api("/api/me/prefs").then((p) => p.placement === "left_chest")`));
+  await ev(`$("width_mm").value = 70; $("width_mm").dispatchEvent(new Event("change", { bubbles: true })); true`); await sleep(200);
+  check("B: a width typed by hand makes it a custom size", await ev(`$("placement").value === "custom"`));
+  await waitFor(idle, 60000);
+
+  await ev(`$("btnNew").click(); true`); await sleep(400);
+  check("B: back on the start: your usual choice instead of the feature cards", await ev(`$("features").classList.contains("hidden") && /Left chest/.test($("startPrefs").textContent)`), await ev(`$("startPrefs").textContent`));
+  await ev(`${exampleFile}.then((f) => { const dt = new DataTransfer(); dt.items.add(new File([f], "image.png", { type: "image/png" })); document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true })); return true; })`); await sleep(400);
+  check("B: a pasted picture opens the step", await ev(`!$("placeStep").classList.contains("hidden") && $("placeFile").textContent === "pasted.png"`), await ev(`$("placeFile").textContent`));
+  check("B: the remembered placement is pre-selected (Enter is enough)", await ev(`$("placeChips").querySelector("input:checked").value === "left_chest"`));
+  await key("Escape", { code: "Escape" }); await sleep(200);
+  check("B: Esc goes back to choosing a file", await ev(`$("placeStep").classList.contains("hidden") && $("drop").offsetParent !== null`));
+  await size(390, 844, true); await sleep(400);
+  await ev(`${exampleFile}.then((f) => PlaceStep.show(f)).then(() => true)`); await sleep(400);
+  check("B: phone: the step fits (no sideways scroll), Create stitches in view", await ev(`document.documentElement.scrollWidth <= innerWidth`) && await inView("btnPlaceGo"));
+  await shot("appux-place-phone");
+  await ev(`$("btnPlaceBack").click(); true`); await sleep(200);
+  await size(1440, 900); await sleep(300);
+  await ev(`$("btnBackToOpen").click(); true`); await sleep(500);
+
 } catch (e) {
   results.push("ERROR " + e.message);
   try { await shot("appux-error"); } catch (_) {}

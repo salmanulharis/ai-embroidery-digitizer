@@ -44,7 +44,7 @@ PLACEMENTS: dict[str, dict] = {
     "sleeve": {"label": "Sleeve", "size_mm": 75, "hint": "Upper sleeve, small badges"},
     "full_front": {"label": "Full front", "size_mm": 200, "hint": "T-shirts, sweatshirts, bags"},
     "jacket_back": {"label": "Jacket back", "size_mm": 280, "hint": "Large back designs"},
-    "custom": {"label": "Custom size", "size_mm": None, "hint": "Set the size in the editor"},
+    "custom": {"label": "Custom size", "size_mm": None, "hint": "Type the width yourself"},
 }
 
 KEYS = {"machine": MACHINES, "placement": PLACEMENTS}

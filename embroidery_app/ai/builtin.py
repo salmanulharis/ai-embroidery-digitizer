@@ -109,6 +109,7 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
     # thinnest line, in mm at the chosen design width
     ys, xs = np.nonzero(fg)
     fg_w_px = (xs.max() - xs.min() + 1) if len(xs) else fg.shape[1]
+    fg_h_px = (ys.max() - ys.min() + 1) if len(ys) else fg.shape[0]
     mm_per_px = width_mm / max(fg_w_px, 1)
     widths: list[np.ndarray] = []
     for g in significant:
@@ -184,6 +185,9 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
             "noise_level": round(sigma, 2),
             "thinnest_line_mm": None if thin_mm is None else round(thin_mm, 2),
             "colours_found": n_colors,
+            # width / height of the design itself (background left out): the start screen's
+            # placement sizes the longest side before the design is prepared
+            "design_aspect": round(float(fg_w_px) / max(float(fg_h_px), 1.0), 4),
         },
     }
 

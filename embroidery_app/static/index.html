@@ -115,10 +115,35 @@
       <strong>Drop your logo or picture here</strong>
       <span class="muted">or tap to choose a file</span>
       <button type="button" class="btn primary-btn" id="btnChoose">Choose file</button>
+      <span class="small muted">or paste a picture (Ctrl+V)</span>
       <span class="small muted">Pictures: PNG, JPG, WEBP &nbsp;·&nbsp; Artwork: SVG, Adobe Illustrator (.ai), PDF</span>
     </label>
+    <form class="place-step hidden" id="placeStep" aria-labelledby="placeTitle">
+      <div class="place-head">
+        <div class="place-thumb" id="placeThumb" aria-hidden="true"></div>
+        <div class="place-title">
+          <h2 id="placeTitle">What is it for? <i data-help="placement"></i></h2>
+          <p class="small muted" id="placeFile"></p>
+        </div>
+      </div>
+      <div class="place-chips" id="placeChips" role="radiogroup" aria-labelledby="placeTitle"></div>
+      <label class="place-custom hidden" id="placeCustomRow"><span class="lbl">Design width on fabric (mm)</span>
+        <input type="number" id="placeCustom" min="10" max="500" step="1" value="100" inputmode="decimal"></label>
+      <p class="small muted place-note" id="placeNote"></p>
+      <div class="place-progress hidden" id="placeProgress" role="status" aria-live="polite">
+        <span id="placeProgressText"></span>
+        <span class="bar" aria-hidden="true"><span id="placeProgressBar"></span></span>
+      </div>
+      <div class="place-actions" id="placeActions">
+        <button type="button" class="ghost" id="btnPlaceBack">Choose another file</button>
+        <span class="grow"></span>
+        <button type="button" class="ghost" id="btnPlaceSkip">Skip</button>
+        <button type="submit" class="primary" id="btnPlaceGo">Create stitches</button>
+      </div>
+    </form>
+    <p class="start-prefs small muted hidden" id="startPrefs"></p>
     <p class="example-row">No file at hand? <button type="button" class="ghost small" id="btnExample">Try an example logo</button></p>
-    <ul class="features">
+    <ul class="features" id="features">
       <li><b>Smart by default</b><span>Colours, background and text are detected automatically.</span></li>
       <li><b>Clear small lettering</b><span>Satin that follows every stroke, widened only where gaps allow.</span></li>
       <li><b>Full control</b><span>Adjust the picture, colours, each shape and every stitch setting.</span></li>
@@ -162,6 +187,7 @@
         <details class="ed-sec" data-sec="size" open>
           <summary>Size &amp; colours</summary>
           <div class="ed-body">
+            <label><span class="lbl">Used for <i data-help="placement"></i></span><select id="placement"></select></label>
             <label><span class="lbl">Hoop size <i data-help="hoop"></i></span><select id="hoop"></select></label>
             <label><span class="lbl">Design width on fabric (mm) <i data-help="width_mm"></i></span><input type="number" id="width_mm" min="10" max="500" step="1" value="100" inputmode="decimal"></label>
             <label><span class="lbl">Number of thread colours <i data-help="num_colors"></i></span>
@@ -444,7 +470,7 @@
 </main>
 
 <footer class="site-foot">
-  <span>Tip: hover or tap the <span class="help-sample">?</span> next to a setting to learn what it does.</span>
+  <span></span>
   <a href="https://github.com/salmanulharis/ai-embroidery-digitizer/issues/new" target="_blank" rel="noopener noreferrer">Report a problem or suggest an idea<span class="visually-hidden"> (opens GitHub in a new tab)</span></a>
 </footer>
 

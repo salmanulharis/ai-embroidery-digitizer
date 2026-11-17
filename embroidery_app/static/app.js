@@ -97,6 +97,7 @@ function showPage(page, { fromHistory = false } = {}) {
   const changed = page !== currentPage;
   currentPage = page;
   $("step1").classList.toggle("hidden", page !== "upload");
+  if (page === "upload") { renderStart(); PlaceStep.hide(); }
   $("editor").classList.toggle("hidden", page !== "editor");
   document.body.classList.toggle("page-editor", page === "editor");
   if (page !== "editor") closeSheets();
@@ -243,6 +244,16 @@ async function init() {
     }
     hoopChanged();
   };
+  $("placement").innerHTML = `<option value="">Not set</option>` + (state.config.placements || []).map((p) =>
+    `<option value="${esc(p.key)}">${esc(p.label)}${p.size_mm ? ` – ${p.size_mm} mm` : ""}</option>`).join("");
+  $("placement").onchange = () => {
+    const key = $("placement").value;
+    if (key) Prefs.set("placement", key);
+    const a = state.design ? state.design.width_mm / state.design.height_mm : aspect();
+    if (applyPlacement(key, a) && state.project) Jobs.extract();
+  };
+  // a width typed by hand is a custom size
+  $("width_mm").addEventListener("change", () => { if ($("placement").value) $("placement").value = "custom"; });
   const nc = $("num_colors");
   for (let i = 1; i <= 15; i++) nc.insertAdjacentHTML("beforeend", `<option value="${i}">${i}</option>`);
   bindAdjustments();
@@ -264,6 +275,7 @@ async function init() {
   await AI.init(state.config); // this account's AI settings
   Account.init(state.config); // plan + usage chip, account page, admin console
   await Prefs.load(); // machine and usual placement (prefs.py)
+  renderStart();
   Presets.init(); // built-in and own settings presets (presets.js)
   history.replaceState({ page: "upload" }, "");
   await resumeDesign();
@@ -358,14 +370,135 @@ function aspect() {
   return img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1;
 }
 
+// ------------------------------------------------------------------ placement: what the design is for
+// Sets the design size (longest side), the smallest hoop that fits and, through the size,
+// what the smart analysis says about small lettering. Values from prefs.PLACEMENTS.
+const placementOf = (key) => (state.config.placements || []).find((p) => p.key === key) || null;
+const clampWidth = (w) => Math.max(10, Math.min(500, Math.round(w)));
+function bestHoop(w, h, cap) {
+  const hoops = state.config.hoops.map((hp, i) => ({ ...hp, i }));
+  if (cap) { const c = hoops.find((x) => /cap/i.test(x.name)); if (c) return String(c.i); }
+  const m = 6; // a little room around the design
+  const fits = hoops.filter((x) => !/cap|chest/i.test(x.name))
+    .filter((x) => (w + m <= x.width && h + m <= x.height) || (w + m <= x.height && h + m <= x.width))
+    .sort((a, b) => a.width * a.height - b.width * b.height);
+  return fits.length ? String(fits[0].i) : "";
+}
+/** Size and hoop for a placement; ``a`` = width / height of the design. False: nothing set. */
+function applyPlacement(key, a) {
+  const p = placementOf(key);
+  $("placement").value = p ? key : "";
+  if (!p || p.size_mm == null || !(a > 0)) return false;
+  const w = clampWidth(a >= 1 ? p.size_mm : p.size_mm * a);
+  $("width_mm").value = w;
+  $("hoop").value = bestHoop(w, w / a, p.hoop === "cap");
+  $("hoopToggle").classList.toggle("hidden", !chosenHoop());
+  return true;
+}
+
+// The step after a file is chosen: "What is it for?" (the last choice pre-selected, so
+// Enter is enough), then upload, analysis and the first preparation at the right size.
+const PlaceStep = (() => {
+  let file = null, thumbUrl = "";
+  const chosen = () => $("placeChips").querySelector("input:checked")?.value || "";
+  function render() {
+    const remembered = Prefs.get("placement") || "custom";
+    $("placeChips").innerHTML = (state.config.placements || []).map((p) =>
+      `<label class="place-chip"><input type="radio" name="placement" value="${esc(p.key)}" ${p.key === remembered ? "checked" : ""}>` +
+      `<span><b>${esc(p.label)}</b><span class="small muted">${p.size_mm ? `≈ ${p.size_mm} mm · ` : ""}${esc(p.hint)}</span></span></label>`).join("");
+    note();
+  }
+  function note() {
+    const p = placementOf(chosen());
+    $("placeCustomRow").classList.toggle("hidden", !p || p.size_mm != null);
+    $("placeNote").textContent = !p ? "" : p.size_mm == null ? "The design is prepared at this width; change it any time in Size & colours."
+      : `The longest side of the design will be about ${p.size_mm} mm, in the smallest hoop that fits. You can change both later.`;
+  }
+  function show(f) {
+    file = f;
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    thumbUrl = /^image\//.test(f.type) ? URL.createObjectURL(f) : "";
+    $("placeThumb").style.backgroundImage = thumbUrl ? `url("${thumbUrl}")` : "";
+    $("placeThumb").classList.toggle("generic", !thumbUrl);
+    $("placeFile").textContent = f.name;
+    $("placeCustom").value = $("width_mm").value || 100;
+    render();
+    progress(null);
+    $("step1").classList.add("placing");
+    $("placeStep").classList.remove("hidden");
+    requestAnimationFrame(() => ($("placeChips").querySelector("input:checked") || $("btnPlaceGo")).focus());
+  }
+  function hide() {
+    $("step1").classList.remove("placing");
+    $("placeStep").classList.add("hidden");
+    progress(null);
+    file = null;
+  }
+  /** Inline progress instead of the full-screen overlay; null hides it. pct: 0-100 or null (busy). */
+  function progress(text, pct = null) {
+    const on = text != null;
+    $("placeProgress").classList.toggle("hidden", !on);
+    $("placeActions").classList.toggle("hidden", on);
+    $("placeChips").querySelectorAll("input").forEach((i) => (i.disabled = on));
+    if (!on) return;
+    $("placeProgressText").textContent = text;
+    $("placeProgress").classList.toggle("indeterminate", pct == null);
+    $("placeProgressBar").style.width = `${pct ?? 30}%`;
+  }
+  async function go(skip = false) {
+    if (!file) return;
+    const key = skip ? null : chosen();
+    if (key) Prefs.set("placement", key);
+    const custom = key === "custom" ? clampWidth(+$("placeCustom").value || 100) : null;
+    const f = file;
+    try {
+      await upload(f, { placement: key, width: custom, onProgress: progress });
+      hide();
+    } catch (_) {
+      progress(null); // the error was shown; the file can be sent again
+    }
+  }
+  function init() {
+    $("placeChips").addEventListener("change", note);
+    $("placeStep").addEventListener("submit", (ev) => { ev.preventDefault(); go(); });
+    $("btnPlaceSkip").onclick = () => go(true);
+    $("btnPlaceBack").onclick = () => { hide(); $("btnChoose").focus(); };
+    // Esc goes back to choosing a file (not while the file is being sent)
+    $("placeStep").addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && $("placeProgress").classList.contains("hidden")) { ev.preventDefault(); hide(); $("btnChoose").focus(); }
+    });
+  }
+  return { init, show, hide, active: () => !!file };
+})();
+
+// The start screen for someone who knows the app: their usual choices instead of the
+// feature cards (shown until a placement or machine has been chosen once).
+function renderStart() {
+  const p = placementOf(Prefs.get("placement")), m = (state.config.machines || []).find((x) => x.key === Prefs.get("machine"));
+  const returning = !!(p || m);
+  $("features").classList.toggle("hidden", returning);
+  $("startPrefs").classList.toggle("hidden", !returning);
+  $("startPrefs").textContent = returning ? `Your usual: ${[p && `${p.label}${p.size_mm ? ` (≈ ${p.size_mm} mm)` : ""}`, m && `${m.label.split(" (")[0]} – ${m.format.toUpperCase()}`].filter(Boolean).join(" · ")}` : "";
+}
+
 // ------------------------------------------------------------------ upload
 function bindUpload() {
   const drop = $("drop"), input = $("file");
+  PlaceStep.init();
   input.onchange = () => {
     const f = input.files[0];
     input.value = ""; // choosing the same file again still uploads it
-    if (f) upload(f).catch(() => {});
+    if (f) PlaceStep.show(f);
   };
+  // paste a picture (copied from an e-mail or a web page) on the start screen
+  document.addEventListener("paste", (ev) => {
+    if (currentPage !== "upload" || document.querySelector("dialog[open]") || document.body.matches(".view-account, .view-admin, .signed-out")) return;
+    if (ev.target.closest?.("input, textarea, [contenteditable]")) return;
+    const f = [...(ev.clipboardData?.files || [])].find((x) => /^image\//.test(x.type));
+    if (!f) return;
+    ev.preventDefault();
+    PlaceStep.show(new File([f], f.name && f.name !== "image.png" ? f.name : "pasted.png", { type: f.type }));
+  });
   $("btnChoose").onclick = () => input.click();
   // a bundled example goes through the normal upload, so it behaves like any file
   $("btnExample").onclick = async () => {
@@ -381,17 +514,60 @@ function bindUpload() {
   $("btnCloseDesign").onclick = () => closeDesign().catch(() => {});
   ["dragenter", "dragover"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop", (ev) => ev.dataTransfer.files[0] && upload(ev.dataTransfer.files[0]).catch(() => {}));
+  drop.addEventListener("drop", (ev) => ev.dataTransfer.files[0] && PlaceStep.show(ev.dataTransfer.files[0]));
 }
 
-async function upload(file) {
+// The upload with its progress (XMLHttpRequest: fetch cannot report upload progress).
+function sendFile(fd, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", "/api/projects");
+    x.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((100 * e.loaded) / e.total));
+    x.onload = () => {
+      let body = null;
+      try { body = JSON.parse(x.responseText); } catch (_) {}
+      if (x.status >= 200 && x.status < 300 && body) return resolve(body);
+      if (x.status === 401) Auth.sessionEnded();
+      const err = new Error(body?.detail || x.statusText || "The upload failed. Please try again.");
+      err.status = x.status;
+      reject(err);
+    };
+    x.onerror = () => reject(new Error("The upload failed. Check the connection and try again."));
+    x.send(fd);
+  });
+}
+
+/** Upload a file and open it. ``placement``: size and hoop from "What is it for?" (set before
+ *  the first preparation, measured on the design itself); ``width``: a custom width in mm;
+ *  ``onProgress``: inline progress on the start screen instead of the full-screen overlay. */
+async function upload(file, { placement = null, width = null, onProgress = null } = {}) {
   const fd = new FormData();
   fd.append("file", file);
-  const meta = await busy("Uploading…", () => api("/api/projects", { method: "POST", body: fd }));
+  const meta = onProgress
+    ? await sendFile(fd, (pct) => onProgress(`Uploading ${file.name}…`, pct)).catch((e) => { toast(e.message); throw e; })
+    : await busy("Uploading…", () => api("/api/projects", { method: "POST", body: fd }));
   openProject(meta);
   await loadSource();
-  showPage("editor");
-  await busy("Analysing your picture…", smartDefaults).catch(() => {});
+  if (placement) applyPlacement(placement, aspect());
+  if (width) { $("width_mm").value = width; $("placement").value = "custom"; }
+  const analyse = async () => {
+    await smartDefaults();
+    // the design itself (background left out) decides the longest side: measure, then size again
+    const a = state.smart?.measurements?.design_aspect;
+    if (placement && a > 0) {
+      const before = +$("width_mm").value;
+      applyPlacement(placement, a);
+      if (Math.abs(+$("width_mm").value - before) / before > 0.1) await smartDefaults(); // small text is judged at the real size
+    }
+  };
+  if (onProgress) {
+    onProgress(state.project.kind === "raster" ? "Finding colours, background and text…" : "Reading the artwork…");
+    await analyse().catch(() => {});
+    showPage("editor");
+  } else {
+    showPage("editor");
+    await busy("Analysing your picture…", analyse).catch(() => {});
+  }
   setBaseline(); // what this design starts with: marks and resets compare with it
   History.reset();
   await Jobs.extract({ delay: 0 }); // the stitches follow by themselves
@@ -402,6 +578,7 @@ function openProject(meta) {
   Jobs.reset();
   if (state.playing) togglePlay();
   Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true, baseline: null });
+  $("placement").value = "";
   Shapes.reset();
   Render.reset();
   History.reset();

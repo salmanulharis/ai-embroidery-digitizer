@@ -86,7 +86,7 @@ main { padding: var(--gutter); max-width: 1560px; margin: 0 auto; }
 
 /* ------------------------------------------------------------------ forms */
 label { display: block; margin: 0 0 12px; font-size: var(--text-md); color: var(--muted); }
-label input:not([type=checkbox]):not([type=range]):not([type=color]), label select {
+label input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), label select {
   display: block; width: 100%; margin-top: 4px; min-height: var(--tap); padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
   background: var(--raised); color: var(--text); font: inherit; transition: border-color .15s, box-shadow .15s; }
 label input:focus, label select:focus { border-color: var(--accent); box-shadow: var(--focus); outline: none; }
@@ -1092,4 +1092,39 @@ dialog.export-dialog[open] { display: flex; flex-direction: column; overflow: hi
   .exp-foot-text { flex-basis: 100%; }
   .exp-foot [data-close] { display: none; } /* the × at the top closes it */
   .exp-foot #btnDownload { flex: 1 1 auto; }
+}
+
+/* ------------------------------------------------------------------ app UX, batch B: start screen (docs/APP_UX_PLAN.md) */
+#step1.placing .drop, #step1.placing .example-row, #step1.placing .features, #step1.placing .start-prefs { display: none; }
+.place-step { max-width: 860px; margin: 0 auto; padding: clamp(18px, 3vw, 28px); background: var(--card); border: 1px solid var(--line);
+  border-radius: 18px; box-shadow: var(--shadow); display: grid; gap: 14px; }
+.place-head { display: flex; align-items: center; gap: 14px; }
+.place-thumb { flex: none; width: 72px; height: 72px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--checker-b) center / contain no-repeat; }
+.place-thumb.generic { background: var(--accent-soft); }
+.place-title h2 { margin: 0; font-size: clamp(18px, 2.2vw, 22px); display: flex; align-items: center; gap: 6px; }
+.place-title p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.place-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.place-chip { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: var(--radius-sm); background: var(--card); cursor: pointer; transition: border-color .15s, background .15s; }
+.place-chip:hover { border-color: var(--accent); }
+.place-chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.place-chip:has(input:focus-visible) { box-shadow: var(--focus); }
+.place-chip input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+.place-chip > span { display: grid; gap: 2px; }
+.place-custom { max-width: 260px; margin: 0; }
+.place-note { margin: 0; min-height: 1.4em; }
+.place-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.place-actions .grow { flex: 1 1 auto; }
+.place-actions button.primary { width: auto; margin: 0; padding-left: 22px; padding-right: 22px; }
+.place-progress { display: grid; gap: 8px; font-size: var(--text-md); }
+.place-progress .bar { display: block; height: 6px; border-radius: 999px; background: var(--raised); overflow: hidden; position: relative; }
+.place-progress .bar > span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .2s; }
+.place-progress.indeterminate .bar > span { position: absolute; animation: ed-progress 1.2s ease-in-out infinite; }
+.start-prefs { margin: 12px 0 0; text-align: center; }
+@media (max-width: 560px) {
+  .place-chips { grid-template-columns: 1fr 1fr; }
+  .place-chip { padding: 8px; }
+  .place-actions #btnPlaceBack { order: 3; flex-basis: 100%; }
+  .place-actions button.primary { flex: 1 1 auto; }
 }
