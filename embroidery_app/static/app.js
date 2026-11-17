@@ -1647,12 +1647,14 @@ const History = (() => {
     const keys = changedKeys(lastStitch, now);
     if (!keys.length) return;
     const top = undo[undo.length - 1];
-    if (top?.type === "settings" && Date.now() - top.t < MERGE_MS && !redo.length
+    // quick repeated edits of the same setting are one step; a named action (a preset, a
+    // reset) is always a step of its own and never absorbs or joins another
+    if (!label && top?.type === "settings" && !top.named && Date.now() - top.t < MERGE_MS && !redo.length
       && keys.every((k) => changedKeys(top.before, top.after).includes(k))) {
       top.after = now;
       top.t = Date.now();
     } else {
-      push({ type: "settings", label: label || keys.slice(0, 2).map(settingName).join(", "), before: lastStitch, after: now, t: Date.now() });
+      push({ type: "settings", label: label || keys.slice(0, 2).map(settingName).join(", "), named: !!label, before: lastStitch, after: now, t: Date.now() });
     }
     lastStitch = now;
     sync();

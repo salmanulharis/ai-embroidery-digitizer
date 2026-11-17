@@ -121,9 +121,9 @@ try {
   await ev(`History.undo(); true`);
   await waitFor(`${idle} && ${f}.fill_spacing_mm.value === "0.4"`, 60000);
   // the ⋯ menu: Apply again puts the preset's values back after a change
-  await ev(change(`${f}.satin_spacing_mm`, "0.5"));
-  await waitFor(`${idle}`, 60000);
-  await ev(`$("btnPresetMenu").click(); true`); await sleep(150);
+  await ev(change(`${f}.satin_spacing_mm`, "0.5")); await sleep(200);
+  // straight away (within the 1.5 s in which quick edits merge): a preset is still its own undo step
+  await ev(`$("btnPresetMenu").click(); true`);
   check("preset menu opens", await ev(`!$("presetMenu").hidden && $("btnPresetMenu").getAttribute("aria-expanded") === "true" && !$("btnPresetReapply").disabled`));
   await shot("p3-menu");
   await ev(`$("btnPresetReapply").click(); true`); await sleep(150);
