@@ -62,7 +62,14 @@
 <header>
   <h1><span class="logo" aria-hidden="true">&#10045;</span> <span class="app-title">Embroidery Digitizer</span></h1>
   <div class="hdr-file hidden" id="hdrFile">
-    <span class="hdr-name" id="hdrName" title=""></span>
+    <span class="pop-wrap hdr-filemenu">
+      <button type="button" class="ghost hdr-filebtn" id="btnFileMenu" aria-haspopup="true" aria-expanded="false" aria-controls="fileMenu" title="">
+        <span class="hdr-name" id="hdrName"></span><span class="hdr-file-short" aria-hidden="true">File</span><span class="caret" aria-hidden="true">▾</span></button>
+      <div class="pop-menu" id="fileMenu" hidden>
+        <button type="button" id="btnMenuNew">New design…</button>
+        <button type="button" id="btnMenuClose">Close design</button>
+      </div>
+    </span>
     <button type="button" class="ghost small" id="btnNew" title="Upload another file" aria-label="New design"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg><span class="hide-lg">New design</span></button>
     <span class="hdr-undo ed-hdr" role="group" aria-label="Undo and redo">
       <button type="button" class="ghost ib" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg></button>
@@ -155,7 +162,9 @@
   <section id="editor" class="editor hidden" data-view="shapes" aria-label="Design editor">
     <aside class="ed-side ed-left" id="leftPanel" aria-labelledby="leftTitle">
       <div class="ed-sheet-head">
+        <span class="sheet-grip" aria-hidden="true"></span>
         <h2 id="leftTitle">Settings</h2>
+        <button type="button" class="ghost ib sheet-size" data-sheet-size aria-pressed="false" aria-label="Taller panel" title="Taller panel">&#8597;</button>
         <button type="button" class="ghost ib" data-close-sheet aria-label="Close settings"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
       <div class="preset-bar" id="presetBar" role="group" aria-labelledby="presetLbl">
@@ -318,6 +327,17 @@
           <button type="button" class="ghost ib" id="btnZoomIn" title="Zoom in" aria-label="Zoom in"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
           <button type="button" class="ghost ib" id="btnFit" title="Fit to view (F)" aria-label="Fit design to view"><svg class="ic" aria-hidden="true"><use href="#i-fit"/></svg></button>
           <button type="button" class="ghost ib hidden" id="btnFullscreen" title="Full screen" aria-label="Full screen" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-fullscreen"/></svg></button>
+          <span class="pop-wrap vb-more">
+            <button type="button" class="ghost ib" id="btnViewMore" aria-haspopup="true" aria-expanded="false" aria-controls="viewMore" aria-label="More view options" title="More view options">&#8943;</button>
+            <div class="pop-menu pop-right" id="viewMore" hidden>
+              <button type="button" data-click="btnZoomIn">Zoom in</button>
+              <button type="button" data-click="btnZoomOut">Zoom out</button>
+              <button type="button" data-click="zoomPct">Actual size (100 %)</button>
+              <button type="button" data-click="btnFit">Fit to the screen</button>
+              <button type="button" data-click="btnFullscreen" class="vm-full">Full screen</button>
+              <button type="button" data-click="btnKeys">Help and shortcuts</button>
+            </div>
+          </span>
           <button type="button" class="ghost ib ed-keys" id="btnKeys" title="Help and keyboard shortcuts (?)" aria-label="Help and keyboard shortcuts"><svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg></button>
         </div>
       </div>
@@ -354,7 +374,9 @@
 
     <aside class="ed-side ed-right" id="rightPanel" aria-labelledby="rightTitle">
       <div class="ed-sheet-head">
+        <span class="sheet-grip" aria-hidden="true"></span>
         <h2 id="rightTitle">Design</h2>
+        <button type="button" class="ghost ib sheet-size" data-sheet-size aria-pressed="false" aria-label="Taller panel" title="Taller panel">&#8597;</button>
         <button type="button" class="ghost ib" data-close-sheet aria-label="Close design panel"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
       <div class="ed-scroll">
@@ -659,6 +681,7 @@
     </div>
     <label class="check"><input type="checkbox" id="helpAlways"> Always show the <span class="help-sample">?</span> help buttons</label>
     <p class="small muted">Otherwise they appear when you point at a setting. The <kbd>Tab</kbd> key reaches them too.</p>
+    <label class="check"><input type="checkbox" id="autoUpdatePref"> Update the stitches by themselves after a change (Auto-update)</label>
     <label class="check"><input type="checkbox" id="guideOn"> Show the first steps (1 Shapes, 2 Stitches, 3 Export)</label>
     <h3 class="keys-head">Keyboard shortcuts</h3>
     <p class="small muted">They work in the editor while you are not typing in a field.</p>

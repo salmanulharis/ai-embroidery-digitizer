@@ -234,7 +234,7 @@ try {
   await ev(`document.head.insertAdjacentHTML("beforeend", "<style id=smokeNoAnim>*{transition:none!important}</style>"); true`);
   await ev(`$("barSettings").click(); true`); await sleep(500);
   check("phone: settings sheet open", await ev(`document.body.classList.contains("sheet-left")`));
-  check("phone: preset bar visible in the settings sheet", await ev(`(() => { const r = $("presetBar").getBoundingClientRect(); return r.height > 40 && r.top >= 0 && r.top < innerHeight / 2 && r.left >= 0 && r.right <= innerWidth; })()`),
+  check("phone: preset bar visible in the settings sheet", await ev(`(() => { const r = $("presetBar").getBoundingClientRect(); return r.height > 40 && r.top >= $("leftPanel").getBoundingClientRect().top && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth; })()`),
     await ev(`JSON.stringify({ bar: $("presetBar").getBoundingClientRect(), innerWidth, scrollX, vv: visualViewport.offsetLeft + "/" + visualViewport.scale })`));
   check("phone: bar fits the width", await ev(`${fits(`$("btnPresetMenu")`)} && $("presetBar").scrollWidth <= $("presetBar").clientWidth + 1 && $("presetPick").offsetWidth >= 150`),
     await ev(`$("presetPick").offsetWidth + "px select, bar " + $("presetBar").scrollWidth + "/" + $("presetBar").clientWidth`));

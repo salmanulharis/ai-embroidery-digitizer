@@ -726,8 +726,7 @@ button.ib { width: 36px; min-height: 36px; padding: 0; }
   #barSettings { display: flex; }
   .ed-bar { flex-wrap: wrap; gap: 6px 8px; }
   .ed-grp { flex-wrap: wrap; max-width: 100%; row-gap: 6px; }
-  .ed-status { order: 9; flex: 1 1 100%; margin-left: 0; }
-  .ed-status .ed-auto { margin-left: auto; }
+  .ed-status { margin-left: auto; }
   .ed-sheets span:not(.count) { display: none; }
   .ed-shapes.checker { padding-left: 8px; padding-right: 8px; padding-bottom: 8px; }
 }
@@ -959,12 +958,15 @@ body.page-editor:not(.view-account):not(.view-admin) .hdr-actions { flex: 1 1 0;
 .ed-viewbar button.ib { width: 34px; min-height: 34px; }
 .seg .seg-sel { display: none; }
 .seg-sel { min-height: 32px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--text); font: inherit; font-size: var(--text-md); }
-@container (max-width: 760px) {
+@container (max-width: 1000px) {
   .ed-viewbar .seg:has(.seg-sel) > button { display: none; }
   .ed-viewbar .seg:has(.seg-sel) { border: 0; background: none; overflow: visible; }
   .ed-viewbar .seg .seg-sel { display: block; }
 }
-@container (max-width: 520px) { .ed-viewbar #btnZoomIn, .ed-viewbar #btnZoomOut, .ed-viewbar .vb-grp > .help { display: none !important; } }
+@container (max-width: 640px) {
+  .ed-viewbar .ed-zoom > :not(.vb-more), .ed-viewbar .vb-grp > .help { display: none !important; }
+  .ed-viewbar .vb-more { display: inline-flex; }
+}
 #showCount { font-weight: 600; color: var(--accent); }
 
 /* small menus under a button (Show, preset actions) */
@@ -1153,3 +1155,43 @@ dialog.export-dialog[open] { display: flex; flex-direction: column; overflow: hi
   font-weight: 500; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 18px rgba(16, 24, 40, .2); }
 header .ed-export.guide-now[data-guide-tip]::before { left: auto; right: 0; transform: none; }
 @media (max-width: 899px) { .guide-now[data-guide-tip]::before { display: none; } } /* the numbers stay */
+
+/* ------------------------------------------------------------------ app UX, batch D: phones and tablets (docs/APP_UX_PLAN.md) */
+.vb-more { display: none; }
+.ed-viewbar { flex-wrap: nowrap; }
+.ed-viewbar .vb-grp { flex: none; }
+/* the file name is a menu button */
+.hdr-filebtn { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; min-height: 32px; padding: 2px 8px; border-color: transparent; }
+.hdr-filebtn .hdr-name { padding-left: 0; border-left: 0; margin: 0; }
+.hdr-filebtn .caret { color: var(--muted); font-size: 11px; }
+.hdr-file-short { display: none; color: var(--muted); font-size: var(--text-md); }
+.hdr-filemenu { min-width: 0; }
+.ed-sheet-head .sheet-grip, .ed-sheet-head .sheet-size { display: none; }
+@media (max-width: 560px) {
+  .hdr-filebtn .hdr-name { display: none; }
+  .hdr-file-short { display: inline; }
+  /* the bottom bar: labelled panel buttons, the player, a status dot (text and Auto-update in Help and shortcuts) */
+  .ed-bar { flex-wrap: nowrap; gap: 4px; padding-left: 6px; padding-right: 6px; }
+  .ed-sheets button { flex-direction: column; gap: 0; min-height: 44px; padding: 2px 6px; font-size: var(--text-xs); }
+  .ed-sheets span:not(.count) { display: inline; }
+  .ed-sheets .count { position: absolute; top: 0; right: 0; }
+  .ed-sheets button { position: relative; }
+  .ed-player { flex: 1 1 auto; min-width: 0; }
+  .ed-status { flex: none; margin-left: 0; gap: 4px; }
+  .ed-status #edStatusText, .ed-status .ed-auto { display: none; }
+  /* sheets from the bottom at half height: the preview stays in view above */
+  .ed-left, .ed-right { top: auto !important; left: 0 !important; right: 0 !important; bottom: 0; width: 100% !important; height: 56dvh;
+    border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 16px 16px 0 0; box-shadow: 0 -12px 32px rgba(0, 0, 0, .2) !important;
+    transform: translateY(102%) !important; transition: transform .2s, visibility .2s, height .2s; }
+  body.sheet-left .ed-left, body.sheet-right .ed-right { transform: none !important; }
+  body.sheet-full .ed-left, body.sheet-full .ed-right { height: calc(100dvh - var(--hdr, 56px) - 8px); }
+  .ed-sheet-head { position: relative; padding-top: 14px; touch-action: none; }
+  .ed-sheet-head .sheet-grip { display: block; position: absolute; top: 5px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--line); }
+  .ed-sheet-head .sheet-size { display: inline-flex; margin-left: auto; }
+  .ed-sheet-head h2 { flex: 0 1 auto; }
+  body.sheet-left:not(.sheet-full) .sheet-backdrop, body.sheet-right:not(.sheet-full) .sheet-backdrop { background: transparent; bottom: 56dvh; }
+  /* with a half sheet the preview shrinks to the space above it (and fits the design again) */
+  body.sheet-left:not(.sheet-full) .ed-main, body.sheet-right:not(.sheet-full) .ed-main { align-self: start; height: calc(44dvh - var(--main-top, 110px)); }
+}
+@media (max-width: 560px) and (prefers-reduced-motion: reduce) { .ed-left, .ed-right { transition: none; } }
+@container (max-width: 640px) { .ed-viewbar .seg-sel { max-width: 116px; padding-right: 2px; } }

@@ -38,6 +38,7 @@ const Presets = (() => {
       return; // presets are a convenience: the editor works without them
     }
     renderPicker();
+    if (asked && !suggested) offer(asked);
     if ($("presetsDialog").open) renderManage();
   }
   const find = (value) => {
@@ -150,8 +151,9 @@ const Presets = (() => {
   /** The smart analysis found a preset that suits the picture: offer it, never apply it. */
   // A preset that suits the picture (smart analysis): marked in the picker and named under
   // it with one Apply button - the one place for that decision. Never applied by itself.
-  let suggested = null;
+  let suggested = null, asked = null; // asked: kept until the built-ins have loaded (they may arrive later)
   function offer(s) {
+    asked = s || null;
     suggested = s && builtins.some((p) => p.id === s.id && !p.locked) ? s : null;
     const box = $("presetSuggest");
     box.hidden = !suggested;

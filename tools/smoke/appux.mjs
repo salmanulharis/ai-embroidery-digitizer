@@ -245,6 +245,50 @@ try {
   await ev(`$("guideOn").click(); true`); await sleep(100);
   check("C: …and switch them off", await ev(`!document.querySelector("[data-guide]")`));
 
+  // ================================================ Batch D: phones and tablets
+  const SIZES = [[1920, 1080], [1600, 900], [1440, 900], [1280, 800], [1024, 768], [820, 1180, true], [390, 844, true]];
+  for (const [w, h, mobile] of SIZES) {
+    await size(w, h, !!mobile); await sleep(450);
+    for (const p of ["shapes", "stitches"]) {
+      await pane(p); await sleep(250);
+      const vb = await ev(`(() => { const b = $("viewBar"), r = b.getBoundingClientRect();
+        const out = [...b.querySelectorAll("button, select")].filter((e) => e.offsetParent !== null && getComputedStyle(e).visibility !== "hidden")
+          .filter((e) => { const q = e.getBoundingClientRect(); return q.right > r.right + 1 || q.left < r.left - 1; }).map((e) => e.id || e.className);
+        return { h: Math.round(r.height), out }; })()`);
+      check(`D: ${w}×${h} ${p}: the view bar is one row, everything inside`, vb.h <= 50 && vb.out.length === 0, `${vb.h} px ${vb.out.join(",")}`);
+      check(`D: ${w}×${h} ${p}: the bottom bar is one row`, await ev(`$("edBar").getBoundingClientRect().height <= 64`), await ev(`Math.round($("edBar").getBoundingClientRect().height) + " px"`));
+    }
+  }
+  await pane("stitches"); await sleep(200);
+  // phone: the ⋯ menu instead of the zoom buttons
+  check("D: phone: zoom buttons folded into ⋯", await ev(`$("btnViewMore").offsetParent !== null && $("btnFit").offsetParent === null`));
+  await ev(`$("btnViewMore").click(); true`); await sleep(150);
+  check("D: ⋯ opens zoom, fit and help", await ev(`!$("viewMore").hidden && /Fit to the screen/.test($("viewMore").textContent)`));
+  await ev(`$("viewMore").querySelector('[data-click="btnKeys"]').click(); true`); await sleep(200);
+  check("D: …which work (Help and shortcuts opens; menu closed)", await ev(`$("keysDialog").open && $("viewMore").hidden`));
+  check("D: Auto-update is a preference there", await ev(`$("autoUpdatePref").checked === $("autoUpdate").checked`));
+  await ev(`$("keysDialog").close(); true`);
+  check("D: phone: panel buttons have labels, status is a dot", await ev(`getComputedStyle($("barSettings").querySelector("span")).display !== "none" && $("edStatusText").offsetParent === null && $("edDot").offsetParent !== null`));
+  // phone: half-height sheet, the preview above it
+  await ev(`$("barSettings").click(); true`); await sleep(500);
+  const sheet = await ev(`(() => { const r = $("leftPanel").getBoundingClientRect(), m = document.querySelector(".ed-main").getBoundingClientRect(); return { top: r.top, h: innerHeight, main: m.bottom }; })()`);
+  check("D: phone: Settings opens at about half height", sheet.top > sheet.h * 0.35 && sheet.top < sheet.h * 0.6, `top ${Math.round(sheet.top)} of ${sheet.h}`);
+  check("D: …with the preview in view above it", sheet.main <= sheet.top + 2, `preview ends ${Math.round(sheet.main)}`);
+  await shot("appux-phone-sheet");
+  await ev(`document.querySelector("#leftPanel [data-sheet-size]").click(); true`); await sleep(400);
+  check("D: ↕ makes it taller", await ev(`document.body.classList.contains("sheet-full") && $("leftPanel").getBoundingClientRect().top < innerHeight * 0.2`));
+  await ev(`document.querySelector("#leftPanel [data-close-sheet]").click(); true`); await sleep(400);
+  check("D: closing resets the size", await ev(`!document.body.classList.contains("sheet-full") && !document.body.classList.contains("sheet-left")`));
+  // the file menu
+  check("D: phone: the file menu reads File", await ev(`$("btnFileMenu").offsetParent !== null && /File/.test($("btnFileMenu").innerText)`));
+  await size(1440, 900); await sleep(400);
+  check("D: desktop: the file menu shows the file name", await ev(`$("hdrName").offsetParent !== null && $("hdrName").textContent === state.project.filename`));
+  await ev(`$("btnFileMenu").click(); true`); await sleep(150);
+  check("D: it offers New design and Close design", await ev(`!$("fileMenu").hidden && !!$("btnMenuNew") && !!$("btnMenuClose")`));
+  await ev(`$("btnMenuNew").click(); true`); await sleep(300);
+  check("D: New design goes to the start screen", await ev(`currentPage === "upload" && $("fileMenu").hidden`));
+  await ev(`$("btnBackToOpen").click(); true`); await sleep(400);
+
 } catch (e) {
   results.push("ERROR " + e.message);
   try { await shot("appux-error"); } catch (_) {}

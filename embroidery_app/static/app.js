@@ -115,7 +115,8 @@ function updateHeader() {
   $("hdrFile").classList.toggle("hidden", !open);
   $("btnNew").classList.toggle("hidden", currentPage !== "editor");
   $("hdrName").textContent = open ? state.project.filename : "";
-  $("hdrName").title = open ? state.project.filename : "";
+  $("btnFileMenu").title = open ? state.project.filename : "";
+  $("btnFileMenu").setAttribute("aria-label", open ? `${state.project.filename}: file menu` : "File menu");
   $("openNote").classList.toggle("hidden", !open || currentPage !== "upload");
   if (open) $("openName").textContent = state.project.filename;
 }
@@ -1912,6 +1913,8 @@ function ensureShapesPane() {
 let sheetReturn = null;
 function openSheet(side) {
   closeSheets(false);
+  // phones: the preview shrinks to the space above the half-height sheet (style.css)
+  document.documentElement.style.setProperty("--main-top", `${Math.round(document.querySelector(".ed-main").getBoundingClientRect().top + scrollY)}px`);
   document.body.classList.add(`sheet-${side}`);
   $("sheetBackdrop").hidden = false;
   const btn = side === "left" ? $("barSettings") : $("barInfo");
@@ -1978,6 +1981,7 @@ function bindEditor() {
   bindShortcuts();
   bindViewBar();
   bindThreadMenu();
+  bindPhoneBits();
   SmartLine.init();
   Guide.init();
   try { $("statsMore").open = localStorage.getItem("statsMore") === "1"; } catch (_) {}
@@ -2017,6 +2021,43 @@ function bindPop(btn, pop, { onOpen } = {}) {
   pop.addEventListener("click", (ev) => { if (ev.target.closest("button:not(.help)")) close(); });
   document.addEventListener("pointerdown", (ev) => { if (!pop.hidden && !pop.contains(ev.target) && !btn.contains(ev.target)) close(); });
   return { open, close };
+}
+
+// File menu (header), the view bar's ⋯ menu, the sheets' taller / shorter size and the
+// Auto-update preference (Help and shortcuts) - mostly for phones and tablets.
+function bindPhoneBits() {
+  bindPop($("btnFileMenu"), $("fileMenu"));
+  $("btnMenuNew").onclick = () => $("btnNew").click();
+  $("btnMenuClose").onclick = () => closeDesign().catch(() => {});
+  bindPop($("btnViewMore"), $("viewMore"), { onOpen: () => $("viewMore").querySelector(".vm-full").hidden = $("btnFullscreen").classList.contains("hidden") });
+  $("viewMore").addEventListener("click", (ev) => { const b = ev.target.closest("[data-click]"); if (b) $(b.dataset.click)?.click(); });
+  // phones: a sheet opens at half height (the preview stays in view above it); ↕ or a drag
+  // on its head makes it taller or shorter, a drag down closes it
+  const setFull = (on) => {
+    document.body.classList.toggle("sheet-full", on);
+    document.querySelectorAll("[data-sheet-size]").forEach((b) => { b.setAttribute("aria-pressed", on); b.setAttribute("aria-label", on ? "Shorter panel" : "Taller panel"); b.title = b.getAttribute("aria-label"); });
+  };
+  document.querySelectorAll("[data-sheet-size]").forEach((b) => (b.onclick = () => setFull(!document.body.classList.contains("sheet-full"))));
+  document.querySelectorAll(".ed-sheet-head").forEach((head) => {
+    let y0 = null;
+    head.addEventListener("pointerdown", (ev) => { if (!ev.target.closest("button")) y0 = ev.clientY; });
+    head.addEventListener("pointerup", (ev) => {
+      if (y0 == null) return;
+      const dy = ev.clientY - y0;
+      y0 = null;
+      if (dy < -40) setFull(true);
+      else if (dy > 60) { if (document.body.classList.contains("sheet-full")) setFull(false); else closeSheets(); }
+    });
+    head.addEventListener("pointercancel", () => (y0 = null));
+  });
+  new MutationObserver(() => { if (!document.body.matches(".sheet-left, .sheet-right")) setFull(false); })
+    .observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  // Auto-update: in the bar, and as a preference in Help and shortcuts (phones hide the bar's)
+  $("autoUpdatePref").onchange = () => { $("autoUpdate").checked = $("autoUpdatePref").checked; $("autoUpdate").dispatchEvent(new Event("change")); };
+  $("keysDialog").addEventListener("toggle", () => {
+    $("autoUpdatePref").checked = $("autoUpdate").checked;
+    $("autoUpdatePref").disabled = $("autoUpdate").disabled;
+  });
 }
 
 // The view bar above the preview: preview style and versions (Stitches), the Show menu, zoom.
