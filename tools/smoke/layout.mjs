@@ -1,5 +1,7 @@
 // Headless browser smoke test of the editor layout (docs/EDITOR_UX_PLAN.md): nothing in the bottom bar overlaps at
-// any screen size, no sideways page scroll, plus the Batch A clean-ups (stats wording, selection panel, thread rows).
+// any screen size, no sideways page scroll, plus the Batch A clean-ups (stats wording, selection panel, thread rows),
+// Batch B (header actions, view bar, Show menu, nothing over the design) and Batch C (preset menu, Fabric & thread,
+// compact numbers, help buttons on demand).
 // Usage: node tools/smoke/layout.mjs [out-dir]      (see tools/smoke/README.md)
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
@@ -91,19 +93,31 @@ async function openExample() {
 
 }
 
+async function mouse(type, x, y, button = "none") {
+  await send("Input.dispatchMouseEvent", { type, x, y, button, clickCount: type === "mouseMoved" ? 0 : 1 });
+}
+const MODS = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
+async function key(k, { code, mods = [] } = {}) {
+  const modifiers = mods.reduce((a, m) => a | MODS[m], 0);
+  const vk = k.length === 1 ? k.toUpperCase().charCodeAt(0) : { Escape: 27, Enter: 13 }[k] || 0;
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: code || "", modifiers, windowsVirtualKeyCode: vk, text: k.length === 1 ? k : undefined });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: code || "", modifiers, windowsVirtualKeyCode: vk });
+  await sleep(120);
+}
 const SIZES = [[1920, 1080], [1600, 900], [1440, 900], [1280, 800], [1024, 768], [820, 1180, true], [390, 844, true]];
 const pane = (p) => ev(`document.querySelector('[data-pane="${p}"]').click(); true`);
 // every visible item of the bottom bar, and the pairs whose boxes overlap (more than 1 px each way)
-const barOverlaps = () => ev(`(() => {
-  const items = [...document.querySelectorAll("#edBar > .ed-grp > *, #edBar > button")].filter((e) => {
+const barOverlaps = (items = "#edBar > .ed-grp > *, #edBar > button", box = "#edBar") => ev(`(() => {
+  const items = [...document.querySelectorAll(${JSON.stringify(items)})].filter((e) => {
     const s = getComputedStyle(e), r = e.getBoundingClientRect(); return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0; });
   const name = (e) => e.id || e.className || e.tagName;
   const bad = [];
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    if (items[i].contains(items[j]) || items[j].contains(items[i])) continue; // a group and its own buttons
     const a = items[i].getBoundingClientRect(), b = items[j].getBoundingClientRect();
     if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) bad.push(name(items[i]) + " × " + name(items[j]));
   }
-  const bar = $("edBar").getBoundingClientRect();
+  const bar = document.querySelector(${JSON.stringify(box)}).getBoundingClientRect();
   items.forEach((e) => { const r = e.getBoundingClientRect(); if (r.right > bar.right + 1 || r.left < bar.left - 1) bad.push(name(e) + " outside the bar"); });
   return bad; })()`);
 const clipped = (id) => ev(`(() => { const e = $(${JSON.stringify(id)}); return e.offsetParent !== null && e.scrollWidth > e.clientWidth + 1; })()`);
@@ -125,6 +139,15 @@ try {
       await pane(p); await sleep(400);
       const bad = await barOverlaps();
       check(`${w}×${h} ${p}: bottom bar items don't overlap`, bad.length === 0, bad.join(", "));
+      const vb = await barOverlaps("#viewBar > *:not(.grow), #viewBar .vb-grp > *, #viewBar .ed-zoom > *", "#viewBar");
+      check(`${w}×${h} ${p}: view bar items don't overlap`, vb.length === 0, vb.join(", "));
+      const hd = await barOverlaps("header > *, header .hdr-file > *, header .hdr-undo > *, header .hdr-actions > *, #paneSwitch > *", "header");
+      check(`${w}×${h} ${p}: header items don't overlap`, hd.length === 0, hd.join(", "));
+      if (w >= 1024) check(`${w}×${h} ${p}: header is one row`, await ev(`document.querySelector("header").getBoundingClientRect().height < 70`),
+        await ev(`Math.round(document.querySelector("header").getBoundingClientRect().height) + " px"`));
+      check(`${w}×${h} ${p}: undo, view switch and Export in the header`, await ev(`["btnUndo", "btnRedo", "paneSwitch", "btnExport"].every((id) => $(id).offsetParent !== null && $(id).closest("header"))`));
+      check(`${w}×${h} ${p}: nothing floats over the top of the preview`, await ev(`(() => { const s = $("stage").getBoundingClientRect(), v = $("viewBar").getBoundingClientRect();
+        return v.bottom <= s.top + 1 && [...document.querySelectorAll(".ed-tools > *")].every((e) => e.offsetParent === null); })()`));
       check(`${w}×${h} ${p}: no sideways page scroll`, await ev(`document.documentElement.scrollWidth <= innerWidth`),
         await ev(`document.documentElement.scrollWidth + " > " + innerWidth`));
       if (w >= 900) check(`${w}×${h} ${p}: status text not cut off`, !(await clipped("edStatusText")), await ev(`$("edStatusText").textContent`));
@@ -137,6 +160,69 @@ try {
     await ev(`/sewn · colour \\d+ of \\d+$/.test($("scrubInfo").textContent) && /stitches sewn/.test($("scrub").getAttribute("aria-valuetext"))`),
     await ev(`$("scrubInfo").textContent`));
   check("the bar no longer repeats the design figures", await ev(`!document.getElementById("edFacts")`));
+
+  // ------------------------------------------------ view bar: preview style as buttons when wide, a drop-down when narrow
+  check("wide preview: style buttons", await ev(`document.querySelector('#viewMode [data-mode="direction"]').offsetParent !== null && $("viewMode").querySelector(".seg-sel").offsetParent === null`));
+  await send("Emulation.setDeviceMetricsOverride", { width: 1024, height: 768, deviceScaleFactor: 1, mobile: false }); await sleep(400);
+  check("narrow preview: style drop-down", await ev(`$("viewMode").querySelector(".seg-sel").offsetParent !== null && document.querySelector('#viewMode [data-mode="direction"]').offsetParent === null`));
+  await ev(`{ const s = $("viewMode").querySelector(".seg-sel"); s.value = "type"; s.dispatchEvent(new Event("change", { bubbles: true })); } true`); await sleep(200);
+  check("the drop-down switches the style", await ev(`state.mode === "type" && document.querySelector('#viewMode [data-mode="type"]').getAttribute("aria-pressed") === "true"`));
+  await ev(`document.querySelector('#viewMode [data-mode="real"]').click(); true`); await sleep(200);
+  check("and follows the buttons", await ev(`$("viewMode").querySelector(".seg-sel").value === "real"`));
+  await shot("layout-viewbar-narrow");
+  await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }); await sleep(400);
+
+  // ------------------------------------------------ the Show menu
+  await ev(`$("btnShow").click(); true`); await sleep(150);
+  check("Show opens its menu", await ev(`!$("showPop").hidden && $("btnShow").getAttribute("aria-expanded") === "true"`));
+  check("stitches view: woven + dark fabric, no directions", await ev(`$("showWeave").offsetParent !== null && $("showFabric").offsetParent !== null && $("showDirections").offsetParent === null`));
+  await shot("layout-show-menu");
+  await ev(`$("showGrid").click(); true`); await sleep(200);
+  check("ticking keeps it open and counts", await ev(`!$("showPop").hidden && $("showCount").textContent.trim() === "· 1" && !$("gridLayer").hidden`), await ev(`$("showCount").textContent`));
+  await ev(`$("showGrid").click(); true`); await sleep(100);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(150);
+  check("Esc closes it, focus back on Show", await ev(`$("showPop").hidden && document.activeElement === $("btnShow") && $("showCount").classList.contains("hidden")`));
+  await ev(`document.activeElement.blur(); true`);
+  await key("o", { code: "KeyO" }); await sleep(300);
+  check("O shows the original with the menu closed", await ev(`$("showRef").checked && $("showPop").hidden`));
+  await key("o", { code: "KeyO" }); await sleep(200);
+  await pane("shapes"); await sleep(300);
+  await ev(`$("btnShow").click(); true`); await sleep(150);
+  check("shapes view: directions, no woven", await ev(`$("showDirections").offsetParent !== null && $("showWeave").offsetParent === null`));
+  await mouse("mousePressed", 700, 600, "left"); await mouse("mouseReleased", 700, 600, "left"); await sleep(150);
+  check("a click elsewhere closes it", await ev(`$("showPop").hidden`));
+  await pane("stitches"); await sleep(300);
+
+  // ------------------------------------------------ left panel: sections, Fabric & thread, compact numbers
+  check("sections: Size & colours, Picture, Fabric & thread, Stitches", await ev(`[...document.querySelectorAll("#leftPanel .ed-sec:not(.hidden) > summary")].map((s) => s.firstChild.textContent.trim()).slice(0, 4).join("|") === "Size & colours|Picture|Fabric & thread|Stitches"`),
+    await ev(`[...document.querySelectorAll("#leftPanel .ed-sec:not(.hidden) > summary")].map((s) => s.firstChild.textContent.trim()).join("|")`));
+  check("fabric and thread are stitch settings in their own section", await ev(`["fabric", "thread_weight"].every((k) => $("stitchForm").elements[k]?.closest("#materialFields"))`));
+  const undo0 = await ev(`$("btnUndo").title`);
+  await ev(change(`$("stitchForm").elements.thread_weight`, "60")); await sleep(300); await waitFor(idle, 60000);
+  check("a fabric & thread change is one undo step and is marked", await ev(`$("btnUndo").title !== ${JSON.stringify(undo0)} && $("stitchForm").elements.thread_weight.closest("label").classList.contains("mod") && document.querySelector('.ed-sec[data-sec="material"]').classList.contains("mod")`),
+    await ev(`$("btnUndo").title`));
+  await ev(`History.undo(); true`); await waitFor(`${idle} && $("stitchForm").elements.thread_weight.value === "40"`, 60000);
+  check("undo puts it back", await ev(`!$("stitchForm").elements.thread_weight.closest("label").classList.contains("mod")`));
+  await ev(`document.querySelector('.ed-sec[data-sec="stitches"]').open = true; true`);
+  check("number fields are one row (label left, value right)", await ev(`(() => { const i = $("stitchForm").elements.fill_spacing_mm, l = i.closest("label").querySelector(".lbl");
+    const a = i.getBoundingClientRect(), b = l.getBoundingClientRect(); return a.left > b.right - 1 && Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < 14 && a.width < 100; })()`));
+
+  // ------------------------------------------------ help buttons: on demand, or always
+  const helpOpacity = `getComputedStyle($("stitchForm").elements.fill_spacing_mm.closest("label").querySelector(".help")).opacity`;
+  await ev(`HelpButtons.set(false); true`); await sleep(300); // the buttons fade (0.12 s)
+  check("help buttons hidden until you point at the setting", await ev(`${helpOpacity} === "0"`),
+    await ev(`${helpOpacity} + " hover:" + matchMedia("(hover: hover)").matches + " fine:" + matchMedia("(pointer: fine)").matches + " always:" + document.body.classList.contains("help-always")`));
+  check("the section headings keep theirs", await ev(`getComputedStyle($("selTitle").querySelector(".help")).opacity === "1"`));
+  const pt = await ev(`(() => { const r = $("stitchForm").elements.fill_spacing_mm.closest("label").getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; })()`);
+  await mouse("mouseMoved", pt.x, pt.y); await sleep(250);
+  check("pointing at it shows it", await ev(`${helpOpacity} === "1"`), await ev(helpOpacity));
+  await mouse("mouseMoved", 5, 5);
+  await ev(`$("btnKeys").click(); true`); await sleep(150);
+  check("Help and shortcuts has the switch", await ev(`$("keysDialog").open && !$("helpAlways").checked`));
+  await ev(`$("helpAlways").click(); $("keysDialog").close(); true`); await sleep(300);
+  check("always show: visible and remembered", await ev(`${helpOpacity} === "1" && localStorage.getItem("helpAlways") === "1"`));
+  await ev(`localStorage.removeItem("helpAlways"); true`);
 
   // ------------------------------------------------ design figures
   check("figures use the singular for one", await ev(`![...$("stats").querySelectorAll("div")].some((d) => d.querySelector("b").textContent.trim() === "1" && /(colours|cuts|changes|stitches)/.test(d.querySelector("span").textContent))`),

@@ -165,6 +165,7 @@ try {
   check("no density note in other views", await ev(`$("densityTip").hidden`));
 
   // ------------------------------------------------ grid + rulers
+  await ev(`$("showPop").hidden && $("btnShow").click(); true`); await sleep(150); // Grid is in the Show menu
   await clickAt("#showGrid");
   await ev(`document.activeElement.blur(); true`); // keys typed into a focused checkbox are not shortcuts
   await waitFor(`!$("gridLayer").hidden`, 3000);
@@ -180,6 +181,7 @@ try {
   check("grid in the shapes view too", g3.n > 500 && g3.h !== g2.h, JSON.stringify(g3));
   await shot("p4b-grid-shapes");
   await key("s", { code: "KeyS" }); await key("f", { code: "KeyF" }); await sleep(300);
+  await ev(`$("showPop").hidden && $("btnShow").click(); true`); await sleep(150); // Grid is in the Show menu
   await clickAt("#showGrid");
   check("grid off", await ev(`$("gridLayer").hidden && !$("stage").classList.contains("with-grid")`));
 

@@ -1,6 +1,7 @@
 # Editor UI/UX clean-up: findings and fix plan
 
-Status: **Batch A done** (branch `editor-ux-cleanup`, see "Batch A: what was built" below); B–E not started (written 2026-11-17 from a 1910 × 1035 screenshot of a real design plus a read of
+Status: **Batches A, B and C done** (branch `editor-ux-cleanup`, see "what was built" under each batch); D and E not
+started. The decisions in §6 were taken as recommended (2026-11-17). (Written 2026-11-17 from a 1910 × 1035 screenshot of a real design plus a read of
 `index.html`, `style.css`, `app.js`, `shapes.js`, `help.js`). It's Phase 6 in [ROADMAP.md](ROADMAP.md) §1.
 
 The editor has every feature it needs. The trouble is that each feature was added where there was room at the time,
@@ -233,6 +234,22 @@ and the 8 smoke scripts keep working with changed selectors at most.
 - In the Shapes view the bar shows status only. It stays visible, so the layout doesn't jump when you switch views.
 - Below 900 px, `#barSettings` / `#barInfo` (the sheet openers) stay in this bar, as today.
 
+**Batch B: what was built (and where it differs)**
+- Header: `#btnUndo` / `#btnRedo` next to the file name, `#paneSwitch` (still class `ed-views`, so old selectors
+  work) centred, `#btnExport` at the far right. Shown only in the editor (`.ed-hdr`). Below 1300 px the app title,
+  the AI badge and long file names give way; on phones Shapes / Stitches gets its own row.
+- The file-name menu (New / Close design) was **not** built: "New design" stays a button (icon only below 1400 px).
+- View bar (`#viewBar`, a row above `#stage`, which is no longer `position: absolute`). On a narrow preview
+  (container below 760 px) the style and version buttons become drop-downs (`.seg-sel`, added by `bindViewBar()`,
+  clicking the same buttons). The Show menu (`#showPop`) keeps every checkbox id. The O key toggles the original
+  even while the menu is closed.
+- The reference bar (`#refBar`) and the shape edit bar stay floating bars in `.ed-tools`, but only while they are
+  in use. They are no longer behind the view bar, so `--tools-top` is 12 px.
+- **Auto-update stays in the bottom bar** as a checkbox. With the view controls and Export gone, the bar has room,
+  and a popover would hide a switch people use.
+- Menus (`bindPop` in app.js): Esc from anywhere, a click elsewhere or another menu closes them; an action inside
+  closes them, ticking a box does not.
+
 ### Batch C: left panel (about 3 days)
 
 **C1. A compact preset row**
@@ -287,6 +304,22 @@ and the 8 smoke scripts keep working with changed selectors at most.
     Stitches note (index.html:210) says the same once.
 - Section headings keep their help icon visible, since there are few of them.
 - The help text itself stays in `help.js`, unchanged.
+
+**Batch C: what was built (and where it differs)**
+- Choosing a preset applies it. Locked ones only show the lock. The ⋯ menu (`#btnPresetMenu`) has *Apply again*
+  (`#btnPresetReapply`), *Save as preset…* and *Manage presets…*. The "Changed" badge sits next to the Preset label.
+- Sections: Size & colours (open), Picture (closed), Fabric & thread (closed), Stitches (open). The remembered
+  state (`edSections`) still wins. Fabric, thread weight and thread brand are in `#materialFields` with
+  `form="stitchForm"`, so `$("stitchForm").elements` and every reader of the stitch settings still see them
+  (`inStitchForm()` replaces `closest("#stitchForm")`).
+- Number fields are one row (label left, 84 px value right) with a mouse at 900 px and wider. **The unit stays in the
+  label** (no suffix inside the box), so `PARAMS` and `test_param_ranges.py` are unchanged.
+- Help buttons: `HelpButtons` in app.js, `body.help-always`, switch `#helpAlways` in Help and shortcuts. They are
+  on for the first 3 page loads, then on demand. The rule covers labels, figures, thread details and the empty
+  selection hint in the side panels, the Show menu and the bottom bar. Headings keep their buttons.
+- `layout.mjs` grew to 139 checks (header and view bar overlaps at 7 sizes, nothing over the preview, Show menu,
+  drop-downs, Fabric & thread undo, one-row numbers, help on hover). `presets.mjs` tests apply-on-choose and the
+  menu (42 checks).
 
 ### Batch D: right panel (about 2 days)
 

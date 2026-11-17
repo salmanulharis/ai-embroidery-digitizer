@@ -134,11 +134,12 @@ window.addEventListener("resize", measureHeader);
 // Kept for this browser tab only: the project, the page, the preview and the form values.
 // The design itself stays on the server and is fetched again.
 const SESSION_KEY = "openDesign";
+const inStitchForm = (el) => el.form?.id === "stitchForm"; // also the Fabric & thread fields (form attribute)
 function formSnapshot() {
   const v = {};
   // fields with an id, except the stitch form (its fields get generated ids, see Tip)
   document.querySelectorAll("#leftPanel input[id], #leftPanel select[id]").forEach((e) => {
-    if (!e.closest("#stitchForm")) v["#" + e.id] = e.type === "checkbox" ? e.checked : e.value;
+    if (!inStitchForm(e)) v["#" + e.id] = e.type === "checkbox" ? e.checked : e.value;
   });
   [...$("stitchForm").elements].forEach((e) => { if (e.name) v[e.name] = e.type === "checkbox" ? e.checked : e.value; });
   return v;
@@ -146,7 +147,7 @@ function formSnapshot() {
 function restoreForm(v) {
   Object.entries(v).forEach(([k, val]) => {
     const e = k.startsWith("#") ? $(k.slice(1)) : $("stitchForm").elements[k];
-    if (!e || !e.matches?.("input, select") || (k.startsWith("#") && e.closest("#stitchForm"))) return;
+    if (!e || !e.matches?.("input, select") || (k.startsWith("#") && inStitchForm(e))) return;
     if (e.type === "checkbox") e.checked = !!val; else e.value = val;
   });
   showAdjustValues();
@@ -846,13 +847,13 @@ function buildStitchForm() {
   const tw = d.thread_weight === 60 ? 60 : 40;
   const fabrics = state.config.fabrics || [];
   const fabricField = fabrics.length
-    ? `<label class="full"><span class="lbl">Fabric ${Tip.icon("fabric")}</span><select name="fabric">` +
+    ? `<label class="full"><span class="lbl">Fabric ${Tip.icon("fabric")}</span><select name="fabric" form="stitchForm">` +
       fabrics.map((fb) => `<option value="${fb.id}" ${fb.id === d.fabric ? "selected" : ""}>${fb.label}</option>`).join("") +
       `</select><span class="muted small hint" id="fabricNote"></span></label>`
     : "";
   const charts = state.config.thread_charts || [];
   const chartField = charts.length // brand charts the server has (THREAD_CHARTS_DIR); none bundled
-    ? `<label class="full"><span class="lbl">Thread brand ${Tip.icon("thread_chart")}</span><select name="thread_chart">` +
+    ? `<label class="full"><span class="lbl">Thread brand ${Tip.icon("thread_chart")}</span><select name="thread_chart" form="stitchForm">` +
       `<option value="">None – colours only</option>` +
       charts.map((c) => `<option value="${esc(c.id)}" ${c.id === d.thread_chart ? "selected" : ""}>${esc(c.name)} (${c.count} colours)</option>`).join("") +
       `</select></label>`
@@ -863,15 +864,18 @@ function buildStitchForm() {
     `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}">` +
     UNDERLAY_LABELS[kind].map(([v, l]) => `<option value="${v}" ${v === d[k] ? "selected" : ""}>${l}</option>`).join("") +
     `</select></label>`;
-  $("stitchForm").innerHTML =
+  // Fabric & thread: a section of their own (what you sew on, with what)
+  $("materialFields").innerHTML =
     fabricField +
-    CHECKS.slice(0, 1).map(checkbox).join("") +
-    `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight">` +
+    `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight" form="stitchForm">` +
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
     `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
-    chartField +
+    chartField;
+  // Stitches: the four main numbers, then the switches
+  $("stitchForm").innerHTML =
     PARAMS.filter((p) => !p[5]).map(field).join("") +
     CHECKS.slice(1, 4).map(checkbox).join("") +
+    CHECKS.slice(0, 1).map(checkbox).join("") +
     `<div class="style-params full" id="styleParams" hidden><p class="style-title">Style settings ${Tip.icon("style_settings")}</p>` +
     UNDERLAY_FIELDS.filter(([k]) => isStyleParam(k)).map(select).join("") +
     PARAMS.filter((p) => isStyleParam(p[0])).map(field).join("") +
@@ -890,14 +894,17 @@ function buildStitchForm() {
   }
   defaultStitch = stitchValues();
   addResetButtons($("stitchForm"));
+  addResetButtons($("materialFields"));
   // a changed setting is recorded for undo and updates the stitches by itself (or marks
   // them out of date, see Jobs); "show every style" only changes what is listed
-  $("stitchForm").addEventListener("change", (ev) => {
+  const changed = (ev) => {
     updateStyleParams();
     if (!ev.target.name) return;
     History.stitchChange();
     if (state.design) Jobs.stitch();
-  });
+  };
+  $("stitchForm").addEventListener("change", changed);
+  $("materialFields").addEventListener("change", changed);
   $("stitchForm").addEventListener("submit", (ev) => ev.preventDefault());
 }
 
@@ -964,7 +971,7 @@ function labelText(label) {
   t.querySelectorAll(".help, output, input, select, textarea, .hint, .reset-one, .sec-reset").forEach((n) => n.remove());
   return t.textContent.replace(/\s+/g, " ").trim();
 }
-const settingKey = (el) => (el.closest("#stitchForm") ? el.name : EXTRACT_IDS.includes(el.id) ? el.id : "");
+const settingKey = (el) => (inStitchForm(el) ? el.name : EXTRACT_IDS.includes(el.id) ? el.id : "");
 const settingEl = (key) => (EXTRACT_IDS.includes(key) ? $(key) : $("stitchForm").elements[key]);
 const settingName = (key) => { const l = settingEl(key)?.closest("label"); return l ? labelText(l) : key; };
 
@@ -1544,6 +1551,7 @@ function setPane(pane, { user = false } = {}) {
   state.pane = pane;
   $("editor").dataset.view = pane;
   paneButtons().forEach((b) => b.setAttribute("aria-pressed", b.dataset.pane === pane));
+  viewBarCount();
   if (pane === "stitches") requestAnimationFrame(() => { if (!state.preview) return; if (state.viewMoved) draw(); else fit(); });
   if (pane === "shapes" && state.playing) togglePlay();
   Shapes.refresh();
@@ -1625,8 +1633,94 @@ function bindEditor() {
   $("zoomPct").onclick = () => zoomTo(actualPxPerMm());
   bindFullscreen();
   bindShortcuts();
+  bindViewBar();
+  HelpButtons.init();
   Export.init();
 }
+
+/** A small menu under a button: the button opens and closes it, Esc, a click elsewhere or
+ *  another menu closes it, and focus goes back to the button. */
+const openPops = new Set();
+// Esc closes an open menu wherever the focus is (focus inside it goes back to its button)
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape" || !openPops.size || document.querySelector("dialog[open]")) return;
+  openPops.forEach((close) => close("auto"));
+  ev.stopPropagation();
+}, true);
+function bindPop(btn, pop, { onOpen } = {}) {
+  // focus: true = back to the button; "auto" = only when it was in the menu or nowhere
+  const close = (focus = false) => {
+    if (pop.hidden) return;
+    const a = document.activeElement, inside = pop.contains(a) || a === btn || !a || a === document.body;
+    pop.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    openPops.delete(close);
+    if (focus === true || (focus === "auto" && inside)) btn.focus();
+  };
+  const open = () => {
+    openPops.forEach((c) => c());
+    pop.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    openPops.add(close);
+    onOpen?.();
+  };
+  btn.addEventListener("click", () => (pop.hidden ? open() : close()));
+  // a menu item that does something closes the menu; ticking a box keeps it open
+  pop.addEventListener("click", (ev) => { if (ev.target.closest("button:not(.help)")) close(); });
+  document.addEventListener("pointerdown", (ev) => { if (!pop.hidden && !pop.contains(ev.target) && !btn.contains(ev.target)) close(); });
+  return { open, close };
+}
+
+// The view bar above the preview: preview style and versions (Stitches), the Show menu, zoom.
+function bindViewBar() {
+  bindPop($("btnShow"), $("showPop"));
+  // the Show button counts what is on besides the defaults (the hoop outline is on by default)
+  const isShownHere = (i) => !i.closest(state.pane === "stitches" ? ".shapes-only" : ".stitch-only");
+  const count = () => {
+    const on = [...$("showPop").querySelectorAll("input[type=checkbox]")].filter((i) => i.id !== "showHoop" && i.checked && isShownHere(i)).length;
+    $("showCount").textContent = on ? ` · ${on}` : "";
+    $("showCount").classList.toggle("hidden", !on);
+  };
+  $("showPop").addEventListener("change", count);
+  new MutationObserver(count).observe($("editor"), { attributes: true, attributeFilter: ["data-view"] });
+  viewBarCount = count;
+  // a narrow preview shows the preview style and the versions as drop-downs (same buttons underneath)
+  [["viewMode", "Preview style"], ["variant", "Stitch version"]].forEach(([id, name]) => {
+    const seg = $(id), sel = document.createElement("select");
+    sel.className = "seg-sel";
+    sel.setAttribute("aria-label", name);
+    const buttons = [...seg.querySelectorAll("button")];
+    sel.innerHTML = buttons.map((b) => `<option value="${esc(b.dataset.mode || b.dataset.variant)}">${esc(b.textContent)}</option>`).join("");
+    const sync = () => { const on = buttons.find((b) => b.getAttribute("aria-pressed") === "true"); if (on) sel.value = on.dataset.mode || on.dataset.variant; };
+    sel.onchange = () => buttons.find((b) => (b.dataset.mode || b.dataset.variant) === sel.value)?.click();
+    new MutationObserver(sync).observe(seg, { subtree: true, attributes: true, attributeFilter: ["aria-pressed"] });
+    seg.append(sel);
+    sync();
+  });
+}
+let viewBarCount = () => {};
+
+// "?" help buttons: shown when you point at a setting (or reach them with Tab); the Help and
+// shortcuts dialog can show them all the time. New users see them for their first visits.
+const HelpButtons = (() => {
+  const KEY = "helpAlways", VISITS = "helpVisits", FIRST = 3;
+  function set(on, save = true) {
+    document.body.classList.toggle("help-always", !!on);
+    $("helpAlways").checked = !!on;
+    if (save) try { localStorage.setItem(KEY, on ? "1" : "0"); } catch (_) {}
+  }
+  function init() {
+    let pref = null, visits = 0;
+    try {
+      pref = localStorage.getItem(KEY);
+      visits = +localStorage.getItem(VISITS) || 0;
+      localStorage.setItem(VISITS, String(visits + 1));
+    } catch (_) {}
+    set(pref === null ? visits < FIRST : pref === "1", false);
+    $("helpAlways").onchange = () => set($("helpAlways").checked);
+  }
+  return { init, set };
+})();
 
 // Full screen (where the browser allows it): the whole app, so dialogs and notes still show.
 function bindFullscreen() {
@@ -1691,7 +1785,7 @@ function bindShortcuts() {
       "+": () => zoomBy(1.25), "=": () => zoomBy(1.25),
       "-": () => zoomBy(1 / 1.25), _: () => zoomBy(1 / 1.25),
       s: () => setPane(state.pane === "stitches" ? "shapes" : "stitches", { user: true }),
-      o: () => press($("showRef")),
+      o: () => ($("showRef").click(), true), // inside the Show menu: works while it is closed
       v: () => tool("move"), b: () => tool("add"), e: () => tool("erase"),
       l: () => tool(ev.shiftKey ? "lasso-erase" : "lasso-add"),
       g: () => press($("shapePanel").querySelector('[data-action="guide"]')),
@@ -2311,6 +2405,7 @@ const Split = (() => {
 function viewMoved() {
   if (typeof Workspace !== "undefined") Workspace.sync();
   if (typeof ShapeTools !== "undefined") ShapeTools.moved();
+  viewBarCount(); // the original can be switched on by the shape tools as well
 }
 
 // the box around every stitch (stitch units, 0.1 mm), kept for the stitches last asked for

@@ -91,7 +91,7 @@ const HELP = {
   },
   presets: {
     t: "Presets",
-    what: "A preset fills in a set of settings at once – stitch density, fabric and thread, picture clean-up – for a kind of design. Choose one and press Apply; every value stays editable afterwards.",
+    what: "A preset fills in a set of settings at once – stitch density, fabric and thread, picture clean-up – for a kind of design. Choosing one applies it at once (one Undo takes it back); every value stays editable afterwards. The ⋯ button saves your own presets, manages them, and applies the chosen one again after you changed settings.",
     why: "Good starting values in one step, and the same settings again for every design of the same kind. After applying, changed settings are marked against the preset.",
     eg: "“Small text & logos” for a left-chest logo with lettering under 6 mm. Applying can be undone like any other change.",
   },
@@ -626,7 +626,7 @@ const HELP = {
   },
   variant: {
     t: "Compare versions",
-    what: "Switch between the optimised stitches and the original, unreduced stitches.",
+    what: "Switch between the optimised stitches and the unoptimised ones (before smart stitch reduction).",
     why: "Check for yourself that the design looks the same with fewer stitches.",
   },
   stats_stitches: { t: "Stitches", what: "Total number of needle stitches.", why: "More stitches = longer sewing and stiffer embroidery." },

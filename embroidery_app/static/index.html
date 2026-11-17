@@ -63,11 +63,22 @@
   <h1><span class="logo" aria-hidden="true">&#10045;</span> <span class="app-title">Embroidery Digitizer</span></h1>
   <div class="hdr-file hidden" id="hdrFile">
     <span class="hdr-name" id="hdrName" title=""></span>
-    <button type="button" class="ghost small" id="btnNew" title="Upload another file" aria-label="New design"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg><span class="hide-md">New design</span></button>
+    <button type="button" class="ghost small" id="btnNew" title="Upload another file" aria-label="New design"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg><span class="hide-lg">New design</span></button>
+    <span class="hdr-undo ed-hdr" role="group" aria-label="Undo and redo">
+      <button type="button" class="ghost ib" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg></button>
+      <button type="button" class="ghost ib" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo"><svg class="ic" aria-hidden="true"><use href="#i-redo"/></svg></button>
+    </span>
+  </div>
+  <div class="hdr-mid ed-hdr">
+    <div class="ed-views" id="paneSwitch" role="group" aria-label="Show the design as">
+      <button type="button" data-pane="shapes" aria-pressed="true" title="The design as shapes: select, edit outlines, draw guide lines">Shapes</button>
+      <button type="button" data-pane="stitches" aria-pressed="false" title="The stitches as they will be sewn">Stitches</button>
+    </div>
+    <i data-help="view_switch"></i>
   </div>
   <div class="hdr-actions">
     <button type="button" class="ghost usage-chip hidden" id="usageChip"><span class="meter-dot" aria-hidden="true"></span><span id="usageChipText"></span></button>
-    <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog"><svg class="ic" aria-hidden="true"><use href="#i-sparkle"/></svg> <span class="hide-sm">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
+    <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog"><svg class="ic" aria-hidden="true"><use href="#i-sparkle"/></svg> <span class="hide-sm hide-ed">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
     <div class="user-menu">
       <button type="button" class="ghost" id="btnUser" aria-expanded="false" aria-controls="userMenu" aria-label="Account">
         <span class="avatar" id="userAvatar" aria-hidden="true">?</span><span class="user-email" id="userEmail"></span></button>
@@ -85,6 +96,7 @@
         <button type="button" class="ghost" id="btnLogout"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg> Sign out</button>
       </div>
     </div>
+    <button type="button" class="primary ed-export ed-hdr" id="btnExport" disabled aria-haspopup="dialog" title="Export (Ctrl+E)"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Export</span></button>
   </div>
 </header>
 
@@ -123,16 +135,19 @@
       </div>
       <div class="preset-bar" id="presetBar" role="group" aria-labelledby="presetLbl">
         <div class="preset-pick">
-          <label><span class="lbl" id="presetLbl">Preset <i data-help="presets"></i></span>
+          <label><span class="lbl" id="presetLbl">Preset <i data-help="presets"></i>
+            <span class="badge hidden" id="presetModified">Changed <i data-help="preset_modified"></i></span></span>
             <select id="presetPick" aria-describedby="presetHint"></select></label>
-          <button type="button" id="btnPresetApply" disabled>Apply</button>
+          <div class="pop-wrap">
+            <button type="button" class="ghost ib" id="btnPresetMenu" aria-haspopup="true" aria-expanded="false" aria-controls="presetMenu" title="Save and manage presets" aria-label="Preset actions">⋯</button>
+            <div class="pop-menu pop-right" id="presetMenu" hidden>
+              <button type="button" class="ghost" id="btnPresetReapply" disabled>Apply again</button>
+              <button type="button" class="ghost" id="btnPresetSave">Save as preset…</button>
+              <button type="button" class="ghost" id="btnPresetManage">Manage presets…</button>
+            </div>
+          </div>
         </div>
         <p class="small muted preset-hint" id="presetHint" aria-live="polite"></p>
-        <div class="row preset-actions">
-          <span class="badge hidden" id="presetModified">Changed <i data-help="preset_modified"></i></span>
-          <button type="button" class="ghost small" id="btnPresetSave">Save as preset…</button>
-          <button type="button" class="ghost small" id="btnPresetManage">Manage…</button>
-        </div>
       </div>
       <div class="ed-scroll">
         <p class="muted small ed-file" id="fileInfo"></p>
@@ -145,16 +160,10 @@
         </div>
 
         <details class="ed-sec" data-sec="size" open>
-          <summary>Size</summary>
+          <summary>Size &amp; colours</summary>
           <div class="ed-body">
             <label><span class="lbl">Hoop size <i data-help="hoop"></i></span><select id="hoop"></select></label>
             <label><span class="lbl">Design width on fabric (mm) <i data-help="width_mm"></i></span><input type="number" id="width_mm" min="10" max="500" step="1" value="100" inputmode="decimal"></label>
-          </div>
-        </details>
-
-        <details class="ed-sec" data-sec="colours" open>
-          <summary>Colours</summary>
-          <div class="ed-body">
             <label><span class="lbl">Number of thread colours <i data-help="num_colors"></i></span>
               <select id="num_colors">
                 <option value="">Automatic (recommended)</option>
@@ -164,7 +173,7 @@
           </div>
         </details>
 
-        <details class="ed-sec" data-sec="picture" id="rasterOpts" open>
+        <details class="ed-sec" data-sec="picture" id="rasterOpts">
           <summary>Picture</summary>
           <div class="ed-body">
             <label><span class="lbl">Background <i data-help="background"></i></span>
@@ -208,10 +217,18 @@
           </div>
         </details>
 
+        <details class="ed-sec" data-sec="material">
+          <summary>Fabric &amp; thread</summary>
+          <div class="ed-body">
+            <!-- part of the stitch settings: the fields belong to #stitchForm (form attribute) -->
+            <div class="params" id="materialFields"></div>
+          </div>
+        </details>
+
         <details class="ed-sec" data-sec="stitches" open>
           <summary>Stitches</summary>
           <div class="ed-body">
-            <p class="muted small ed-note">The defaults suit most designs on regular fabric. Hover or tap <span class="help-sample">?</span> to learn what each setting does.</p>
+            <p class="muted small ed-note">The defaults suit most designs on regular fabric.</p>
             <form id="stitchForm" class="params"></form>
           </div>
         </details>
@@ -241,19 +258,42 @@
     </aside>
 
     <div class="ed-main">
+      <div class="ed-viewbar" id="viewBar" role="toolbar" aria-label="Preview">
+        <div class="vb-grp stitch-only">
+          <div class="seg" id="viewMode" role="group" aria-label="Preview style">
+            <button type="button" data-mode="real" class="on" aria-pressed="true">Realistic</button>
+            <button type="button" data-mode="direction" aria-pressed="false" title="Sewing direction">Direction</button>
+            <button type="button" data-mode="type" aria-pressed="false" title="Stitch types">Types</button>
+            <button type="button" data-mode="check" aria-pressed="false" title="Machine check">Check</button>
+            <button type="button" data-mode="density" aria-pressed="false" title="Stitch density: needle points per mm²">Density</button>
+          </div><i data-help="view"></i>
+          <div class="seg hidden" id="variant" role="group" aria-label="Compare stitch versions">
+            <button type="button" data-variant="optimized" class="on" aria-pressed="true">Optimised</button>
+            <button type="button" data-variant="original" aria-pressed="false">Unoptimised</button>
+          </div>
+        </div>
+        <span class="grow"></span>
+        <div class="pop-wrap vb-show">
+          <button type="button" class="ghost small" id="btnShow" aria-haspopup="true" aria-expanded="false" aria-controls="showPop">Show<span class="count hidden" id="showCount"></span> <span aria-hidden="true">▾</span></button>
+          <div class="pop-menu pop-right show-pop" id="showPop" role="group" aria-label="Show on the preview" hidden>
+            <label class="check"><input type="checkbox" id="showRef"> Original picture <i data-help="reference"></i></label>
+            <label class="check" id="hoopToggle"><input type="checkbox" id="showHoop" checked> Hoop <i data-help="hoop_outline"></i></label>
+            <label class="check"><input type="checkbox" id="showGrid"> Grid &amp; rulers <i data-help="grid"></i></label>
+            <label class="check shapes-only"><input type="checkbox" id="showDirections"> Stitch directions <i data-help="show_directions"></i></label>
+            <label class="check stitch-only"><input type="checkbox" id="showWeave"> Woven fabric texture <i data-help="weave"></i></label>
+            <label class="check stitch-only ed-fabric"><input type="checkbox" id="showFabric"> Dark fabric</label>
+          </div>
+        </div>
+        <div class="vb-grp ed-zoom">
+          <button type="button" class="ghost ib" id="btnZoomOut" title="Zoom out" aria-label="Zoom out"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
+          <button type="button" class="ghost small ed-pct" id="zoomPct" title="Show at actual size (approximate: screens differ)">100%</button>
+          <button type="button" class="ghost ib" id="btnZoomIn" title="Zoom in" aria-label="Zoom in"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
+          <button type="button" class="ghost ib" id="btnFit" title="Fit to view (F)" aria-label="Fit design to view"><svg class="ic" aria-hidden="true"><use href="#i-fit"/></svg></button>
+          <button type="button" class="ghost ib hidden" id="btnFullscreen" title="Full screen" aria-label="Full screen" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-fullscreen"/></svg></button>
+          <button type="button" class="ghost ib ed-keys" id="btnKeys" title="Help and keyboard shortcuts (?)" aria-label="Help and keyboard shortcuts"><svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg></button>
+        </div>
+      </div>
       <div class="ed-stage" id="stage">
-        <div class="ed-float ed-views" role="group" aria-label="Preview">
-          <button type="button" data-pane="shapes" aria-pressed="true" title="The design as shapes: select, edit outlines, draw guide lines">Shapes</button>
-          <button type="button" data-pane="stitches" aria-pressed="false" title="The stitches as they will be sewn">Stitches</button>
-          <i data-help="view_switch"></i>
-        </div>
-        <div class="ed-float ed-overlays">
-          <label class="check small shapes-only"><input type="checkbox" id="showDirections"> Directions <i data-help="show_directions"></i></label>
-          <label class="check small"><input type="checkbox" id="showRef"> Original <i data-help="reference"></i></label>
-          <label class="check small" id="hoopToggle"><input type="checkbox" id="showHoop" checked> Hoop <i data-help="hoop_outline"></i></label>
-          <label class="check small"><input type="checkbox" id="showGrid"> Grid <i data-help="grid"></i></label>
-          <label class="check small stitch-only"><input type="checkbox" id="showWeave"> Woven <i data-help="weave"></i></label>
-        </div>
         <div class="ed-float ed-tools">
           <div class="refbar hidden" id="refBar">
             <label class="small"><span class="lbl">Show</span>
@@ -330,42 +370,15 @@
       </div>
     </aside>
 
-    <div class="ed-bar" id="edBar" role="region" aria-label="Editor tools">
-      <div class="ed-grp">
-        <button type="button" class="ghost ib" id="btnUndo" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg></button>
-        <button type="button" class="ghost ib" id="btnRedo" disabled title="Redo (Ctrl+Y)" aria-label="Redo"><svg class="ic" aria-hidden="true"><use href="#i-redo"/></svg></button>
-        <i data-help="undo"></i>
-      </div>
+    <div class="ed-bar" id="edBar" role="region" aria-label="Sewing and status">
       <div class="ed-grp ed-sheets">
         <button type="button" class="ghost" id="barSettings" aria-controls="leftPanel" aria-expanded="false"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg><span>Settings</span></button>
         <button type="button" class="ghost" id="barInfo" aria-controls="rightPanel" aria-expanded="false"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg><span>Design</span><span class="count hidden" id="selCount"></span></button>
-      </div>
-      <div class="ed-grp stitch-only">
-        <div class="seg" id="viewMode" role="group" aria-label="Preview style">
-          <button type="button" data-mode="real" class="on" aria-pressed="true">Realistic</button>
-          <button type="button" data-mode="direction" aria-pressed="false" title="Sewing direction">Direction</button>
-          <button type="button" data-mode="type" aria-pressed="false" title="Stitch types">Types</button>
-          <button type="button" data-mode="check" aria-pressed="false" title="Machine check">Check</button>
-          <button type="button" data-mode="density" aria-pressed="false" title="Stitch density: needle points per mm²">Density</button>
-        </div><i data-help="view"></i>
-        <div class="seg hidden" id="variant" role="group" aria-label="Compare stitch versions">
-          <button type="button" data-variant="optimized" class="on" aria-pressed="true">Optimised</button>
-          <button type="button" data-variant="original" aria-pressed="false">Original</button>
-        </div><i data-help="variant" id="variantHelp" class="hidden"></i>
-        <label class="check small ed-fabric"><input type="checkbox" id="showFabric"> Dark fabric</label>
       </div>
       <div class="ed-grp stitch-only ed-player">
         <button type="button" class="ghost ib" id="btnPlay" aria-label="Play sewing simulation"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg></button>
         <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Sewing progress">
         <span id="scrubInfo" class="small muted" aria-hidden="true"></span>
-      </div>
-      <div class="ed-grp ed-zoom">
-        <button type="button" class="ghost ib" id="btnZoomOut" title="Zoom out" aria-label="Zoom out"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
-        <button type="button" class="ghost small ed-pct" id="zoomPct" title="Show at actual size (approximate: screens differ)">100%</button>
-        <button type="button" class="ghost ib" id="btnZoomIn" title="Zoom in" aria-label="Zoom in"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
-        <button type="button" class="ghost ib" id="btnFit" title="Fit to view (F)" aria-label="Fit design to view"><svg class="ic" aria-hidden="true"><use href="#i-fit"/></svg></button>
-        <button type="button" class="ghost ib hidden" id="btnFullscreen" title="Full screen" aria-label="Full screen" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-fullscreen"/></svg></button>
-        <button type="button" class="ghost ib ed-keys" id="btnKeys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg></button>
       </div>
       <div class="ed-grp ed-status">
         <span class="ed-dot" id="edDot" aria-hidden="true"></span>
@@ -373,7 +386,6 @@
         <button type="button" class="small" id="btnUpdate" hidden><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg>Update</button>
         <label class="check small ed-auto"><input type="checkbox" id="autoUpdate" checked> Auto-update <i data-help="auto_update"></i></label>
       </div>
-      <button type="button" class="primary ed-export" id="btnExport" disabled aria-haspopup="dialog"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Export</span></button>
     </div>
   </section>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
@@ -597,12 +609,15 @@
 <dialog id="keysDialog" class="form-dialog" aria-labelledby="keysTitle">
   <form method="dialog" class="ai-dialog">
     <div class="row between">
-      <h2 id="keysTitle">Keyboard shortcuts</h2>
+      <h2 id="keysTitle">Help and shortcuts</h2>
       <button type="submit" class="ghost" aria-label="Close">&times;</button>
     </div>
+    <label class="check"><input type="checkbox" id="helpAlways"> Always show the <span class="help-sample">?</span> help buttons</label>
+    <p class="small muted">Otherwise they appear when you point at a setting. The <kbd>Tab</kbd> key reaches them too.</p>
+    <h3 class="keys-head">Keyboard shortcuts</h3>
     <p class="small muted">They work in the editor while you are not typing in a field.</p>
     <table class="keys" id="keysTable"></table>
-    <p class="small muted">Panel sizes and the grid are remembered in this browser.</p>
+    <p class="small muted">Panel sizes, open sections, the grid and the help setting are remembered in this browser.</p>
     <div class="row end"><button type="button" class="ghost" id="btnCalibrate" aria-haspopup="dialog">Calibrate 100 %…</button><button type="button" class="ghost" id="btnResetWorkspace">Reset workspace</button><button type="submit" class="primary">OK</button></div>
   </form>
 </dialog>

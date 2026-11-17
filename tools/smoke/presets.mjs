@@ -97,13 +97,12 @@ try {
 
   // the picker: built-ins, nothing chosen, Apply off until a preset is chosen
   check("preset bar lists built-ins", await ev(`[...$("presetPick").options].some((o) => o.value === "b:standard")`));
-  check("apply disabled without a choice", await ev(`$("btnPresetApply").disabled`));
+  check("apply again disabled without a choice", await ev(`$("btnPresetReapply").disabled`));
+
+  // choosing applies: values filled in, undo step, the preset becomes the baseline
+  const st0 = await ev(`state.preview.stats.stitches`);
   await ev(change(`$("presetPick")`, "b:small_text"));
   check("hint describes the preset", /lettering/.test(await ev(`$("presetHint").textContent`)), await ev(`$("presetHint").textContent`));
-
-  // apply: values filled in, undo step, the preset becomes the baseline
-  const st0 = await ev(`state.preview.stats.stitches`);
-  await ev(`$("btnPresetApply").click(); true`);
   await waitFor(`Jobs.pending()`, 3000).catch(() => {});
   await waitFor(`${idle} && state.preview.stats.stitches !== ${st0}`, 90000);
   check("preset values applied", await ev(`${f}.thread_weight.value === "60" && ${f}.satin_spacing_mm.value === "0.35" && $("text_mode").value === "sharp" && $("min_feature_mm").value === "0.2"`));
@@ -118,6 +117,20 @@ try {
   check("change after preset marked", await ev(`!$("presetModified").classList.contains("hidden") && $("modCount").textContent === "1 setting changed"`), await ev(`$("modCount").textContent`));
   await ev(`History.undo(); true`);
   await waitFor(`${idle} && ${f}.fill_spacing_mm.value === "0.4"`, 60000);
+  // the ⋯ menu: Apply again puts the preset's values back after a change
+  await ev(change(`${f}.satin_spacing_mm`, "0.5"));
+  await waitFor(`${idle}`, 60000);
+  await ev(`$("btnPresetMenu").click(); true`); await sleep(150);
+  check("preset menu opens", await ev(`!$("presetMenu").hidden && $("btnPresetMenu").getAttribute("aria-expanded") === "true" && !$("btnPresetReapply").disabled`));
+  await shot("p3-menu");
+  await ev(`$("btnPresetReapply").click(); true`); await sleep(150);
+  check("menu closes after an action", await ev(`$("presetMenu").hidden`));
+  await waitFor(`${idle} && ${f}.satin_spacing_mm.value === "0.35"`, 60000);
+  check("apply again restores the preset", await ev(`$("presetModified").classList.contains("hidden")`));
+  await ev(`History.undo(); true`);
+  await waitFor(`${idle} && ${f}.satin_spacing_mm.value === "0.5"`, 60000);
+  await ev(`History.undo(); true`);
+  await waitFor(`${idle} && ${f}.satin_spacing_mm.value === "0.35"`, 60000);
   check("undo clears the badge", await ev(`$("presetModified").classList.contains("hidden")`));
   // undoing the preset puts back the stitch and the picture settings in one step
   await ev(`History.undo(); true`);
@@ -156,7 +169,6 @@ try {
 
   // app defaults put the stitch settings back
   await ev(change(`$("presetPick")`, "@defaults"));
-  await ev(`$("btnPresetApply").click(); true`);
   await waitFor(`${idle} && ${f}.thread_weight.value === "40"`, 60000);
   check("app defaults restore stitch settings", await ev(`${f}.satin_spacing_mm.value === "0.4"`));
 
@@ -182,8 +194,9 @@ try {
   await signIn(email, "FreeUser-12345");
   await openExample();
   check("premium presets locked", await ev(`/🔒/.test([...$("presetPick").options].find((o) => o.value === "b:fine_detail").textContent)`));
-  await ev(change(`$("presetPick")`, "b:fine_detail"));
-  check("locked preset cannot be applied", await ev(`$("btnPresetApply").disabled && !!$("presetHint").querySelector("[data-lock]")`), await ev(`$("presetHint").textContent`));
+  const tw0 = await ev(`$("stitchForm").elements.thread_weight.value`);
+  await ev(change(`$("presetPick")`, "b:fine_detail")); await sleep(300);
+  check("locked preset cannot be applied", await ev(`$("btnPresetReapply").disabled && !!$("presetHint").querySelector("[data-lock]") && !Jobs.pending() && $("stitchForm").elements.thread_weight.value === ${JSON.stringify(tw0)}`), await ev(`$("presetHint").textContent`));
   await ev(`$("presetHint").querySelector("[data-lock]").click(); true`);
   await sleep(200);
   check("lock popover names the plan", await ev(`$("presetLockPop").matches(":popover-open") && /the Pro plan/.test($("presetLockPop").textContent) && /administrator/.test($("presetLockPop").textContent)`),
@@ -208,7 +221,7 @@ try {
   const fits = (el) => `(() => { const r = ${el}.getBoundingClientRect(), p = $("presetBar").getBoundingClientRect(); return r.width > 0 && r.right <= p.right + 1 && r.left >= p.left - 1; })()`;
   await send("Emulation.setDeviceMetricsOverride", { width: 1024, height: 768, deviceScaleFactor: 1, mobile: false });
   await sleep(500);
-  check("tablet: preset bar fits", await ev(`${fits(`$("btnPresetApply")`)} && ${fits(`$("btnPresetManage")`)} && $("presetPick").offsetWidth >= 140`),
+  check("tablet: preset bar fits", await ev(`${fits(`$("btnPresetMenu")`)} && $("presetPick").offsetWidth >= 140`),
     await ev(`$("presetPick").offsetWidth + "px select"`));
   await shot("p3-tablet");
 
@@ -222,7 +235,7 @@ try {
   check("phone: settings sheet open", await ev(`document.body.classList.contains("sheet-left")`));
   check("phone: preset bar visible in the settings sheet", await ev(`(() => { const r = $("presetBar").getBoundingClientRect(); return r.height > 40 && r.top >= 0 && r.top < innerHeight / 2 && r.left >= 0 && r.right <= innerWidth; })()`),
     await ev(`JSON.stringify({ bar: $("presetBar").getBoundingClientRect(), innerWidth, scrollX, vv: visualViewport.offsetLeft + "/" + visualViewport.scale })`));
-  check("phone: bar fits the width", await ev(`${fits(`$("btnPresetApply")`)} && ${fits(`$("btnPresetSave")`)} && $("presetBar").scrollWidth <= $("presetBar").clientWidth + 1 && $("presetPick").offsetWidth >= 150`),
+  check("phone: bar fits the width", await ev(`${fits(`$("btnPresetMenu")`)} && $("presetBar").scrollWidth <= $("presetBar").clientWidth + 1 && $("presetPick").offsetWidth >= 150`),
     await ev(`$("presetPick").offsetWidth + "px select, bar " + $("presetBar").scrollWidth + "/" + $("presetBar").clientWidth`));
   check("phone: no horizontal scroll", await ev(`document.documentElement.scrollWidth <= innerWidth + 1`));
   await shot("p3-phone-settings");

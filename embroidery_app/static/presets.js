@@ -74,7 +74,7 @@ const Presets = (() => {
     if (v === "@defaults") text = "Puts every stitch setting back to the app's standard values. Picture settings stay as they are.";
     else if (f?.p.locked) {
       hint.innerHTML = `${lockBadge(f.p)} Not included in your plan.`;
-      $("btnPresetApply").disabled = true;
+      $("btnPresetReapply").disabled = true;
       return;
     } else if (f) {
       const kinds = (f.p.kinds || []).map((k) => KIND_LABEL[k]).filter(Boolean).join(" + ");
@@ -82,7 +82,7 @@ const Presets = (() => {
     } else can = false;
     if (!v) text = !status.can_save && status.feature ? `You have ${countPhrase()}.` : "";
     hint.textContent = text;
-    $("btnPresetApply").disabled = !can;
+    $("btnPresetReapply").disabled = !can;
   }
 
   /** The form's state, so a changed setting after applying can be detected. */
@@ -437,8 +437,16 @@ const Presets = (() => {
 
   // ------------------------------------------------------------------ wiring
   function init() {
-    $("presetPick").onchange = () => { hidePop(); showChoice(); };
-    $("btnPresetApply").onclick = () => apply($("presetPick").value).catch((e) => toast(e.message));
+    // choosing a preset applies it (one undo step); "Apply again" in the menu re-applies it
+    // after settings were changed
+    $("presetPick").onchange = () => {
+      hidePop();
+      showChoice();
+      const v = $("presetPick").value, f = find(v);
+      if (v && !f?.p.locked) apply(v).catch((e) => toast(e.message));
+    };
+    $("btnPresetReapply").onclick = () => apply($("presetPick").value).catch((e) => toast(e.message));
+    bindPop($("btnPresetMenu"), $("presetMenu"));
     $("btnPresetSave").onclick = () => openSave();
     $("btnPresetManage").onclick = openManage;
     $("presetForm").addEventListener("submit", submitSave);
