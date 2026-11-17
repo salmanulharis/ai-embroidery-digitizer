@@ -206,19 +206,33 @@ try {
   await ev(`History.undo(); true`); await waitFor(`${idle} && $("stitchForm").elements.thread_weight.value === "40"`, 60000);
   check("undo puts it back", await ev(`!$("stitchForm").elements.thread_weight.closest("label").classList.contains("mod")`));
   await ev(`document.querySelector('.ed-sec[data-sec="stitches"]').open = true; true`);
-  check("number fields are one row (label left, value right)", await ev(`(() => { const i = $("stitchForm").elements.fill_spacing_mm, l = i.closest("label").querySelector(".lbl");
+  // what the browser says it is decides the expected layout: a mouse screen gets the compact rows
+  // and help on hover, a touch screen (or a headless browser that reports one) keeps them visible
+  const compact = await ev(`matchMedia("(min-width: 900px) and (pointer: fine)").matches`);
+  const hoverScreen = await ev(`matchMedia("(hover: hover) and (pointer: fine)").matches`);
+  if (compact) check("number fields are one row (label left, value right)", await ev(`(() => { const i = $("stitchForm").elements.fill_spacing_mm, l = i.closest("label").querySelector(".lbl");
     const a = i.getBoundingClientRect(), b = l.getBoundingClientRect(); return a.left > b.right - 1 && Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < 14 && a.width < 100; })()`));
+  else check("number fields (touch screen reported): label above a full-width field", await ev(`(() => { const i = $("stitchForm").elements.fill_spacing_mm, l = i.closest("label").querySelector(".lbl");
+    return i.getBoundingClientRect().top >= l.getBoundingClientRect().bottom - 1; })()`));
 
   // ------------------------------------------------ help buttons: on demand, or always
   const helpOpacity = `getComputedStyle($("stitchForm").elements.fill_spacing_mm.closest("label").querySelector(".help")).opacity`;
   await ev(`HelpButtons.set(false); true`); await sleep(300); // the buttons fade (0.12 s)
-  check("help buttons hidden until you point at the setting", await ev(`${helpOpacity} === "0"`),
-    await ev(`${helpOpacity} + " hover:" + matchMedia("(hover: hover)").matches + " fine:" + matchMedia("(pointer: fine)").matches + " always:" + document.body.classList.contains("help-always")`));
+  if (hoverScreen) {
+    check("help buttons hidden until you point at the setting", await ev(`${helpOpacity} === "0"`), await ev(helpOpacity));
+    // :hover forced through the devtools (a moved mouse depends on the window and the fonts)
+    await ev(`$("stitchForm").elements.fill_spacing_mm.closest("label").setAttribute("data-smoke-hover", "1"); true`);
+    await send("DOM.enable"); await send("CSS.enable");
+    const doc = await send("DOM.getDocument", { depth: 0 });
+    const node = await send("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "[data-smoke-hover]" });
+    await send("CSS.forcePseudoState", { nodeId: node.result.nodeId, forcedPseudoClasses: ["hover"] }); await sleep(300);
+    check("pointing at it shows it", await ev(`${helpOpacity} === "1"`), await ev(helpOpacity));
+    await send("CSS.forcePseudoState", { nodeId: node.result.nodeId, forcedPseudoClasses: [] }); await sleep(300);
+    await ev(`document.querySelector("[data-smoke-hover]")?.removeAttribute("data-smoke-hover"); true`);
+  } else {
+    check("touch screen reported: help buttons stay visible", await ev(`${helpOpacity} === "1"`), await ev(helpOpacity));
+  }
   check("the section headings keep theirs", await ev(`getComputedStyle($("selTitle").querySelector(".help")).opacity === "1"`));
-  const pt = await ev(`(() => { const r = $("stitchForm").elements.fill_spacing_mm.closest("label").getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; })()`);
-  await mouse("mouseMoved", pt.x, pt.y); await sleep(250);
-  check("pointing at it shows it", await ev(`${helpOpacity} === "1"`), await ev(helpOpacity));
-  await mouse("mouseMoved", 5, 5);
   await ev(`$("btnKeys").click(); true`); await sleep(150);
   check("Help and shortcuts has the switch", await ev(`$("keysDialog").open && !$("helpAlways").checked`));
   await ev(`$("helpAlways").click(); $("keysDialog").close(); true`); await sleep(300);

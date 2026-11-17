@@ -123,6 +123,9 @@ def main() -> int:
             print(f"{'ok  ' if not bad else 'FAIL'} {name:<10} {passed:>3} checks  {time.time() - start:5.0f} s", flush=True)
             for line in bad:
                 print(f"       {line}", flush=True)
+                if os.environ.get("GITHUB_ACTIONS"):  # shown on the run's summary page, also when signed out
+                    text = line.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                    print(f"::error title=Browser test {name}::{text}", flush=True)
             if bad:
                 failed[name] = bad
             time.sleep(2)  # the browser of the last suite lets go of its profile folder
