@@ -1145,15 +1145,16 @@ dialog.export-dialog[open] { display: flex; flex-direction: column; overflow: hi
 .preset-suggest[hidden] { display: none; }
 .preset-suggest .preset-offer { display: inline; margin: 0; padding: 0; border: 0; flex: 1 1 180px; }
 .preset-suggest button { min-height: 28px; padding: 2px 12px; color: var(--accent); }
-/* first steps: a numbered mark on Shapes, Stitches and Export; the current one says what to do */
+/* first steps: one numbered mark at a time (Shapes, then ▶, then Export) inside its button; the tip says what to do */
 [data-guide] { position: relative; }
-[data-guide]::after { content: attr(data-guide); position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
-  display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; background: var(--warn); color: var(--card);
-  box-shadow: 0 0 0 2px var(--card); pointer-events: none; }
+[data-guide]::after { content: attr(data-guide); display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; margin-left: 6px;
+  border-radius: 50%; font-size: 10px; font-weight: 700; line-height: 1; background: var(--warn); color: var(--card); pointer-events: none; }
+#btnPlay[data-guide]::after { position: absolute; top: -5px; right: -5px; margin: 0; box-shadow: 0 0 0 2px var(--card); } /* an icon button: on its corner */
 .guide-now[data-guide-tip]:is(.guide-tip, :hover, :focus-visible)::before { content: attr(data-guide-tip); position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   z-index: 45; padding: 5px 10px; border-radius: 8px; background: var(--tooltip-bg); color: var(--tooltip-text); font-size: var(--text-sm);
   font-weight: 500; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 18px rgba(16, 24, 40, .2); }
 header .ed-export.guide-now[data-guide-tip]::before { left: auto; right: 0; transform: none; }
+#btnPlay.guide-now[data-guide-tip]::before { top: auto; bottom: calc(100% + 10px); left: 0; transform: none; } /* the bottom bar: above it */
 @media (max-width: 899px) { .guide-now[data-guide-tip]::before { display: none; } } /* the numbers stay */
 
 /* ------------------------------------------------------------------ app UX, batch D: phones and tablets (docs/APP_UX_PLAN.md) */
@@ -1234,3 +1235,4 @@ dialog.form-dialog[open] { display: flex; flex-direction: column; overflow: hidd
 dialog.form-dialog > .ai-dialog { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 dialog.form-dialog > .ai-dialog > .row.end:last-child { position: sticky; bottom: -18px; z-index: 2; margin: 14px -20px -18px; padding: 10px 20px 14px;
   background: var(--card); border-top: 1px solid var(--line); }
+.ed-player:has(#btnPlay[data-guide]) { overflow: visible; } /* the player clips its contents; not the first-steps mark and tip */

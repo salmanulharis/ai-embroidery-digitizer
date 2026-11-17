@@ -231,17 +231,21 @@ try {
   await ev(`$("styleShowAll").click(); renderKinds(); true`); await sleep(100);
   check("C: the example has both: both shown", await ev(`!$("stitchForm").elements.satin_spacing_mm.closest("label").hidden && !$("stitchForm").elements.fill_spacing_mm.closest("label").hidden`));
 
-  // the first steps
+  // the first steps: one mark at a time, inside its button
+  await pane("shapes"); await sleep(200);
   await ev(`localStorage.removeItem("guide"); Guide.init(); true`); await sleep(100);
   const g = (p) => `document.querySelector('#paneSwitch [data-pane="${p}"]')`;
-  check("C: first steps: 1 Shapes (now), 2 Stitches, 3 Export", await ev(`${g("shapes")}.dataset.guide === "1" && ${g("shapes")}.classList.contains("guide-now") && ${g("stitches")}.dataset.guide === "2" && $("btnExport").dataset.guide === "3"`));
-  await pane("shapes"); await sleep(100); await pane("stitches"); await sleep(300);
-  check("C: going to Stitches finishes step 1", await ev(`!${g("shapes")}.dataset.guide && ${g("stitches")}.classList.contains("guide-now")`));
+  check("C: first steps: only 1 on Shapes", await ev(`${g("shapes")}.dataset.guide === "1" && ${g("shapes")}.classList.contains("guide-now") && document.querySelectorAll("[data-guide]").length === 1`));
+  check("C: the mark sits inside the button", await ev(`(() => { const b = ${g("shapes")}.getBoundingClientRect(), n = $("paneSwitch").querySelector('[data-pane="stitches"]').getBoundingClientRect(); return b.right <= n.left + 1; })()`));
+  await ev(`state.autoPane = true; setPane("stitches"); true`); await sleep(300);
+  check("C: the Stitches view (also opened by itself) finishes step 1; 2 is on ▶", await ev(`!${g("shapes")}.dataset.guide && $("btnPlay").dataset.guide === "2" && document.querySelectorAll("[data-guide]").length === 1`));
+  check("C: the ▶ tip shows above the bar, not cut off", await ev(`$("btnPlay").classList.contains("guide-tip") && getComputedStyle(document.querySelector(".ed-player")).overflow === "visible"`));
   await shot("appux-guide");
   await ev(`togglePlay(); true`); await sleep(300); await ev(`if (state.playing) togglePlay(); true`);
-  check("C: playing finishes step 2", await ev(`!${g("stitches")}.dataset.guide && $("btnExport").classList.contains("guide-now")`));
+  check("C: playing finishes step 2; 3 is on Export", await ev(`!$("btnPlay").dataset.guide && $("btnExport").dataset.guide === "3"`));
   await openExport(); await ev(`$("exportDialog").close(); true`); await sleep(100);
   check("C: Export finishes the steps", await ev(`!document.querySelector("[data-guide]") && !$("guideOn").checked`));
+  await pane("shapes"); await sleep(200);
   await ev(`$("guideOn").click(); true`); await sleep(100);
   check("C: Help and shortcuts can show them again", await ev(`${g("shapes")}.dataset.guide === "1"`));
   await ev(`$("guideOn").click(); true`); await sleep(100);

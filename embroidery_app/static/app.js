@@ -406,7 +406,7 @@ const Guide = (() => {
   const KEY = "guide";
   const STEPS = [
     { el: () => document.querySelector('#paneSwitch [data-pane="shapes"]'), tip: "Check the colours and shapes" },
-    { el: () => document.querySelector('#paneSwitch [data-pane="stitches"]'), tip: "Check the stitches – ▶ shows them sewn" },
+    { el: () => $("btnPlay"), tip: "Watch the stitches being sewn" },
     { el: () => $("btnExport"), tip: "Download for your machine" },
   ];
   let st = { off: false, done: [] }, shownFor = -1, tipTimer = 0;
@@ -417,7 +417,7 @@ const Guide = (() => {
     STEPS.forEach((s, i) => {
       const el = s.el();
       if (!el) return;
-      const show = on && !st.done.includes(i);
+      const show = on && i === cur; // one mark at a time: the step to do now
       if (show) { el.dataset.guide = String(i + 1); el.dataset.guideTip = s.tip; } else { delete el.dataset.guide; delete el.dataset.guideTip; }
       el.classList.toggle("guide-now", show && i === cur);
     });
@@ -1903,7 +1903,7 @@ function renderChecks() {
 const paneButtons = () => document.querySelectorAll(".ed-views [data-pane]");
 function setPane(pane, { user = false } = {}) {
   if (user) state.autoPane = false;
-  if (user && pane === "stitches") Guide.done(0);
+  if (pane === "stitches") Guide.done(0); // also when the stitches open by themselves
   state.pane = pane;
   $("editor").dataset.view = pane;
   paneButtons().forEach((b) => b.setAttribute("aria-pressed", b.dataset.pane === pane));
