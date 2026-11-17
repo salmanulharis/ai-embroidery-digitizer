@@ -1,4 +1,7 @@
 # Minimum versions are the ones this project is tested with (Nov 2026).
+# The libraries that shape the stitches are capped at the minor version the golden plans were made
+# with: a new minor release can change the output (OpenCV 5.1 did, Nov 2026). Raise a cap on purpose,
+# run the golden / preset tests, and regenerate them only for a change you accept (tests/test_requirements.py).
 # All packages are actively maintained; see README "Dependencies" for the reasoning.
 
 # Web app
@@ -7,17 +10,17 @@ uvicorn[standard]>=0.54
 python-multipart>=0.0.33
 
 # Image processing and geometry
-numpy>=2.5
-opencv-python-headless>=5.0
-pillow>=13.0
-shapely>=2.2
+numpy>=2.5,<2.6
+opencv-python-headless>=5.0,<5.1
+pillow>=13.0,<13.1
+shapely>=2.2,<2.3
 
 # Embroidery machine files - pystitch is the maintained Ink/Stitch fork of pyembroidery
-pystitch>=1.0.1
+pystitch>=1.0.1,<1.1
 
 # Vector artwork: SVG, Adobe Illustrator (.ai) and PDF import.
 # NOTE: PyMuPDF is AGPL-3.0 licensed (commercial licence available from Artifex).
-pymupdf>=2.1
+pymupdf>=2.1,<2.2
 
 # HTTP client for the optional AI services (the maintained successor of httpx)
 httpx2>=2.16

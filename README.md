@@ -574,7 +574,9 @@ Picture (PNG/JPG) import doesn't use it.
 ## Dependencies
 
 Every dependency is actively maintained (releases in 2026) and pinned to a tested minimum version in
-`requirements.txt`. Replaced in Nov 2026:
+`requirements.txt`. The libraries that shape the stitches (NumPy, OpenCV, Pillow, Shapely, pystitch, PyMuPDF) are
+also capped at the tested minor version, because a new minor release can change the stitch output (OpenCV 5.1
+did); raise a cap on purpose and check the golden tests. Replaced in Nov 2026:
 - `pyembroidery` → `pystitch`
 - `svgelements` → PyMuPDF
 - `httpx` → `httpx2`
