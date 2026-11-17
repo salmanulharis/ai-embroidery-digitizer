@@ -71,3 +71,14 @@ SVG_SAMPLE = """<?xml version="1.0"?>
 @pytest.fixture
 def svg_text() -> str:
     return SVG_SAMPLE
+
+
+# On GitHub Actions each failing test is also printed as an annotation, so the reason is on
+# the run's page without signing in (the job log needs a login).
+def pytest_runtest_logreport(report):
+    if not os.environ.get("GITHUB_ACTIONS") or not report.failed:
+        return
+    text = str(report.longrepr)
+    lines = [l for l in text.splitlines() if l.startswith("E ")][:12] or text.splitlines()[-12:]
+    msg = "\n".join(lines)[:1800].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"\n::error title=pytest {report.nodeid} ({report.when})::{msg}", flush=True)
