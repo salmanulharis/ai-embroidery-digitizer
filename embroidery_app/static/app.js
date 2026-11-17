@@ -405,7 +405,8 @@ function openProject(meta) {
   History.reset();
   Presets.reset();
   document.querySelectorAll("#leftPanel label.mod, #leftPanel .ed-sec.mod").forEach((n) => n.classList.remove("mod"));
-  $("modSummary").classList.add("hidden");
+  modState.settings = modState.shapes = 0;
+  renderModSummary();
   const raster = meta.kind === "raster";
   $("rasterOpts").classList.toggle("hidden", !raster);
   $("vectorOpts").classList.toggle("hidden", raster);
@@ -490,16 +491,22 @@ const styleLabel = (v, label) => {
 const openThreads = new Set(); // colours whose details are open (kept across updates)
 function renderLayers() {
   const L = state.design.layers;
+  // two threads with the same name ("Navy", "Navy") are told apart by a number; the name
+  // itself (exports, worksheet) stays as it is
+  const seen = new Map();
+  const dupNo = new Map(L.map((l) => { const k = l.name.trim().toLowerCase(); seen.set(k, (seen.get(k) || 0) + 1); return [l.index, seen.get(k)]; }));
+  const dupName = (l) => seen.get(l.name.trim().toLowerCase()) > 1;
   $("layers").innerHTML = L.map((l, i) => {
     const n = esc(l.name), open = openThreads.has(l.index);
+    const dup = dupName(l) ? `<span class="thr-dup" title="Another thread is also called ${n}: compare the colours, or merge them">#${dupNo.get(l.index)}</span>` : "";
     return `
     <div class="thr ${l.enabled ? "" : "off"}" data-index="${l.index}" data-merge-target="${l.index}">
       <div class="thr-row">
         <span class="grip" data-drag-layer="${l.index}" title="Drag onto another colour to merge ${n} into it" role="img" aria-label="Drag ${n} onto another colour to merge">⠿</span>
         <input type="checkbox" data-k="enabled" ${l.enabled ? "checked" : ""} aria-label="Stitch ${n}">
         <input type="color" data-k="hex" value="${l.hex}" aria-label="Thread colour for ${n}">
-        <input class="thr-name" data-k="name" value="${n}" aria-label="Name for ${n}">
-        <span class="thr-meta">${l.objects} shape${l.objects === 1 ? "" : "s"}</span>
+        <span class="thr-namebox"><input class="thr-name" data-k="name" value="${n}" aria-label="Name for ${n}${dup ? ` (${dupNo.get(l.index)})` : ""}">${dup}</span>
+        <button type="button" class="ghost thr-meta thr-pick" data-select-layer="${l.index}" ${l.enabled && l.objects ? "" : "disabled"} title="Select all ${n} shapes (Shift: add to the selection)" aria-label="Select all ${l.objects} shapes of ${n}">${l.objects} shape${l.objects === 1 ? "" : "s"}</button>
         <button type="button" class="ghost thr-toggle" data-expand aria-expanded="${open}" aria-controls="thr-more-${l.index}" aria-label="More settings for ${n}">›</button>
       </div>
       <div class="thr-more" id="thr-more-${l.index}" ${open ? "" : "hidden"}>
@@ -532,6 +539,7 @@ $("layers").addEventListener("change", async (ev) => {
   layer[k] = ev.target.type === "checkbox" ? ev.target.checked : k === "angle" ? (ev.target.value === "" ? null : +ev.target.value) : ev.target.value;
   await saveLayers();
 });
+$("statsNote").addEventListener("click", (ev) => { if (ev.target.closest("[data-similar]")) Similar.open(); });
 $("layers").addEventListener("click", async (ev) => {
   if (ev.target.closest("[data-similar]")) return Similar.open();
   const toggle = ev.target.closest("[data-expand]");
@@ -544,7 +552,7 @@ $("layers").addEventListener("click", async (ev) => {
     return;
   }
   const pick = ev.target.closest("[data-select-layer]");
-  if (pick) return Shapes.selectLayer(+pick.dataset.selectLayer);
+  if (pick) return Shapes.selectLayer(+pick.dataset.selectLayer, ev.shiftKey || ev.ctrlKey || ev.metaKey);
   const mv = ev.target.closest("[data-move]")?.dataset.move;
   if (!mv) return;
   const L = state.design.layers;
@@ -993,10 +1001,25 @@ function markModified() {
   });
   [...$("stitchForm").elements].forEach((e) => { if (e.name && e.name in b.stitch) mark(e, String(valueOf(e)) !== String(b.stitch[e.name])); });
   document.querySelectorAll(".ed-sec[data-sec]").forEach((s) => s.classList.toggle("mod", !!s.querySelector("label.mod")));
-  $("modSummary").classList.toggle("hidden", !n);
+  modState.settings = n;
   $("modCount").textContent = `${n} setting${n === 1 ? "" : "s"} changed`;
+  renderModSummary();
   Presets.sync();
 }
+// The left panel's "changed" box: settings that differ from the start, and shapes that have
+// their own settings (counted by shapes.js, reset there).
+const modState = { settings: 0, shapes: 0 };
+function renderShapeMods(n) {
+  modState.shapes = n;
+  $("modShapeCount").textContent = `${n} shape${n === 1 ? " has its" : "s have their"} own settings`;
+  renderModSummary();
+}
+function renderModSummary() {
+  $("modSettings").hidden = !modState.settings;
+  $("modShapes").hidden = !modState.shapes;
+  $("modSummary").classList.toggle("hidden", !modState.settings && !modState.shapes);
+}
+$("btnResetShapes").addEventListener("click", () => Shapes.resetAll());
 
 /** Back to the baseline: ``keys`` (one setting or a section) or everything (null). */
 function resetSettings(keys) {
@@ -1354,8 +1377,6 @@ function renderStatus() {
   $("autoUpdate").checked = Jobs.auto();
   $("edProgress").hidden = level !== "busy";
   $("stage").classList.toggle("updating", level === "busy");
-  const s = state.preview?.stats;
-  $("edFacts").textContent = s ? `${s.width_mm} × ${s.height_mm} mm · ${s.stitches.toLocaleString()} stitches` : "";
   $("btnExport").disabled = !state.design;
   renderStageEmpty(level);
   if ($("exportDialog").open) Export.refresh();
@@ -1485,15 +1506,25 @@ const shownStats = () => {
 };
 // same words as the worksheet (threads.closeness)
 const threadCloseness = (de) => (de < 2 ? "same colour" : de < 3.5 ? "very close" : de < 6 ? "close" : "nearest available");
+const plural = (n, one, many) => (n === 1 ? one : many);
 function renderStats() {
   const s = shownStats();
   const items = [
-    [s.stitches.toLocaleString(), "stitches", "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)"],
-    [s.colors, "colours"], [s.trims, "thread cuts", "stats_trims"], [s.color_changes, "colour changes"],
+    [s.stitches.toLocaleString(), plural(s.stitches, "stitch", "stitches"), "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)"],
+    [s.colors, plural(s.colors, "colour", "colours")], [s.trims, plural(s.trims, "thread cut", "thread cuts"), "stats_trims"],
+    [s.color_changes, plural(s.color_changes, "colour change", "colour changes")],
     [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used (est.)", "stats_thread"],
   ];
   $("statsEmpty").classList.add("hidden");
   $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
+  // the Threads list counts thread entries, the figures count distinct colours: say why
+  // they differ (two entries of the same colour) instead of leaving it to look like an error
+  const entries = (state.design?.layers || []).filter((l) => l.enabled && l.objects).length;
+  $("statsNote").hidden = !(entries > s.colors);
+  if (entries > s.colors) {
+    $("statsNote").innerHTML = `${entries} threads in the list sew as ${s.colors} ${plural(s.colors, "colour", "colours")}. ` +
+      `<button type="button" class="link" data-similar aria-haspopup="dialog">Merge similar colours…</button>`;
+  }
   renderKinds();
   const warnings = [...state.preview.warnings];
   const hf = hoopFit(s.width_mm, s.height_mm);
@@ -2129,7 +2160,12 @@ const Render = (() => {
       : mode === "check" ? riskLegend(p.risks || [])
       : mode === "density" ? densityLegend(ops) : "";
     $("legend").classList.toggle("hidden", mode === "real");
-    $("scrubInfo").textContent = `${st.n.toLocaleString()} stitches sewn · colour ${Math.min(st.color + 1, p.colors.length)} of ${p.colors.length}`;
+    // short in the bar (it must fit beside the zoom); the full sentence for screen readers + hover
+    const colour = `colour ${Math.min(st.color + 1, p.colors.length)} of ${p.colors.length}`;
+    const sewn = `${st.n.toLocaleString()} stitches sewn · ${colour}`;
+    $("scrubInfo").textContent = `${st.n.toLocaleString()} sewn · ${colour}`;
+    $("scrubInfo").title = sewn;
+    $("scrub").setAttribute("aria-valuetext", sewn);
     updateZoomLabel();
     viewMoved();
   }

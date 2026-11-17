@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUITES = ["workspace", "controls", "presets", "extras", "batchb", "batchc", "phase5"]
+SUITES = ["workspace", "controls", "presets", "extras", "batchb", "batchc", "phase5", "layout"]
 EMAIL, PASSWORD = "smoke@example.com", "SmokeTest-12345"
 CHART = """GIMP Palette
 Name: Smoke Rayon

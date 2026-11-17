@@ -137,8 +137,12 @@
       <div class="ed-scroll">
         <p class="muted small ed-file" id="fileInfo"></p>
         <div id="smartInfo" class="smart hidden" aria-live="polite"></div>
-        <p class="ed-mods hidden" id="modSummary"><span id="modCount"></span> <i data-help="modified"></i>
-          <button type="button" class="ghost small" id="btnResetAll">Reset all</button></p>
+        <div class="ed-mods hidden" id="modSummary">
+          <p class="mods-line" id="modSettings"><span id="modCount"></span> <i data-help="modified"></i>
+            <button type="button" class="ghost small" id="btnResetAll">Reset all</button></p>
+          <p class="mods-line" id="modShapes" hidden><span id="modShapeCount"></span> <i data-help="shape_reset"></i>
+            <button type="button" class="ghost small" id="btnResetShapes">Reset</button></p>
+        </div>
 
         <details class="ed-sec" data-sec="size" open>
           <summary>Size</summary>
@@ -287,7 +291,7 @@
       </div>
       <div class="ed-scroll">
         <section class="ed-group" aria-labelledby="selTitle">
-          <h3 id="selTitle">Selection <i data-help="shape_select"></i> <i data-help="shape_menu"></i></h3>
+          <h3 id="selTitle">Selection <i data-help="shape_select"></i></h3>
           <div id="shapePanel" class="shapepanel" aria-live="polite"></div>
         </section>
         <section class="ed-group" aria-labelledby="thrTitle">
@@ -306,6 +310,7 @@
           <h3 id="infoTitle">Design info</h3>
           <p class="small muted" id="statsEmpty">Figures appear when the stitches are ready.</p>
           <div id="stats" class="stats"></div>
+          <p class="small muted stats-note" id="statsNote" hidden></p>
           <h4 id="kindTitle" class="sub hidden">Stitch types <i data-help="stats_kinds"></i></h4>
           <div id="kindStats" class="kinds"></div>
           <div id="optimizeInfo" class="optinfo hidden" aria-live="polite"></div>
@@ -352,7 +357,7 @@
       <div class="ed-grp stitch-only ed-player">
         <button type="button" class="ghost ib" id="btnPlay" aria-label="Play sewing simulation"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg></button>
         <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Sewing progress">
-        <span id="scrubInfo" class="small muted"></span>
+        <span id="scrubInfo" class="small muted" aria-hidden="true"></span>
       </div>
       <div class="ed-grp ed-zoom">
         <button type="button" class="ghost ib" id="btnZoomOut" title="Zoom out" aria-label="Zoom out"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
@@ -365,7 +370,6 @@
       <div class="ed-grp ed-status">
         <span class="ed-dot" id="edDot" aria-hidden="true"></span>
         <span class="small" id="edStatusText"></span>
-        <span class="small muted ed-facts" id="edFacts"></span>
         <button type="button" class="small" id="btnUpdate" hidden><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg>Update</button>
         <label class="check small ed-auto"><input type="checkbox" id="autoUpdate" checked> Auto-update <i data-help="auto_update"></i></label>
       </div>

@@ -12,6 +12,7 @@ protocol and print PASS / FAIL per check, script exceptions and console errors. 
 | `batchb.mjs` | Phase 4 batch B: density view + hover, grid in both views, panel resize (keys, drag, close / open, remembered, reset), shape menu (right-click, submenus, keyboard, multiple selection, Shift+F10), selection toolbar (position, actions, roving focus, hides while zooming / editing / narrow) (39 checks) |
 | `batchc.mjs` | Phase 4 batch C: merge similar colours (range, pairs, count, Esc, merge in one step, one Undo), split view (handle, keys, drag, remembered, only in the stitch view), Calibrate 100 % (card box, saved, used by 100 %, Standard size, phone) (28 checks) |
 | `phase5.mjs` | Phase 5: theme (System / Light / Dark against the device setting, keys, remembered from the first paint, rulers repaint), woven fabric, machine speed (time only, Undo), thread chart (offered, Thread order shows brand + number, None), PEC + XXX in the export dialog, the admin auto-update switch (26 checks). Start the server with `THREAD_CHARTS_DIR` pointing at a folder holding `Smoke Rayon.gpl` (any small GIMP palette with that file name) |
+| `layout.mjs` | Phase 6 batch A (docs/EDITOR_UX_PLAN.md): bottom bar items never overlap and the page never scrolls sideways at 7 screen sizes in both views, status text not cut off, short sewing progress, singular figures, one-line empty selection, thread row selects its shapes (Shift removes), same-named threads numbered (and undo), shape changes in the left summary (52 checks) |
 | `presets.mjs` | Phase 3: preset picker, apply (values, one undo step, baseline, "Changed" badge), undo/redo of a preset, save, name clash (keep both), manage + delete, app defaults, account card, admin tiers + plan limits, Free account restrictions + lock popover, suggestion after upload, tablet / phone layout (39 checks; re-runnable on the same data) |
 
 ## Run
@@ -32,6 +33,7 @@ Needs Node 22+ (built-in `fetch` and `WebSocket`) and Chrome.
    node tools/smoke/batchb.mjs ./smoke-out
    node tools/smoke/batchc.mjs ./smoke-out
    node tools/smoke/phase5.mjs ./smoke-out
+   node tools/smoke/layout.mjs ./smoke-out
    ```
 
 **All at once** (what CI runs; starts its own throwaway server, admin and thread chart):

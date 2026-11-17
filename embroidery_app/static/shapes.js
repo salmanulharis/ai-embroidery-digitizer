@@ -109,8 +109,14 @@ const Shapes = (() => {
     refresh();
   }
 
-  function selectLayer(index) {
-    select(objects.filter((o) => o.layer === index).map((o) => o.id));
+  // add: Shift / Ctrl - adds the colour's shapes, or removes them when all are selected already
+  function selectLayer(index, add = false) {
+    const ids = objects.filter((o) => o.layer === index && layerOn(o)).map((o) => o.id);
+    if (add) {
+      const all = ids.every((id) => sel.has(id));
+      ids.forEach((id) => (all ? sel.delete(id) : sel.add(id)));
+      refresh();
+    } else select(ids);
     $("shapePanel").scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }
 
@@ -204,12 +210,11 @@ const Shapes = (() => {
     const dyn = el.querySelector(".sp-dyn") || el;
     const step = onStitches() ? 3 : 2; // keeps the radio group names unique per view
     const chosen = [...sel].map((id) => byId.get(id)).filter(Boolean);
-    const customCount = objects.filter(isCustom).length;
-    const resetAll = customCount
-      ? `<button type="button" class="ghost small" data-action="reset-all">Reset all shape settings (${customCount})</button>${Tip.icon("shape_reset")}`
-      : "";
+    // "reset every shape" lives with the other changed settings in the left panel
+    if (typeof renderShapeMods === "function") renderShapeMods(objects.filter(isCustom).length);
     if (!chosen.length) {
-      dyn.innerHTML = chipsHtml() + `<div class="sp-empty small muted">No shape selected. Click a shape in the preview to give it its own stitch style or direction. ${resetAll}</div>`;
+      // one line: the Threads list already selects a colour, the Shapes tab lists every shape
+      dyn.innerHTML = `<p class="sp-empty small muted">Click a shape to change its stitching. Right-click for more. ${Tip.icon("shape_menu")}</p>`;
       el.classList.toggle("active", false);
       return;
     }
@@ -397,10 +402,6 @@ const Shapes = (() => {
       if (action === "guide") { if (!guideMode) { ensureShapesPane(); setEdit(false); setDrawMode(false); } return setGuideMode(!guideMode); }
       if (action === "guide-clear") return update({ ids, guide: "inherit" }, "Removing guide line…");
       if (action === "reset-sel") return resetShapes(ids);
-      if (action === "reset-all") {
-        if (confirm("Reset every shape to its colour's settings?")) return resetShapes([]);
-        return;
-      }
       if (action === "whole") {
         const a = currentAngle(panel);
         if (a == null || !Number.isFinite(a)) return toast("Enter a direction (0–180°) first.");
@@ -495,18 +496,10 @@ const Shapes = (() => {
 
   function buildList() {
     buildObjList();
-    const sl = $("shapePanel")?.querySelector(".sp-list select");
-    if (!sl) return;
-    sl.innerHTML = listGroups().map(({ layer: l, items }) =>
-      `<optgroup label="${esc(l.name)}">${items.map((o, i) => `<option value="${o.id}">${esc(shapeText(l, o, i))}</option>`).join("")}</optgroup>`).join("");
-    sl.size = Math.min(8, Math.max(3, objects.length));
   }
 
   function syncList() {
     syncObjList();
-    const sl = $("shapePanel")?.querySelector(".sp-list select");
-    if (!sl) return;
-    for (const opt of sl.options) opt.selected = sel.has(opt.value);
   }
 
   // ------------------------------------------------------------------ objects list (Threads panel, "Shapes" tab)
@@ -1037,14 +1030,7 @@ const Shapes = (() => {
   // ------------------------------------------------------------------ init
   function init() {
     const p2 = $("shapePanel");
-    p2.innerHTML = `<div class="sp-dyn"></div>
-      <details class="sp-list"><summary class="small">Choose shapes from a list ${Tip.icon("shape_list")}</summary>
-        <select multiple aria-label="Shapes in the design"></select></details>`;
-    p2.querySelector(".sp-list select").addEventListener("change", (ev) => {
-      sel.clear();
-      for (const opt of ev.target.selectedOptions) sel.add(opt.value);
-      refresh();
-    });
+    p2.innerHTML = `<div class="sp-dyn"></div>`;
     p2.addEventListener("click", onPanelEvent);
     p2.addEventListener("change", onPanelEvent);
     $("showDirections").addEventListener("change", decorate);
@@ -1131,6 +1117,10 @@ const Shapes = (() => {
     busy: () => edit.on || drawMode || guideMode || !!down, // editing, drawing or dragging: no menu / toolbar
   };
 
-  return { init, afterRender, reset, select, selectLayer, setObjects, setStitchShapes, click3, drawSelection3, refresh,
+  function resetAll() {
+    if (confirm("Reset every shape to its colour's settings?")) return resetShapes([]);
+  }
+
+  return { init, afterRender, reset, select, selectLayer, resetAll, setObjects, setStitchShapes, click3, drawSelection3, refresh,
     reference, fit: fitSvg, zoomBy, pxPerMm, objects: () => objects, ctm: () => svgEl()?.getScreenCTM() || null, tools };
 })();

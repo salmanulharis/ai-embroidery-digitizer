@@ -20,6 +20,7 @@ yet: deploys run on version tags only.
 | 3 | Presets: built-in + custom, plan limits, admin | **Done** – sew-outs per built-in preset still open (§4.9) | branch `phase3-presets` |
 | 4 | Professional extras: objects list, context menu, floating toolbar, grid/rulers, density view, resizable panels, colour merge, split compare | **Done** (A: shapes list, shortcuts, stitch types, full screen, lazy original; B: shape menu, selection toolbar, grid + rulers, density view, resizable panels; C: merge similar colours, split view, 100 % calibration) | – |
 | 5 | Thread catalogs, more formats, machine speed, theme toggle | **Done** – sew-outs of PEC / XXX and real thread charts still open (§6) | – |
+| 6 | Editor clean-up: fix bottom bar overflow, view bar, header actions, compact panels, help on demand | **A done** (bar overflow, stats wording, selection panel, thread rows, layout test); B–E planned – see [EDITOR_UX_PLAN.md](EDITOR_UX_PLAN.md) | branch `editor-ux-cleanup` |
 
 Before the first release tag:
 1. Click through on a real design (desktop, tablet, phone).
