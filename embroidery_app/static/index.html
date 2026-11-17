@@ -96,7 +96,7 @@
         <button type="button" class="ghost" id="btnLogout"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg> Sign out</button>
       </div>
     </div>
-    <button type="button" class="primary ed-export ed-hdr" id="btnExport" disabled aria-haspopup="dialog" title="Export (Ctrl+E)"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Export</span></button>
+    <button type="button" class="primary ed-export ed-hdr" id="btnExport" disabled aria-haspopup="dialog" aria-label="Export" title="Export (Ctrl+E)"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span>Export</span></button>
   </div>
 </header>
 
@@ -276,6 +276,7 @@
         <div class="pop-wrap vb-show">
           <button type="button" class="ghost small" id="btnShow" aria-haspopup="true" aria-expanded="false" aria-controls="showPop">Show<span class="count hidden" id="showCount"></span> <span aria-hidden="true">▾</span></button>
           <div class="pop-menu pop-right show-pop" id="showPop" role="group" aria-label="Show on the preview" hidden>
+            <p class="pop-head">Show on the preview <i data-help="show_menu"></i></p>
             <label class="check"><input type="checkbox" id="showRef"> Original picture <i data-help="reference"></i></label>
             <label class="check" id="hoopToggle"><input type="checkbox" id="showHoop" checked> Hoop <i data-help="hoop_outline"></i></label>
             <label class="check"><input type="checkbox" id="showGrid"> Grid &amp; rulers <i data-help="grid"></i></label>
@@ -330,12 +331,23 @@
         <button type="button" class="ghost ib" data-close-sheet aria-label="Close design panel"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
       <div class="ed-scroll">
-        <section class="ed-group" aria-labelledby="selTitle">
+        <section class="ed-group sel-group sel-empty" id="selGroup" aria-labelledby="selTitle">
           <h3 id="selTitle">Selection <i data-help="shape_select"></i></h3>
           <div id="shapePanel" class="shapepanel" aria-live="polite"></div>
         </section>
         <section class="ed-group" aria-labelledby="thrTitle">
-          <h3 id="thrTitle">Threads <span class="muted small">sewn from top to bottom</span> <i data-help="layers_drag"></i></h3>
+          <div class="grp-head">
+            <h3 id="thrTitle" title="Sewn from top to bottom. Drag a thread onto another to merge them.">Threads <span class="grp-count" id="thrCount"></span> <i data-help="layers_drag"></i></h3>
+            <span class="pop-wrap">
+              <button type="button" class="ghost ib grp-more" id="btnThrMenu" aria-haspopup="true" aria-expanded="false" aria-controls="thrMenu" aria-label="More thread actions" title="More thread actions">&#8943;</button>
+              <div class="pop-menu pop-right" id="thrMenu" hidden>
+                <button type="button" data-similar aria-haspopup="dialog">Merge similar colours…</button>
+                <button type="button" id="btnThrOpenAll">Open every thread's settings</button>
+                <button type="button" id="btnThrCloseAll">Close every thread's settings</button>
+              </div>
+            </span>
+          </div>
+          <p class="small sim-note" id="simNote" hidden></p>
           <div class="seg thr-tabs" role="tablist" aria-label="Show threads or every shape">
             <button type="button" role="tab" id="tabThreads" aria-selected="true" aria-controls="layers" class="on">Threads</button>
             <button type="button" role="tab" id="tabShapes" aria-selected="false" aria-controls="objPanel" tabindex="-1">Shapes <span class="muted" id="objCount"></span></button>
@@ -346,19 +358,23 @@
             <div id="objList" class="objlist" role="listbox" aria-multiselectable="true" aria-label="Shapes in the design" aria-describedby="objHint" tabindex="0"></div>
           </div>
         </section>
-        <section class="ed-group" aria-labelledby="infoTitle">
+        <section class="ed-group" id="infoGroup" aria-labelledby="infoTitle">
           <h3 id="infoTitle">Design info</h3>
           <p class="small muted" id="statsEmpty">Figures appear when the stitches are ready.</p>
           <div id="stats" class="stats"></div>
           <p class="small muted stats-note" id="statsNote" hidden></p>
-          <h4 id="kindTitle" class="sub hidden">Stitch types <i data-help="stats_kinds"></i></h4>
-          <div id="kindStats" class="kinds"></div>
-          <div id="optimizeInfo" class="optinfo hidden" aria-live="polite"></div>
-          <h4 id="sequenceTitle" class="sub hidden">Thread order <i data-help="sequence"></i></h4>
-          <div id="sequence" class="sequence"></div>
+          <details class="more-details" id="statsMore">
+            <summary>More details</summary>
+            <div id="statsExtra" class="stats"></div>
+            <div id="optimizeInfo" class="optinfo hidden" aria-live="polite"></div>
+            <h4 id="kindTitle" class="sub hidden">Stitch types <i data-help="stats_kinds"></i></h4>
+            <div id="kindStats" class="kinds"></div>
+            <h4 id="sequenceTitle" class="sub hidden">Thread order <i data-help="sequence"></i></h4>
+            <div id="sequence" class="sequence"></div>
+          </details>
         </section>
-        <section class="ed-group" aria-labelledby="checkTitle">
-          <h3 id="checkTitle">Checks</h3>
+        <section class="ed-group" id="checkGroup" aria-labelledby="checkTitle">
+          <h3 id="checkTitle">Checks <span class="grp-count warn" id="checkCount" hidden></span></h3>
           <div id="warnings2" class="warnings"></div>
           <div id="warnings3" class="warnings"></div>
           <div class="row review-row">

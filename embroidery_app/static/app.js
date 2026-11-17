@@ -416,7 +416,9 @@ function openProject(meta) {
   $("fileInfo").textContent = `${meta.filename} · ${raster ? `picture, ${meta.info.width_px} × ${meta.info.height_px} pixels` : "artwork file"}`;
   $("layers").innerHTML = "";
   $("svgBox").innerHTML = "";
-  ["stats", "sequence", "warnings2", "warnings3"].forEach((id) => ($(id).innerHTML = ""));
+  ["stats", "statsExtra", "sequence", "warnings2", "warnings3"].forEach((id) => ($(id).innerHTML = ""));
+  $("simNote").hidden = true;
+  renderChecks();
   $("optimizeInfo").className = "optinfo hidden";
   $("sequenceTitle").classList.add("hidden");
   $("statsEmpty").classList.remove("hidden");
@@ -462,6 +464,7 @@ function renderDesign(res) {
   state.design = res.design;
   $("svgBox").innerHTML = res.svg.replace(/<\?xml[^>]*>/, "");
   $("warnings2").innerHTML = res.design.warnings.map((w) => `<div>${esc(w)}</div>`).join("");
+  renderChecks();
   renderLayers();
   // dim disabled layers in the shapes view
   res.design.layers.forEach((l) => {
@@ -490,6 +493,7 @@ const styleLabel = (v, label) => {
 // its stitch style, direction, area, order and "merge into"; drag the handle onto another
 // colour to merge them.
 const openThreads = new Set(); // colours whose details are open (kept across updates)
+let notSewnOpen = false; // the "Not sewn" group (kept across updates)
 function renderLayers() {
   const L = state.design.layers;
   // two threads with the same name ("Navy", "Navy") are told apart by a number; the name
@@ -497,7 +501,7 @@ function renderLayers() {
   const seen = new Map();
   const dupNo = new Map(L.map((l) => { const k = l.name.trim().toLowerCase(); seen.set(k, (seen.get(k) || 0) + 1); return [l.index, seen.get(k)]; }));
   const dupName = (l) => seen.get(l.name.trim().toLowerCase()) > 1;
-  $("layers").innerHTML = L.map((l, i) => {
+  const row = (l, i) => {
     const n = esc(l.name), open = openThreads.has(l.index);
     const dup = dupName(l) ? `<span class="thr-dup" title="Another thread is also called ${n}: compare the colours, or merge them">#${dupNo.get(l.index)}</span>` : "";
     return `
@@ -522,9 +526,17 @@ function renderLayers() {
         <label><span class="lbl">Merge into ${Tip.icon("layers_merge")}</span><select data-merge aria-label="Merge ${n} into another colour"><option value="">–</option>${L.filter((o) => o.index !== l.index).map((o) => `<option value="${o.index}">${esc(o.name)}</option>`).join("")}</select></label>
       </div>
     </div>`;
-  }).join("") + (L.filter((l) => l.enabled).length > 1
-    ? `<div class="thr-foot"><button type="button" class="ghost small" data-similar aria-haspopup="dialog">Merge similar colours…</button> ${Tip.icon("merge_similar")}</div>` : "");
+  };
+  // sewn threads in sewing order, then the switched-off ones in a closed "Not sewn" group
+  const sewn = L.map((l, i) => [l, i]).filter(([l]) => l.enabled), off = L.map((l, i) => [l, i]).filter(([l]) => !l.enabled);
+  $("layers").innerHTML = sewn.map(([l, i]) => row(l, i)).join("") + (off.length
+    ? `<details class="thr-offgrp" ${notSewnOpen ? "open" : ""}><summary>Not sewn (${off.length})</summary>
+        <div class="threads">${off.map(([l, i]) => row(l, i)).join("")}</div></details>` : "");
+  $("thrCount").textContent = sewn.length ? `· ${sewn.length}` : "";
+  $("thrMenu").querySelector("[data-similar]").disabled = sewn.length < 2;
+  Similar.suggest();
 }
+$("layers").addEventListener("toggle", (ev) => { if (ev.target.matches?.(".thr-offgrp")) notSewnOpen = ev.target.open; }, true);
 
 $("layers").addEventListener("change", async (ev) => {
   const item = ev.target.closest("[data-index]");
@@ -541,6 +553,23 @@ $("layers").addEventListener("change", async (ev) => {
   await saveLayers();
 });
 $("statsNote").addEventListener("click", (ev) => { if (ev.target.closest("[data-similar]")) Similar.open(); });
+// the Threads heading's menu: merge similar colours, open or close every thread's settings
+function bindThreadMenu() {
+  bindPop($("btnThrMenu"), $("thrMenu"));
+  $("thrMenu").addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-similar]")) return Similar.open();
+    const all = ev.target.closest("#btnThrOpenAll"), none = ev.target.closest("#btnThrCloseAll");
+    if (!(all || none) || !state.design) return;
+    openThreads.clear();
+    if (all) state.design.layers.forEach((l) => openThreads.add(l.index));
+    if (all && state.design.layers.some((l) => !l.enabled)) notSewnOpen = true;
+    renderLayers();
+  });
+  $("simNote").addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-similar]")) return Similar.open(Similar.SUGGEST_DE);
+    if (ev.target.closest("[data-dismiss]")) Similar.dismiss();
+  });
+}
 $("layers").addEventListener("click", async (ev) => {
   if (ev.target.closest("[data-similar]")) return Similar.open();
   const toggle = ev.target.closest("[data-expand]");
@@ -630,11 +659,13 @@ const Similar = (() => {
     }
   }
 
-  function open() {
+  // de: start the slider there (the suggestion above the threads opens with its own value)
+  function open(de) {
     if (!state.project || !state.design) return;
     const cfg = state.config.similar || { min: 1, max: 15, default: 5 };
     const r = $("similarDe");
     r.min = cfg.min; r.max = cfg.max;
+    if (de != null) { r.value = de; r.dataset.set = "1"; }
     if (!r.dataset.set) { r.value = cfg.default; r.dataset.set = "1"; } // the value is kept while the page is open
     $("similarList").innerHTML = "";
     pairs = []; count();
@@ -656,12 +687,41 @@ const Similar = (() => {
     toast(`${chosen.length} similar colour${chosen.length === 1 ? "" : "s"} merged. Use Undo to separate them again.`, true);
   }
 
+  // Threads that look almost the same (two "Navy"s): a one-line note above the list. Asked
+  // again only when the thread colours change; hidden for the design once dismissed.
+  const SUGGEST_DE = 2.5, dismissed = new Set();
+  let sugSeq = 0, sugKey = "";
+  async function suggest() {
+    const pid = state.project?.id, L = state.design?.layers || [];
+    const key = pid + "|" + L.filter((l) => l.enabled).map((l) => l.hex).join(",");
+    if (key === sugKey) return;
+    sugKey = key;
+    const my = ++sugSeq, note = $("simNote");
+    if (!pid || dismissed.has(pid) || L.filter((l) => l.enabled).length < 2) { note.hidden = true; return; }
+    try {
+      const res = await api(`/api/projects/${pid}/layers/similar?max_de=${SUGGEST_DE}`);
+      if (my !== sugSeq) return;
+      const threads = new Set(res.pairs.flatMap((p) => [p.source, p.target])).size;
+      note.hidden = !threads;
+      note.innerHTML = threads
+        ? `<span>${threads} threads look almost the same.</span> <button type="button" class="link" data-similar aria-haspopup="dialog">Merge…</button>` +
+          `<button type="button" class="ghost ib sim-x" data-dismiss aria-label="Hide this suggestion" title="Hide this suggestion">×</button>`
+        : "";
+    } catch (_) {
+      if (my === sugSeq) note.hidden = true; // only a suggestion: never an error
+    }
+  }
+  function dismiss() {
+    if (state.project) dismissed.add(state.project.id);
+    $("simNote").hidden = true;
+  }
+
   function init() {
     $("similarDe").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 200); });
     $("similarList").addEventListener("change", count);
     $("similarApply").addEventListener("click", apply);
   }
-  return { open, init };
+  return { open, init, suggest, dismiss, SUGGEST_DE };
 })();
 
 // Drag a colour (handle in the threads list, or a colour chip) and drop it on another one.
@@ -1487,7 +1547,7 @@ function renderOptimizeInfo() {
     `<span class="small">${c.original.stitches.toLocaleString()} → ${c.optimized.stitches.toLocaleString()} stitches` +
     `${parts.length ? ` · removed ${parts.join(" and ")}` : ""}. ` +
     `Shape check passed: no gaps – ${unchanged.toFixed(1)}% of the visible stitching is covered exactly as before. ` +
-    `Use <i>Optimised</i> / <i>Original</i> in the bottom bar to compare.</span>`;
+    `Use <i>Optimised</i> / <i>Unoptimised</i> above the preview to compare.</span>`;
 }
 
 // Design info: how the needle stitches split by type (exact counts from the ops' kind codes).
@@ -1516,14 +1576,19 @@ const threadCloseness = (de) => (de < 2 ? "same colour" : de < 3.5 ? "very close
 const plural = (n, one, many) => (n === 1 ? one : many);
 function renderStats() {
   const s = shownStats();
+  // the four figures people look for; the rest is under "More details"
   const items = [
     [s.stitches.toLocaleString(), plural(s.stitches, "stitch", "stitches"), "stats_stitches"], [`${s.width_mm} × ${s.height_mm}`, "size (mm)"],
-    [s.colors, plural(s.colors, "colour", "colours")], [s.trims, plural(s.trims, "thread cut", "thread cuts"), "stats_trims"],
-    [s.color_changes, plural(s.color_changes, "colour change", "colour changes")],
-    [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"], [`${s.thread_m} m`, "thread used (est.)", "stats_thread"],
+    [s.colors, plural(s.colors, "colour", "colours")], [`${s.est_minutes} min`, "sewing time (est.)", "stats_time"],
   ];
+  const extra = [
+    [s.color_changes, plural(s.color_changes, "colour change", "colour changes")],
+    [s.trims, plural(s.trims, "thread cut", "thread cuts"), "stats_trims"], [`${s.thread_m} m`, "thread used (est.)", "stats_thread"],
+  ];
+  const tiles = (list) => list.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
   $("statsEmpty").classList.add("hidden");
-  $("stats").innerHTML = items.map(([v, l, k]) => `<div><b>${v}</b><span>${l}${k ? " " + Tip.icon(k) : ""}</span></div>`).join("");
+  $("stats").innerHTML = tiles(items);
+  $("statsExtra").innerHTML = tiles(extra);
   // the Threads list counts thread entries, the figures count distinct colours: say why
   // they differ (two entries of the same colour) instead of leaving it to look like an error
   const entries = (state.design?.layers || []).filter((l) => l.enabled && l.objects).length;
@@ -1537,11 +1602,20 @@ function renderStats() {
   const hf = hoopFit(s.width_mm, s.height_mm);
   if (hf && !hf.fits && !hf.turned) warnings.push(`The design (${s.width_mm} × ${s.height_mm} mm) is larger than the ${hf.hoop.name} hoop. Choose a smaller width or a bigger hoop.`);
   $("warnings3").innerHTML = warnings.map((w) => `<div>${esc(w)}</div>`).join("");
+  renderChecks();
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span>` +
     (c.thread ? `<span class="seq-thread"><i style="background:${c.thread.hex}" aria-hidden="true"></i>${esc(c.thread.brand)} <b>${esc(c.thread.number)}</b> ${esc(c.thread.name)} <span class="muted">· ${threadCloseness(c.thread.delta_e)}</span></span>` : "") +
     `</div>`).join("");
   renderStatus();
+}
+
+// Checks: a count in the heading; with warnings the group moves above Design info
+function renderChecks() {
+  const n = $("warnings2").children.length + $("warnings3").children.length;
+  $("checkCount").textContent = n ? `· ${n}` : "";
+  $("checkCount").hidden = !n;
+  $("rightPanel").querySelector(".ed-scroll").classList.toggle("checks-first", n > 0);
 }
 
 // ------------------------------------------------------------------ the editor: panes, sheets, bottom bar
@@ -1634,6 +1708,9 @@ function bindEditor() {
   bindFullscreen();
   bindShortcuts();
   bindViewBar();
+  bindThreadMenu();
+  try { $("statsMore").open = localStorage.getItem("statsMore") === "1"; } catch (_) {}
+  $("statsMore").addEventListener("toggle", () => { try { localStorage.setItem("statsMore", $("statsMore").open ? "1" : "0"); } catch (_) {} });
   HelpButtons.init();
   Export.init();
 }

@@ -1,7 +1,8 @@
 // Headless browser smoke test of the editor layout (docs/EDITOR_UX_PLAN.md): nothing in the bottom bar overlaps at
 // any screen size, no sideways page scroll, plus the Batch A clean-ups (stats wording, selection panel, thread rows),
 // Batch B (header actions, view bar, Show menu, nothing over the design) and Batch C (preset menu, Fabric & thread,
-// compact numbers, help buttons on demand).
+// compact numbers, help buttons on demand), Batch D (right panel: Selection heading, Not sewn, similar threads,
+// four figures, Checks first) and Batch E (icon-only Export on narrow screens).
 // Usage: node tools/smoke/layout.mjs [out-dir]      (see tools/smoke/README.md)
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
@@ -225,7 +226,7 @@ try {
   await ev(`localStorage.removeItem("helpAlways"); true`);
 
   // ------------------------------------------------ design figures
-  check("figures use the singular for one", await ev(`![...$("stats").querySelectorAll("div")].some((d) => d.querySelector("b").textContent.trim() === "1" && /(colours|cuts|changes|stitches)/.test(d.querySelector("span").textContent))`),
+  check("figures use the singular for one", await ev(`![...document.querySelectorAll("#stats > div, #statsExtra > div")].some((d) => d.querySelector("b").textContent.trim() === "1" && /(colours|cuts|changes|stitches)/.test(d.querySelector("span").textContent))`),
     await ev(`$("stats").textContent`));
 
   // ------------------------------------------------ selection panel: one line when nothing is selected
@@ -256,6 +257,79 @@ try {
     await ev(`$("btnUndo").click(); true`); await sleep(300); await waitFor(idle); await sleep(300);
     check("undo removes the numbers", await ev(`!document.querySelector("#layers .thr-dup")`));
   } else check("same-named threads (skipped: one thread)", true);
+
+  // ------------------------------------------------ Batch D: Selection is only its heading while nothing is selected
+  await ev(`Shapes.select([]); true`); await sleep(200);
+  check("empty selection: the group is one row", await ev(`$("selGroup").classList.contains("sel-empty") && $("selGroup").getBoundingClientRect().height < 64`),
+    await ev(`Math.round($("selGroup").getBoundingClientRect().height) + " px"`));
+  await ev(`${first}.click(); true`); await sleep(300);
+  check("a selection opens it", await ev(`!$("selGroup").classList.contains("sel-empty") && $("selGroup").getBoundingClientRect().height > 100`));
+  await ev(`Shapes.select([]); true`); await sleep(200);
+
+  // ------------------------------------------------ four figures, the rest under More details (remembered)
+  check("four figures shown, three more under More details", await ev(`$("stats").children.length === 4 && $("statsExtra").children.length === 3 && $("statsExtra").closest("#statsMore")`));
+  const moreWas = await ev(`$("statsMore").open`);
+  await ev(`$("statsMore").querySelector("summary").click(); true`); await sleep(150);
+  check("More details opens and is remembered", await ev(`$("statsMore").open === ${!moreWas} && localStorage.getItem("statsMore") === ${JSON.stringify(moreWas ? "0" : "1")}`));
+  await ev(`$("statsMore").querySelector("summary").click(); true`); await sleep(150);
+
+  // ------------------------------------------------ Checks: a count, and first when there is a problem
+  await ev(`$("warnings3").innerHTML = "<div>Test warning</div>"; renderChecks(); true`);
+  check("a warning: count in the heading, Checks above Design info", await ev(`$("checkCount").textContent === "· 1" && !$("checkCount").hidden &&
+    $("checkGroup").getBoundingClientRect().top < $("infoGroup").getBoundingClientRect().top`));
+  await shot("layout-checks-first");
+  await ev(`$("warnings3").innerHTML = ""; renderChecks(); true`);
+  check("no warnings: no count, Design info first", await ev(`$("checkCount").hidden && $("checkGroup").getBoundingClientRect().top > $("infoGroup").getBoundingClientRect().top`));
+  await ev(`renderStats(); true`);
+
+  // ------------------------------------------------ the Threads menu
+  await ev(`$("btnThrMenu").click(); true`); await sleep(150);
+  check("Threads ⋯ opens its menu with Merge similar colours", await ev(`!$("thrMenu").hidden && !!$("thrMenu").querySelector("[data-similar]")`));
+  await ev(`$("btnThrOpenAll").click(); true`); await sleep(150);
+  check("open every thread's settings (menu closes)", await ev(`$("thrMenu").hidden && [...document.querySelectorAll("#layers .thr-more")].every((m) => !m.hidden)`));
+  await ev(`$("btnThrMenu").click(); $("btnThrCloseAll").click(); true`); await sleep(150);
+  check("close them all", await ev(`[...document.querySelectorAll("#layers .thr-more")].every((m) => m.hidden)`));
+  check("the heading counts the sewn threads", await ev(`$("thrCount").textContent === "· " + state.design.layers.filter((l) => l.enabled).length`), await ev(`$("thrCount").textContent`));
+
+  if (nThreads > 1) {
+    // ------------------------------------------------ switched-off threads: their own closed group
+    const off0 = await ev(`state.design.layers.filter((l) => !l.enabled).length`);
+    const offIdx = await ev(`state.design.layers.filter((l) => l.enabled).at(-1).index`);
+    await ev(`{ const c = document.querySelector('#layers [data-index="${offIdx}"] [data-k="enabled"]'); c.checked = false; c.dispatchEvent(new Event("change", { bubbles: true })); } true`);
+    await waitFor(`${idle} && !!document.querySelector('#layers .thr-offgrp [data-index="${offIdx}"]')`, 60000); await sleep(200);
+    check("a switched-off thread moves to Not sewn (closed)", await ev(`(() => { const g = document.querySelector("#layers .thr-offgrp");
+      return !g.open && g.querySelector("summary").textContent.includes("Not sewn (${off0 + 1})") && !!g.querySelector('[data-index="${offIdx}"]'); })()`));
+    await ev(`document.querySelector("#layers .thr-offgrp > summary").click(); true`); await sleep(150);
+    await ev(`renderLayers(); true`);
+    check("Not sewn stays open across updates", await ev(`document.querySelector("#layers .thr-offgrp").open`));
+    await shot("layout-not-sewn");
+    const back = `!document.querySelector('#layers .thr-offgrp [data-index="${offIdx}"]') && !!document.querySelector('#layers > .thr[data-index="${offIdx}"]')`;
+    await ev(`$("btnUndo").click(); true`); await waitFor(`${idle} && ${back}`, 60000);
+    check("undo brings it back to the list", await ev(back));
+
+    // ------------------------------------------------ threads that look the same: a suggestion
+    const [a, b] = await ev(`state.design.layers.filter((l) => l.enabled).slice(0, 2).map((l) => l.index)`);
+    const hex0 = await ev(`state.design.layers.find((l) => l.index === ${a}).hex`);
+    await ev(`{ const c = document.querySelector('#layers [data-index="${b}"] [data-k="hex"]'); c.value = ${JSON.stringify(hex0)}; c.dispatchEvent(new Event("change", { bubbles: true })); } true`);
+    await waitFor(`${idle} && !$("simNote").hidden`, 60000);
+    check("same-looking threads: a note offers to merge them", await ev(`/2 threads look almost the same/.test($("simNote").textContent)`), await ev(`$("simNote").textContent`));
+    await shot("layout-similar-note");
+    await ev(`$("simNote").querySelector("[data-similar]").click(); true`); await sleep(200);
+    check("Merge… opens the dialog at the suggestion's closeness", await ev(`$("similarDialog").open && +$("similarDe").value === Similar.SUGGEST_DE`));
+    await waitFor(`$("similarList").querySelectorAll("input:checked").length > 0`, 20000);
+    check("…with the pair already ticked", await ev(`$("similarList").querySelectorAll("input:checked").length >= 1`));
+    await ev(`$("similarDialog").close(); true`);
+    await ev(`$("simNote").querySelector("[data-dismiss]").click(); true`); await sleep(100);
+    check("dismissed: hidden", await ev(`$("simNote").hidden`));
+    await ev(`$("btnUndo").click(); true`); await waitFor(`${idle} && state.design.layers.find((l) => l.index === ${b}).hex !== ${JSON.stringify(hex0)}`, 60000);
+    await sleep(300);
+    check("and it stays hidden for this design", await ev(`$("simNote").hidden`));
+  } else check("Not sewn / similar threads (skipped: one thread)", true);
+
+  // ------------------------------------------------ Batch E: Export is its icon below 900 px
+  await send("Emulation.setDeviceMetricsOverride", { width: 800, height: 900, deviceScaleFactor: 1, mobile: false }); await sleep(400);
+  check("narrow: Export is its icon, still named", await ev(`getComputedStyle($("btnExport").querySelector("span")).display === "none" && $("btnExport").getAttribute("aria-label") === "Export" && $("btnExport").offsetParent !== null`));
+  await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false }); await sleep(400);
 
   // ------------------------------------------------ shape settings are reset from the left panel
   check("no shape changes: the summary is hidden", await ev(`$("modShapes").hidden && $("modSummary").classList.contains("hidden")`));

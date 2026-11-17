@@ -92,7 +92,7 @@ try {
   check("canvas has size", await ev(`$("canvas").clientWidth > 300 && $("canvas").clientHeight > 300`), await ev(`$("canvas").clientWidth + "x" + $("canvas").clientHeight`));
   check("bottom bar visible", await ev(`(() => { const r = $("edBar").getBoundingClientRect(); return r.bottom <= innerHeight + 1 && r.height > 30; })()`));
   check("export button is not stretched", await ev(`$("btnExport").getBoundingClientRect().width < 200`), await ev(`Math.round($("btnExport").getBoundingClientRect().width) + "px"`));
-  check("stats in right panel", await ev(`$("stats").children.length === 7`));
+  check("stats in right panel (4 shown, 3 under More details)", await ev(`$("stats").children.length === 4 && $("statsExtra").children.length === 3`));
   check("threads listed", await ev(`$("layers").querySelectorAll(".thr").length === state.design.layers.length`));
   check("zoom label", await ev(`/%$/.test($("zoomPct").textContent)`), await ev(`$("zoomPct").textContent`));
   await shot("1-stitches-desktop");

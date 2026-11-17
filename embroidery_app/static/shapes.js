@@ -212,13 +212,19 @@ const Shapes = (() => {
     const chosen = [...sel].map((id) => byId.get(id)).filter(Boolean);
     // "reset every shape" lives with the other changed settings in the left panel
     if (typeof renderShapeMods === "function") renderShapeMods(objects.filter(isCustom).length);
+    const group = el.closest(".sel-group");
     if (!chosen.length) {
-      // one line: the Threads list already selects a colour, the Shapes tab lists every shape
-      dyn.innerHTML = `<p class="sp-empty small muted">Click a shape to change its stitching. Right-click for more. ${Tip.icon("shape_menu")}</p>`;
+      // only the heading and one hint: the Threads list already selects a colour, the Shapes tab lists every shape
+      dyn.innerHTML = `<p class="sp-empty small muted">Click a shape to edit it ${Tip.icon("shape_menu")}</p>`;
       el.classList.toggle("active", false);
+      group?.classList.add("sel-empty");
       return;
     }
     el.classList.toggle("active", true);
+    if (group?.classList.contains("sel-empty")) { // a selection opens the group: bring it into view
+      group.classList.remove("sel-empty");
+      requestAnimationFrame(() => group.scrollIntoView({ block: "nearest" }));
+    }
 
     // summary: "3 shapes selected · Black (2), Red (1)"
     const perLayer = new Map();

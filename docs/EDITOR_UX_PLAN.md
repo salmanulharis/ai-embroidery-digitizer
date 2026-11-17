@@ -1,7 +1,6 @@
 # Editor UI/UX clean-up: findings and fix plan
 
-Status: **Batches A, B and C done** (branch `editor-ux-cleanup`, see "what was built" under each batch); D and E not
-started. The decisions in §6 were taken as recommended (2026-11-17). (Written 2026-11-17 from a 1910 × 1035 screenshot of a real design plus a read of
+Status: **All batches (A–E) done** (branch `editor-ux-cleanup`, see "what was built" under each batch). The decisions in §6 were taken as recommended (2026-11-17). (Written 2026-11-17 from a 1910 × 1035 screenshot of a real design plus a read of
 `index.html`, `style.css`, `app.js`, `shapes.js`, `help.js`). It's Phase 6 in [ROADMAP.md](ROADMAP.md) §1.
 
 The editor has every feature it needs. The trouble is that each feature was added where there was room at the time,
@@ -347,6 +346,24 @@ and the 8 smoke scripts keep working with changed selectors at most.
 - The Checks heading shows a count badge (`CHECKS · 2`, in the warning colour). If there are warnings, the Checks
   group moves above Design info (CSS `order`), so problems are seen before stats.
 
+**What was built for D (and where it differs)**
+- D1: `#selGroup` gets `sel-empty` while nothing is selected: the heading and "Click a shape to edit it" on one row.
+  The first selection removes it and scrolls the group into view (`shapes.js` `renderPanel`).
+- D2: `renderLayers` lists sewn threads, then `<details class="thr-offgrp">` "Not sewn (n)" (open state kept across
+  updates). The heading reads `THREADS · n` (sewn threads), and "sewn from top to bottom" is its tooltip and in the
+  `layers_drag` help. The ⋯ menu (`#btnThrMenu` / `#thrMenu`) has *Merge similar colours…* and, instead of "Show
+  threads / Show shapes" (the tabs stay, the tests and the keyboard path use them), *Open / Close every thread's
+  settings*. `Similar.suggest()` asks `/layers/similar?max_de=2.5` only when the sewn threads' colours change; the
+  note `#simNote` opens the dialog at 2.5 with the pairs ticked, and × hides it for the design (this page visit).
+- D3: `#stats` holds Stitches, Size, Colours and Sewing time; `#statsMore` ("More details", remembered in
+  `localStorage`) holds `#statsExtra` (colour changes, thread cuts, thread used), `#optimizeInfo`, `#kindStats` and
+  `#sequence`. Colour changes went to More details rather than sharing the Colours tile, so every tile stays one
+  number with one label.
+- D4: `renderChecks()` (after the design and after each stitch) sets `#checkCount` and `.checks-first` on the right
+  panel's scroller, which orders `#checkGroup` before `#infoGroup` (flex `order`).
+- `layout.mjs` checks all of this (158 checks in all); `batchc.mjs` opens Merge similar from the Threads menu and
+  `workspace.mjs` counts 4 + 3 figures.
+
 ### Batch E: finishing (about 1–2 days)
 
 - **Spacing and type scale:** one spacing scale (4 / 8 / 12 / 16 / 24) in the editor. Section headings use the same
@@ -359,6 +376,17 @@ and the 8 smoke scripts keep working with changed selectors at most.
 - **Help texts:** add entries in `help.js` for the new "Show" popover and the preset menu, and check that
   `shape_menu` (A3) still reads right.
 - **README / ROADMAP:** update "The editor" section of README.md and the ROADMAP §1 row.
+
+**What was built for E (and where it differs)**
+- A spacing scale (`--sp-1` … `--sp-5` = 4 / 8 / 12 / 16 / 24 px) used by the new rules; the left's section
+  summaries and the right's group headings share one style (40 px row, small caps-style label).
+- Threads are rows with separators (open settings on a light background); the figures are tiles on a light
+  background without borders.
+- Selects and text fields are 32 px high with a mouse; touch keeps `--tap`.
+- Below 900 px Export shows its icon only (`aria-label="Export"`); the header stays one row from 1024 px (tested at 7
+  sizes in both views). The theme uses tokens only, so dark and light follow.
+- Help: new `show_menu` entry (a heading row inside the Show menu); `layers_drag` and `merge_similar` mention the
+  Not sewn group, the ⋯ menu and the suggestion; `shape_menu` still reads right.
 
 ---
 

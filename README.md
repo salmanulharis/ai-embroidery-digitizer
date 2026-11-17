@@ -56,7 +56,12 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
 * **Help and shortcuts** (⌨ above the preview or `?`): the `?` help buttons appear when you point at a setting (or
   with Tab); *Always show the help buttons* keeps them visible (on for the first visits). Keyboard shortcuts: F fit, 1 / 2 = 100 / 200 %, + / − zoom, S Shapes / Stitches,
   O original picture, V B E L G editing tools, Enter update, Ctrl+E export. **Full screen** where the browser allows it.
-* **Design info** splits the stitches by type (fill, satin, running, foundation, travel, lock stitches).
+* **Right panel**: *Selection* is only its heading until you select something. *Threads* lists the threads being
+  sewn in order; switched-off ones sit in a closed *Not sewn* group, and the ⋯ menu merges similar colours or opens
+  every thread's settings. When two threads look almost the same, a note above the list offers to merge them.
+  *Design info* shows stitches, size, colours and sewing time; *More details* adds colour changes, thread cuts,
+  thread used, the stitch types (fill, satin, running, foundation, travel, lock stitches), the smart reduction
+  result and the thread order. With warnings, *Checks* (with a count) comes before Design info.
 * **Shape menu**: right-click a shape (long-press on touch, Menu key / Shift+F10) for style, direction, thickness,
   select the colour, don't stitch, reset; a small **toolbar** next to the selection has the most used ones.
 * **Density** view: needle points per mm², blue up to the machine check's limit, red above it.
@@ -64,7 +69,7 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   for every colour, in the Thread order list, the worksheet and VP3 files. No chart is bundled (see Licences).
 * **Machine speed** (Advanced stitch settings) for the time estimate; the worksheet also estimates the bobbin thread.
 * **Theme** (account menu: System / Light / Dark) and a **woven** fabric texture under the stitches.
-* **Merge similar colours** (threads list): pairs of threads that look alike (CIEDE2000), each merged into the
+* **Merge similar colours** (Threads ⋯ menu): pairs of threads that look alike (CIEDE2000), each merged into the
   colour that covers more; all in one step, one Undo separates them.
 * **Split view**: with Original on, Split divides the stitch preview into the original (left) and the stitches
   (right); drag the handle or use the arrow keys.

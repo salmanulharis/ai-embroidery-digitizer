@@ -73,6 +73,11 @@ const HELP = {
     what: "Right-click a shape (long-press on a touch screen, or press the Menu key) for its stitch style, direction, thickness, “select all of this colour”, “don't stitch” and reset. A small toolbar next to the selection has the most used ones.",
     why: "Change a shape where you are looking instead of in the panel. The panel's Selection section still has every setting (“Details”).",
   },
+  show_menu: {
+    t: "Show on the preview",
+    what: "What is drawn over or under the design: the original picture, the hoop outline, a grid with rulers, the stitch directions (Shapes) and the woven texture or a dark fabric (Stitches). The number on the Show button counts what is switched on besides the hoop.",
+    why: "Switch on what helps for the job at hand and keep the preview clean the rest of the time. O shows or hides the original picture without opening the menu.",
+  },
   grid: {
     t: "Grid and rulers",
     what: "A millimetre grid over the design, with rulers along the bottom and left edges measured from the design's top-left corner. Lines every 10 mm, every millimetre when you zoom in.",
@@ -287,7 +292,7 @@ const HELP = {
     t: "Merge similar colours",
     what: "Finds thread colours that look alike (measured with CIEDE2000, the colour difference that follows what people see) and merges each into the colour that covers more of the design. Tick the pairs you want; all are merged in one step.",
     why: "Pictures often come out with two or three shades of the same colour. Merging them saves thread changes and stitches the area as one smooth region.",
-    eg: "Around 2 is the smallest difference most people notice side by side; under about 5 the threads are hard to tell apart on fabric. One Undo separates them all again.",
+    eg: "Around 2 is the smallest difference most people notice side by side; under about 5 the threads are hard to tell apart on fabric. When threads look almost the same, a note above the Threads list offers this for you. One Undo separates them all again.",
   },
   layers_merge: {
     t: "Merge into",
@@ -596,7 +601,7 @@ const HELP = {
   },
   layers_drag: {
     t: "Drag to merge colours",
-    what: "Drag a colour by its ⠿ handle (or drag a colour chip) and drop it on another colour. Every area of the dragged colour takes the colour you drop it on, and both become one region.",
+    what: "Threads are sewn from top to bottom; switched-off threads are listed under “Not sewn”. Drag a colour by its ⠿ handle (or drag a colour chip) and drop it on another colour: every area of the dragged colour takes the colour you drop it on, and both become one region. The ⋯ button merges similar colours and opens or closes every thread's settings.",
     why: "Two shades of the same thread (for example light blue and blue, or two navies) sew as separate passes with overlaps and an extra thread change. Merged, they sew as one clean area. Undo separates them again.",
   },
   colour_select: {

@@ -994,3 +994,72 @@ body.page-editor:not(.view-account):not(.view-admin) .hdr-actions { flex: 1 1 0;
   body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) :is(label, .stats > div, .thr-more .row, .sp-empty):is(:hover, :focus-within) .help,
   body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) .help:focus-visible { opacity: 1; }
 }
+
+/* ------------------------------------------------------------------ editor clean-up, batches D + E (docs/EDITOR_UX_PLAN.md) */
+:root { --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; } /* the editor's spacing scale */
+
+/* one heading style on both sides: the left's section summaries and the right's group headings */
+.ed-sec > summary, .ed-group > h3, .ed-group > .grp-head > h3 { min-height: 40px; padding: var(--sp-1) 2px; margin: 0;
+  font-weight: 600; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .05em; }
+.ed-group > h3, .ed-group > .grp-head > h3 { color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ed-group { padding: var(--sp-1) 0 var(--sp-4); }
+.ed-body { padding: 0 2px var(--sp-3); }
+.grp-head { display: flex; align-items: center; gap: var(--sp-1); }
+.grp-head > h3 { flex: 1 1 auto; min-width: 0; }
+.grp-head .grp-more { width: 32px; min-height: 30px; font-size: 18px; line-height: 1; color: var(--muted); border-color: transparent; }
+.grp-count { color: var(--muted); font-weight: 600; letter-spacing: 0; }
+.grp-count.warn { color: var(--warn); }
+.grp-count[hidden] { display: none; }
+.thr-tabs { margin-bottom: var(--sp-2); }
+
+/* D1: Selection is only its heading (with a one-line hint) while nothing is selected */
+.sel-group.sel-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--sp-2); padding-bottom: var(--sp-1); }
+.sel-group.sel-empty > h3 { flex: none; }
+.sel-group.sel-empty > .shapepanel { flex: 1 1 120px; min-width: 0; }
+.sel-group.sel-empty .sp-empty { margin: 0; }
+
+/* D2: switched-off threads in their own closed group; the "look the same" suggestion */
+.thr-offgrp { margin-top: var(--sp-1); }
+.thr-offgrp > summary { cursor: pointer; padding: var(--sp-1) 2px; font-size: var(--text-md); color: var(--muted); }
+.thr-offgrp > summary:hover { color: var(--text); }
+.thr-offgrp > .threads { margin-top: var(--sp-1); }
+.sim-note { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) 6px; margin: 0 0 var(--sp-2); padding: 6px 4px 6px 10px;
+  border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn); }
+.sim-note[hidden] { display: none; }
+.sim-note .link { color: inherit; font-weight: 600; }
+.sim-note .sim-x { margin-left: auto; width: 26px; min-height: 26px; padding: 0; border-color: transparent; color: inherit; font-size: 16px; }
+
+/* D3: four figures, the rest under "More details" */
+.more-details { margin-top: var(--sp-2); }
+.more-details > summary { cursor: pointer; padding: var(--sp-1) 2px; font-size: var(--text-md); color: var(--accent); width: max-content; }
+.more-details[open] > summary { margin-bottom: var(--sp-1); }
+.ed-right .more-details .stats { margin: var(--sp-1) 0 0; }
+
+/* D4: with warnings, Checks comes before Design info */
+.ed-right .ed-scroll { display: flex; flex-direction: column; }
+.ed-right .ed-scroll > .ed-group { flex: none; }
+.ed-right .ed-scroll.checks-first > #checkGroup { order: 1; border-bottom: 1px solid var(--line); }
+.ed-right .ed-scroll.checks-first > #infoGroup { order: 2; border-bottom: 0; }
+
+/* E: fewer boxes - threads and figures sit on rows and a light background instead of bordered cards */
+.threads { gap: 0; }
+.thr { border: 0; border-radius: 0; background: none; border-bottom: 1px solid var(--line); }
+.threads > .thr:first-child { border-top: 1px solid var(--line); }
+.thr-offgrp .thr:last-child { border-bottom: 0; }
+.thr-more { border-top: 0; background: var(--raised); border-radius: var(--radius-sm); margin: 0 4px var(--sp-2); padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+.ed-right .stats { gap: 2px; border-radius: var(--radius-sm); overflow: hidden; }
+.ed-right .stats div { border: 0; border-radius: 0; background: var(--raised); padding: var(--sp-2) 10px; }
+.ed-right .stats b { font-size: var(--text-base); }
+
+/* E: inputs 32 px high with a mouse, --tap on touch */
+@media (pointer: fine) {
+  .ed-side select, .ed-side input[type=text], .ed-side input[type=search] { min-height: 32px; }
+}
+
+/* E: below 900 px the header Export is its icon only */
+@media (max-width: 899px) {
+  header .ed-export { padding-left: 10px; padding-right: 10px; }
+  header .ed-export span { display: none; }
+}
+.pop-head { display: flex; align-items: center; gap: 4px; margin: 0; padding: 2px 8px 4px; font-size: var(--text-xs); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }

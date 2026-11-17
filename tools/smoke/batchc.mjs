@@ -153,8 +153,8 @@ try {
   await sleep(300);
   await waitFor(idle, 60000);
   const nLayers = await ev(`state.design.layers.length`);
-  check("threads list offers Merge similar colours", await ev(`!!$("layers").querySelector("[data-similar]")`));
-  await ev(`$("layers").querySelector("[data-similar]").click(); true`);
+  check("threads menu offers Merge similar colours", await ev(`!!$("thrMenu").querySelector("[data-similar]")`));
+  await ev(`$("thrMenu").querySelector("[data-similar]").click(); true`);
   await waitFor(`$("similarDialog").open && !$("similarList").hasAttribute("aria-busy")`, 15000);
   const cfg = await ev(`({ min: +$("similarDe").min, max: +$("similarDe").max, value: +$("similarDe").value, c: state.config.similar })`);
   check("dialog opens with the server's range and default", cfg.min === cfg.c.min && cfg.max === cfg.c.max && cfg.value === cfg.c.default, JSON.stringify(cfg));
@@ -181,7 +181,7 @@ try {
   await key("Escape"); await sleep(200);
   check("Esc closes the dialog without merging", await ev(`!$("similarDialog").open && state.design.layers.length === ${nLayers}`));
   // again, and merge for real
-  await ev(`$("layers").querySelector("[data-similar]").click(); true`);
+  await ev(`$("thrMenu").querySelector("[data-similar]").click(); true`);
   await waitFor(`$("similarDialog").open && !$("similarList").hasAttribute("aria-busy")`, 15000);
   check("the slider keeps its value while the page is open", await ev(`+$("similarDe").value === ${cfg.max}`));
   if (hi > 1) await ev(`$("similarList").querySelector("input[type=checkbox]").click(); true`);
