@@ -655,11 +655,17 @@ const HELP = {
     what: "The order in which the machine sews the colours.",
     why: "Load your machine's needles in this order. DST files do not store colours – the worksheet lists them too.",
   },
+  export_machine: {
+    t: "Your machine",
+    what: "The embroidery machine you sew on. Its file format is ticked first and the other formats are folded away under “Other machine formats”.",
+    why: "Asked once and remembered for your account, also on another computer. Change it here any time.",
+    eg: "Tajima, WONYO, Dahao, SWF and most commercial machines read DST; Brother reads PES; Janome JEF; Bernina and Melco EXP.",
+  },
   export: {
     t: "Export",
     what: "Save the design for your embroidery machine or software. The stitches are brought up to date first, so the files match what you see.",
     why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom, which rebuilds editable objects from the stitches. “Continue in Wilcom” adds the artwork as EPS for fully editable objects (Wilcom's own .EMB format cannot be written by other software).",
-    eg: "Tick the files you need, then press Download. One file downloads as it is; several come together in one .zip. Not sure? Keep DST and add the worksheet.",
+    eg: "Choose your machine once: its file is ticked for you, and the worksheet is added when the file has no thread colours (DST, EXP, U01). One file downloads as it is; several come together in one .zip.",
   },
 };
 

@@ -603,19 +603,21 @@
     <div class="exp-body">
       <fieldset class="exports-set">
         <legend class="visually-hidden">Files to download</legend>
+        <label class="exp-machine"><span class="lbl">Your machine <i data-help="export_machine"></i></span>
+          <select id="expMachine"></select></label>
         <div class="exports" id="exports"></div>
       </fieldset>
       <aside class="exp-summary" aria-label="Summary">
         <canvas class="exp-thumb" id="expThumb" aria-label="Preview of the stitches"></canvas>
         <dl class="exp-facts" id="expFacts"></dl>
         <div class="warnings exp-checks" id="expChecks"></div>
-        <p class="quota-note small hidden" id="quotaNote" role="status"></p>
       </aside>
     </div>
-    <p class="small exp-state" id="expState" role="status"></p>
     <div class="exp-foot">
-      <button type="button" class="ghost small" id="btnExportAll">Select all</button>
-      <span class="grow"></span>
+      <div class="exp-foot-text">
+        <p class="small exp-state" id="expState" role="status"></p>
+        <p class="quota-note small hidden" id="quotaNote" role="status"></p>
+      </div>
       <button type="button" class="ghost" data-close>Close</button>
       <button type="button" class="primary" id="btnDownload">Download</button>
     </div>

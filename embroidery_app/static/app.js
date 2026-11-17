@@ -263,6 +263,7 @@ async function init() {
   document.body.classList.remove("booting", "signed-out");
   await AI.init(state.config); // this account's AI settings
   Account.init(state.config); // plan + usage chip, account page, admin console
+  await Prefs.load(); // machine and usual placement (prefs.py)
   Presets.init(); // built-in and own settings presets (presets.js)
   history.replaceState({ page: "upload" }, "");
   await resumeDesign();
@@ -1986,15 +1987,26 @@ function hoopChanged() {
 // Choose the files, see a summary and the checks, download. The dialog first brings the
 // stitches up to date, so a download always matches the settings on screen. One file
 // downloads as it is, several come as one .zip (browsers block several downloads at once).
+// Export: your machine's file first (remembered per account, prefs.py), the other formats
+// folded away, the worksheet added when the file carries no thread colours, and checks
+// that take you to the problem. Download stays in view (fixed footer).
 const Export = (() => {
-  const pick = new Set(["dst"]); // kept while the page is open, across re-stitching
+  const pick = new Set(); // kept while the page is open, across re-stitching
   let quota = null; // /api/projects/{id}/quota: charged, usage, features
   let downloading = false;
+  let moreOpen = false; // "Other machine formats"
+  let sheetAuto = false, sheetDeclined = false; // the worksheet added by itself / unticked by the user
   const WILCOM = "wilcom"; // a package of its own (DST + artwork), downloaded on its own
+  const NO_COLOURS = new Set(["dst", "exp", "u01"]); // formats without thread colours
+  const MACHINE = "Machine files";
   const STITCH_FILES = () => new Set([...Object.keys(state.config.formats), "png", "txt", WILCOM]);
+  const machine = () => (state.config.machines || []).find((m) => m.key === Prefs.get("machine")) || null;
+  // the machine's format, or DST (most machines) when none is chosen or it is not in the plan
+  const recFormat = () => { const f = machine()?.format || "dst"; return lockOf(f) ? "dst" : f; };
 
   function items() {
-    const machine = Object.entries(state.config.formats).map(([k, f]) => ({ key: k, group: "Machine files", label: `${f.label} (.${k})`, note: f.note, rec: k === "dst" }));
+    const rec = recFormat();
+    const machine = Object.entries(state.config.formats).map(([k, f]) => ({ key: k, group: MACHINE, label: `${f.label} (.${k})`, note: f.note, rec: k === rec }));
     return machine.concat([
       { key: WILCOM, group: "For editing in other software", label: "Continue in Wilcom (ZIP)",
         note: "The stitches as DST, the artwork as EPS and SVG (also one file per thread), the worksheet and a short how-to. Wilcom rebuilds editable objects from the stitches or the artwork. Not a Wilcom .EMB project. Downloads on its own" },
@@ -2005,18 +2017,51 @@ const Export = (() => {
   }
   const lockOf = (key) => (quota && !quota.features?.all_formats && key in state.config.formats && key !== "dst" ? "Not in your plan" : "");
 
+  function card(it) {
+    const lock = lockOf(it.key), on = pick.has(it.key);
+    const star = it.rec ? (machine() ? " ★ for your machine" : " ★ recommended") : "";
+    const auto = it.key === "txt" ? `<em class="exp-auto" ${sheetAuto && on ? "" : "hidden"}>Added because ${esc(noColourName())} has no thread colours</em>` : "";
+    return `<label class="${it.rec ? "rec" : ""}${on ? " on" : ""}${lock ? " locked" : ""}"><input type="checkbox" value="${it.key}" ${on ? "checked" : ""} ${lock ? "disabled" : ""}>` +
+      `<span><b>${esc(it.label)}${star}</b><span>${esc(it.note)}</span>${auto}</span>${lock ? `<span class="lock-badge">${lock}</span>` : ""}</label>`;
+  }
+  const noColourName = () => ([...pick].find((k) => NO_COLOURS.has(k)) || "dst").toUpperCase();
+
   function render() {
     const list = items();
     for (const k of [...pick]) if (!list.some((i) => i.key === k) || lockOf(k)) pick.delete(k);
-    let group = "";
-    $("exports").innerHTML = list.map((it) => {
-      const lock = lockOf(it.key), on = pick.has(it.key);
-      const head = it.group !== group ? `<p class="exp-grp">${esc((group = it.group))}</p>` : "";
-      return `${head}<label class="${it.rec ? "rec" : ""}${on ? " on" : ""}${lock ? " locked" : ""}"><input type="checkbox" value="${it.key}" ${on ? "checked" : ""} ${lock ? "disabled" : ""}>` +
-        `<span><b>${esc(it.label)}${it.rec ? " ★ recommended" : ""}</b><span>${esc(it.note)}</span></span>${lock ? `<span class="lock-badge">${lock}</span>` : ""}</label>`;
+    if (!pick.size) pick.add(recFormat());
+    autoSheet();
+    const groups = [...new Set(list.map((i) => i.group))];
+    $("exports").innerHTML = groups.map((g) => {
+      const its = list.filter((i) => i.group === g);
+      if (g !== MACHINE) return `<p class="exp-grp">${esc(g)}</p>` + its.map(card).join("");
+      // your machine's file, then the other formats folded away (open while one is ticked)
+      const first = its.filter((i) => i.rec), rest = its.filter((i) => !i.rec);
+      const open = moreOpen || rest.some((i) => pick.has(i.key));
+      return `<p class="exp-grp">${esc(g)}</p>` + first.map(card).join("") +
+        `<details class="exp-more" ${open ? "open" : ""}><summary>Other machine formats (${rest.length})</summary>` +
+        `<div class="exp-more-list">${rest.map(card).join("")}</div></details>`;
     }).join("");
     summary();
     update();
+  }
+
+  // DST, EXP and U01 carry no thread colours: the worksheet says which colour goes on which
+  // needle, so it is added by itself (once unticked, it stays off for this dialog). Only
+  // when the plan can download several files as one ZIP.
+  function autoSheet() {
+    const need = [...pick].some((k) => NO_COLOURS.has(k)) && !pick.has(WILCOM);
+    if (need && !sheetDeclined && quota?.features?.zip_export && !pick.has("txt")) { pick.add("txt"); sheetAuto = true; }
+    else if (!need && sheetAuto) { pick.delete("txt"); sheetAuto = false; }
+  }
+  // the boxes stay where they are (focus, screen readers): only their state follows
+  function syncBoxes() {
+    $("exports").querySelectorAll("input[type=checkbox]").forEach((b) => {
+      b.checked = pick.has(b.value);
+      b.closest("label").classList.toggle("on", b.checked);
+    });
+    const note = $("exports").querySelector(".exp-auto");
+    if (note) { note.hidden = !(sheetAuto && pick.has("txt")); note.textContent = `Added because ${noColourName()} has no thread colours`; }
   }
 
   function summary() {
@@ -2030,11 +2075,13 @@ const Export = (() => {
       if (hf) facts.push(["Hoop", `${hf.hoop.name} · ${hf.fits ? "fits" : hf.turned ? "fits turned 90°" : "too large"}`]);
       facts.push(["Stitches", s.stitches.toLocaleString()], ["Colours · changes", `${s.colors} · ${s.color_changes}`],
         ["Thread cuts", String(s.trims)], ["Sewing time (est.)", `${s.est_minutes} min`]);
-      $("warnings3").querySelectorAll("div").forEach((d) => checks.push(d.textContent)); // the same checks as the Checks panel
-      if (pick.has("dst") && !pick.has("txt")) checks.push("DST files carry no thread colours: add the worksheet to know which colour goes on which needle.");
+      // the same checks as the Checks panel, each with a way to the problem where there is one
+      $("warnings3").querySelectorAll("div").forEach((d) => checks.push([d.textContent, checkAction(d.textContent)]));
+      const nc = [...pick].find((k) => NO_COLOURS.has(k));
+      if (nc && !pick.has("txt")) checks.push([`${nc.toUpperCase()} files carry no thread colours: add the worksheet to know which colour goes on which needle.`, "sheet"]);
     }
     $("expFacts").innerHTML = facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
-    $("expChecks").innerHTML = checks.map((c) => `<div>${esc(c)}</div>`).join("");
+    $("expChecks").innerHTML = checks.map(([c, act]) => `<div><span>${esc(c)}</span>${act ? ` <button type="button" class="link" data-check-act="${act}">${ACTIONS[act]}</button>` : ""}</div>`).join("");
     if (p) Render.thumbnail($("expThumb"));
   }
 
@@ -2047,8 +2094,11 @@ const Export = (() => {
     const zipLocked = n > 1 && quota && !quota.features?.zip_export;
     const btn = $("btnDownload");
     btn.disabled = !n || notReady || zipLocked || downloading;
-    btn.textContent = downloading ? "Preparing…" : !n ? "Choose a file to download" : n === 1 ? `Download ${chosen[0].label}` : `Download ${n} files (.zip)`;
-    $("btnExportAll").textContent = items().filter((i) => !lockOf(i.key) && i.key !== WILCOM).every((i) => pick.has(i.key)) ? "Clear all" : "Select all";
+    // the button says what you get: "Download DST + worksheet", "Download 3 files (.zip)"
+    const short = (i) => (i.key === "txt" ? "worksheet" : i.key === "png" ? "preview" : i.key === WILCOM ? "Wilcom package" : i.key.toUpperCase());
+    btn.textContent = downloading ? "Preparing…" : !n ? "Choose a file to download"
+      : n === 1 ? `Download ${chosen[0].group === MACHINE ? chosen[0].label : short(chosen[0])}`
+      : n === 2 ? `Download ${short(chosen[0])} + ${short(chosen[1])}` : `Download ${n} files (.zip)`;
     let msg = "";
     if (needStitches && busyNow) msg = "Bringing the stitches up to date…";
     else if (needStitches && Jobs.error()) msg = `The stitches could not be updated: ${Jobs.error()}`;
@@ -2061,6 +2111,8 @@ const Export = (() => {
     if (!state.design || !state.project) return;
     closeSheets(false);
     quota = null;
+    sheetDeclined = false;
+    machineSelect();
     render();
     $("exportDialog").showModal();
     // up to date before downloading: run waiting changes now, in manual mode too
@@ -2089,6 +2141,39 @@ const Export = (() => {
     }
   }
 
+  // ------------------------------------------------ your machine (asked here, remembered per account)
+  function machineSelect() {
+    const sel = $("expMachine"), cur = Prefs.get("machine") || "";
+    sel.innerHTML = `<option value="">Not chosen (DST suits most machines)</option>` +
+      (state.config.machines || []).map((m) => `<option value="${esc(m.key)}">${esc(m.label)} – ${esc(m.format.toUpperCase())}</option>`).join("");
+    sel.value = cur;
+  }
+  function machineChanged() {
+    const before = recFormat();
+    Prefs.set("machine", $("expMachine").value || null);
+    const after = recFormat();
+    if (before !== after && pick.has(before)) { pick.delete(before); pick.add(after); }
+    else if (!pick.size) pick.add(after);
+    render();
+  }
+
+  // ------------------------------------------------ checks that lead to the problem
+  const ACTIONS = { check: "Show me", size: "Change the size", sheet: "Add the worksheet" };
+  const checkAction = (text) => (/^Machine check/i.test(text) ? "check" : /larger than the .* hoop/i.test(text) ? "size" : "");
+  function runAction(act) {
+    if (act === "sheet") { sheetDeclined = false; pick.delete(WILCOM); pick.add("txt"); render(); return; }
+    $("exportDialog").close();
+    if (act === "check") {
+      setPane("stitches", { user: true });
+      document.querySelector('#viewMode [data-mode="check"]')?.click();
+    } else if (act === "size") {
+      const sec = document.querySelector('.ed-sec[data-sec="size"]');
+      if (sec) sec.open = true;
+      if (matchMedia("(max-width: 899px)").matches) openSheet("left");
+      requestAnimationFrame(() => { $("width_mm").focus(); $("width_mm").select?.(); });
+    }
+  }
+
   function init() {
     $("exports").addEventListener("change", (ev) => {
       const box = ev.target.closest("input[type=checkbox]");
@@ -2097,22 +2182,18 @@ const Export = (() => {
         // the Wilcom package is a ZIP of its own: it is not combined with other files
         if (box.value === WILCOM) pick.clear(); else pick.delete(WILCOM);
         pick.add(box.value);
-      } else pick.delete(box.value);
-      // the boxes stay where they are (focus, screen readers): only their state follows
-      $("exports").querySelectorAll("input[type=checkbox]").forEach((b) => {
-        b.checked = pick.has(b.value);
-        b.closest("label").classList.toggle("on", b.checked);
-      });
+      } else {
+        pick.delete(box.value);
+        if (box.value === "txt") { sheetDeclined = true; sheetAuto = false; }
+      }
+      autoSheet();
+      syncBoxes();
       summary();
       update();
     });
-    $("btnExportAll").onclick = () => {
-      const free = items().filter((i) => !lockOf(i.key) && i.key !== WILCOM);
-      const all = free.every((i) => pick.has(i.key));
-      pick.clear();
-      if (!all) free.forEach((i) => pick.add(i.key));
-      render();
-    };
+    $("exports").addEventListener("toggle", (ev) => { if (ev.target.matches?.(".exp-more")) moreOpen = ev.target.open; }, true);
+    $("expMachine").addEventListener("change", machineChanged);
+    $("expChecks").addEventListener("click", (ev) => { const b = ev.target.closest("[data-check-act]"); if (b) runAction(b.dataset.checkAct); });
     $("btnDownload").onclick = () => download().catch(() => {});
   }
 

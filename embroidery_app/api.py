@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import app_settings, auth, entitlements, maintenance, presets, service, temp_projects, threads, usage, user_ai
+from . import app_settings, auth, entitlements, maintenance, prefs, presets, service, temp_projects, threads, usage, user_ai
 from .ai import AIError
 from .ai import catalog as ai_catalog
 from .ai.tasks import CLEAN_MODES
@@ -228,6 +228,7 @@ def get_config():
         "auto_update": app_settings.get("auto_update") == 1,  # Admin > Settings: off = the Update button only
         "session_days": auth.session_choices()[-1],  # longest "keep me signed in"
         "session_choices": auth.session_choices(),  # 0 = this browser session
+        **prefs.catalog(),  # machines (Export) and placements (start screen), prefs.py
     }
 
 
@@ -552,6 +553,17 @@ def my_account(user: dict = Depends(auth.require_user)):
         "sessions": auth.list_sessions(user["id"], user.get("sid")),
         "presets": presets.status(user["id"]),
     }
+
+
+@protected.get("/api/me/prefs")
+def my_prefs(user: dict = Depends(auth.require_user)):
+    """Your machine and usual placement (prefs.py): asked once, then remembered."""
+    return prefs.get(user["id"])
+
+
+@protected.put("/api/me/prefs")
+def save_my_prefs(body: dict[str, Any], user: dict = Depends(auth.require_user)):
+    return prefs.save(user["id"], body)
 
 
 @protected.get("/api/me/usage")

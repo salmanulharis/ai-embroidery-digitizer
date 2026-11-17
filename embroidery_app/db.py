@@ -234,6 +234,15 @@ MIGRATIONS = [
     UPDATE plans SET limits = '{"max_custom_presets": 25}',
         features = json_set(features, '$.custom_presets', json('true'), '$.presets_premium', json('true')) WHERE code = 'pro';
     """,
+    # 5: per-account preferences (prefs.py): the machine and the usual placement, as keys
+    # from fixed tables. Never design data.
+    """
+    CREATE TABLE user_prefs (
+        user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        prefs      TEXT NOT NULL DEFAULT '{}',
+        updated_at REAL NOT NULL
+    );
+    """,
 ]
 
 _lock = threading.RLock()

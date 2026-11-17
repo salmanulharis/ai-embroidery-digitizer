@@ -23,6 +23,25 @@ const Views = (() => {
   return { show, close, current: () => current };
 })();
 
+// Per-account preferences (prefs.py): the machine and the usual placement, asked once and
+// remembered. Kept in the browser too, so a choice works even when saving it fails.
+const Prefs = (() => {
+  const LS = "prefs";
+  let data = {};
+  try { data = JSON.parse(localStorage.getItem(LS) || "{}") || {}; } catch (_) {}
+  const keep = () => { try { localStorage.setItem(LS, JSON.stringify(data)); } catch (_) {} };
+  async function load() {
+    try { data = { ...(await api("/api/me/prefs")) }; keep(); } catch (_) {}
+  }
+  const get = (k) => data[k] ?? null;
+  async function set(k, v) {
+    if (v == null) delete data[k]; else data[k] = v;
+    keep();
+    try { data = { ...(await api("/api/me/prefs", json("PUT", { [k]: v ?? null }))) }; keep(); } catch (_) {}
+  }
+  return { load, get, set };
+})();
+
 const Account = (() => {
   let data = null; // /api/me/account
 
@@ -164,7 +183,7 @@ const Account = (() => {
     note.dataset.level = q.charged ? "ok" : level(u);
     note.textContent = q.charged ? "Already counted – download this design in any format as often as you like."
       : u.unlimited ? "Your plan has unlimited design downloads."
-      : u.remaining > 0 ? `Your first download of this design uses 1 of your ${u.remaining} remaining design${u.remaining === 1 ? "" : "s"} ${periodWord(u)} (${u.plan} plan). Other formats of it are then free.`
+      : u.remaining > 0 ? `This design counts once: 1 of your ${u.remaining} remaining design${u.remaining === 1 ? "" : "s"} ${periodWord(u)}. Other formats and downloading again are free.`
       : `You have used ${u.limit === 1 ? "your 1 design download" : `all ${u.limit} design downloads`} ${periodWord(u)}. Contact your administrator about an upgrade.`;
     note.classList.remove("hidden");
     return q;

@@ -1,0 +1,180 @@
+// Headless browser smoke test of the app UX phase (docs/APP_UX_PLAN.md): Export (your machine first, worksheet
+// when needed, Download always in view, checks with actions), the start screen (placement step, paste),
+// first run, phones and tablets, account and admin.
+// Usage: node tools/smoke/appux.mjs [out-dir]      (see tools/smoke/README.md)
+import { spawn } from "node:child_process";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+
+const SP = process.argv[2] || "./smoke-out";
+const APP = process.env.SMOKE_APP || "http://127.0.0.1:8765/";
+const EMAIL = process.env.SMOKE_EMAIL || "smoke@example.com";
+const PASSWORD = process.env.SMOKE_PASSWORD || "SmokeTest-12345";
+const CHROME = process.env.SMOKE_CHROME || {
+  win32: "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  darwin: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+}[process.platform] || "google-chrome";
+const PORT = +(process.env.SMOKE_DEBUG_PORT || 9333);
+mkdirSync(`${SP}/shots`, { recursive: true });
+rmSync(`${SP}/chrome-profile`, { recursive: true, force: true }); // fresh: no cached old scripts
+
+// a browser left over from an interrupted run would answer instead of ours: never attach to it
+try {
+  await fetch(`http://127.0.0.1:${PORT}/json/version`);
+  console.error(`Port ${PORT} is already used by another browser (an interrupted run?). Close it or set SMOKE_DEBUG_PORT.`);
+  process.exit(2);
+} catch (_) {}
+const chrome = spawn(CHROME, [`--remote-debugging-port=${PORT}`, `--user-data-dir=${SP}/chrome-profile`, "--headless=new",
+  "--no-first-run", "--no-default-browser-check", "--window-size=1440,900",
+  ...(process.env.SMOKE_CHROME_ARGS || "").split(" ").filter(Boolean), "about:blank"], { stdio: "ignore" });
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { chrome.kill(); process.exit(1); });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let ws, id = 0;
+const pending = new Map();
+const errors = [];
+const logs = [];
+async function connect() {
+  for (let i = 0; i < 50; i++) {
+    try {
+      const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+      const page = list.find((t) => t.type === "page");
+      if (page) { ws = new WebSocket(page.webSocketDebuggerUrl); break; }
+    } catch (_) {}
+    await sleep(200);
+  }
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); return; }
+    if (msg.method === "Runtime.exceptionThrown") errors.push(msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text);
+    if (msg.method === "Runtime.consoleAPICalled" && ["error", "warning"].includes(msg.params.type))
+      logs.push(`${msg.params.type}: ${msg.params.args.map((a) => a.value ?? a.description).join(" ")}`);
+    if (msg.method === "Log.entryAdded" && msg.params.entry.level === "error") logs.push(`log: ${msg.params.entry.text} ${msg.params.entry.url || ""}`);
+    if (msg.method === "Page.javascriptDialogOpening") { // never expected here: note it and close it
+      errors.push(`unexpected ${msg.params.type}: ${msg.params.message}`);
+      send("Page.handleJavaScriptDialog", { accept: false });
+    }
+  };
+}
+const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+async function ev(expr) {
+  // a frozen page or an open alert / confirm would wait for ever: give up after 30 s, naming the step
+  const r = await Promise.race([send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }),
+    sleep(30000).then(() => { throw new Error(`no answer from the page within 30 s: ${expr.slice(0, 160)}`); })]);
+  if (r.result?.exceptionDetails) throw new Error(`eval failed: ${expr}\n${r.result.exceptionDetails.exception?.description}`);
+  return r.result?.result?.value;
+}
+async function waitFor(expr, ms = 60000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) { if (await ev(expr)) return true; await sleep(250); }
+  throw new Error(`timeout waiting for ${expr}`);
+}
+async function shot(name) {
+  const r = await send("Page.captureScreenshot", { format: "png" });
+  writeFileSync(`${SP}/shots/${name}.png`, Buffer.from(r.result.data, "base64"));
+}
+const results = [];
+const check = (name, ok, detail = "") => {
+  const line = `${ok ? "PASS" : "FAIL"} ${name}${detail ? " – " + detail : ""}`;
+  results.push(line);
+  if (process.env.SMOKE_LIVE) console.log(line);
+};
+const idle = `working.length === 0 && !Jobs.pending()`;
+const change = (el, v) => `{ const e = ${el}; e.value = ${JSON.stringify(v)}; e.dispatchEvent(new Event("change", { bubbles: true })); } true`;
+const f = `$("stitchForm").elements`;
+async function signIn(login, password) {
+  await ev(`$("loginEmail").value = ${JSON.stringify(login)}; $("loginPassword").value = ${JSON.stringify(password)}; $("loginForm").requestSubmit(); true`);
+  await waitFor(`!!Auth.user() && !document.body.classList.contains("signed-out")`);
+}
+async function openExample() {
+  await ev(`$("btnExample").click(); true`);
+  await waitFor(`!!state.preview && ${idle}`, 90000);
+
+}
+
+async function mouse(type, x, y, button = "none") {
+  await send("Input.dispatchMouseEvent", { type, x, y, button, clickCount: type === "mouseMoved" ? 0 : 1 });
+}
+const MODS = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
+async function key(k, { code, mods = [] } = {}) {
+  const modifiers = mods.reduce((a, m) => a | MODS[m], 0);
+  const vk = k.length === 1 ? k.toUpperCase().charCodeAt(0) : { Escape: 27, Enter: 13 }[k] || 0;
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: code || "", modifiers, windowsVirtualKeyCode: vk, text: k.length === 1 ? k : undefined });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: code || "", modifiers, windowsVirtualKeyCode: vk });
+  await sleep(120);
+}
+const size = (w, h, mobile = false) => send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile });
+const pane = (p) => ev(`document.querySelector('[data-pane="${p}"]').click(); true`);
+const inView = (id) => ev(`(() => { const r = $(${JSON.stringify(id)}).getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth + 1; })()`);
+const picked = `[...$("exports").querySelectorAll("input:checked")].map((b) => b.value).sort().join(",")`;
+const exportReady = `$("exportDialog").open && ${idle} && !$("btnDownload").disabled`;
+async function openExport() {
+  await ev(`$("btnExport").click(); true`);
+  await waitFor(exportReady, 60000); await sleep(300);
+}
+const setMachine = async (m) => { await ev(change(`$("expMachine")`, m)); await sleep(500); };
+
+try {
+  await connect();
+  await send("Runtime.enable"); await send("Log.enable"); await send("Page.enable");
+  await size(1440, 900);
+  await send("Page.navigate", { url: APP });
+  await waitFor(`document.readyState === "complete" && !document.body.classList.contains("booting")`);
+  await waitFor(`document.body.classList.contains("signed-out") || !!Auth.user()`);
+  if (await ev(`document.body.classList.contains("signed-out")`)) await signIn(EMAIL, PASSWORD);
+  await ev(`Prefs.set("machine", null); Prefs.set("placement", null); true`); await sleep(300);
+  await openExample();
+  await pane("stitches"); await sleep(500);
+
+  // ================================================ Batch A: Export
+  await openExport();
+  check("A: Download is in view without scrolling (1440 × 900)", await inView("btnDownload"));
+  check("A: no machine chosen: DST, with the worksheet added", await ev(`${picked} === "dst,txt"`), await ev(picked));
+  check("A: the button says what you get", await ev(`$("btnDownload").textContent === "Download DST + worksheet"`), await ev(`$("btnDownload").textContent`));
+  check("A: the worksheet says why it was added", await ev(`!$("exports").querySelector(".exp-auto").hidden && /DST has no thread colours/.test($("exports").querySelector(".exp-auto").textContent)`));
+  check("A: other machine formats folded away", await ev(`(() => { const d = $("exports").querySelector(".exp-more"); return !d.open && d.querySelector("summary").textContent.trim() === "Other machine formats (7)"; })()`),
+    await ev(`(() => { const d = $("exports").querySelector(".exp-more"); return d.open + " " + d.querySelector("summary").textContent; })()`));
+  check("A: no Select all", await ev(`!document.getElementById("btnExportAll")`));
+  check("A: still three groups", await ev(`$("exports").querySelectorAll(".exp-grp").length === 3`));
+  await shot("appux-export-desktop");
+
+  await setMachine("brother");
+  check("A: Brother: PES first and ticked, DST and the worksheet off", await ev(`${picked} === "pes" && $("exports").querySelector("label.rec input").value === "pes"`), await ev(picked));
+  check("A: …marked for your machine", await ev(`/for your machine/.test($("exports").querySelector("label.rec").textContent)`));
+  check("A: the machine is remembered for the account", await ev(`api("/api/me/prefs").then((p) => p.machine === "brother")`));
+  await setMachine("");
+  check("A: back to DST + worksheet", await ev(`${picked} === "dst,txt"`), await ev(picked));
+  await ev(`$("exports").querySelector('input[value="txt"]').click(); true`); await sleep(200);
+  check("A: unticking the worksheet keeps it off, a check offers it again", await ev(`${picked} === "dst" && !!$("expChecks").querySelector('[data-check-act="sheet"]')`), await ev(picked));
+  await ev(`$("expChecks").querySelector('[data-check-act="sheet"]').click(); true`); await sleep(200);
+  check("A: the check's button adds it", await ev(`${picked} === "dst,txt"`));
+  await ev(`$("exports").querySelector('input[value="exp"]').click(); true`); await sleep(200);
+  check("A: another format adds to the files", await ev(`${picked} === "dst,exp,txt"`), await ev(picked));
+  check("A: three files: a ZIP", await ev(`$("btnDownload").textContent === "Download 3 files (.zip)"`), await ev(`$("btnDownload").textContent`));
+  await ev(`$("exports").querySelector('input[value="exp"]').click(); true`); await sleep(200);
+
+  const act = await ev(`$("expChecks").querySelector('[data-check-act="check"]') ? "check" : ""`);
+  if (act) {
+    await ev(`$("expChecks").querySelector('[data-check-act="check"]').click(); true`); await sleep(500);
+    check("A: 'Show me' on the machine check opens the Check view", await ev(`!$("exportDialog").open && state.pane === "stitches" && state.mode === "check"`), await ev(`state.pane + " " + state.mode`));
+    await ev(`document.querySelector('#viewMode [data-mode="real"]').click(); true`);
+  } else check("A: 'Show me' (skipped: no machine check warning)", true);
+
+  await size(390, 844, true); await sleep(500);
+  await openExport();
+  check("A: phone: Download is in view", await inView("btnDownload"));
+  check("A: phone: the summary is a strip above the list", await ev(`$("expThumb").getBoundingClientRect().top < $("exports").getBoundingClientRect().top`));
+  await shot("appux-export-phone");
+  await ev(`$("exportDialog").close(); true`);
+  await size(1440, 900); await sleep(400);
+} catch (e) {
+  results.push("ERROR " + e.message);
+  try { await shot("appux-error"); } catch (_) {}
+} finally {
+  console.log(results.join("\n"));
+  console.log("\nexceptions:", errors.length ? errors.join("\n---\n") : "none");
+  console.log("console errors/warnings:", logs.filter((l) => !l.includes("/api/auth/me")).join("\n") || "none");
+  try { ws.close(); } catch (_) {}
+  chrome.kill();
+  process.exit(0);
+}

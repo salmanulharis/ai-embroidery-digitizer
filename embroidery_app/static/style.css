@@ -1063,3 +1063,33 @@ body.page-editor:not(.view-account):not(.view-admin) .hdr-actions { flex: 1 1 0;
 }
 .pop-head { display: flex; align-items: center; gap: 4px; margin: 0; padding: 2px 8px 4px; font-size: var(--text-xs); font-weight: 600;
   text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+/* ------------------------------------------------------------------ app UX, batch A: Export (docs/APP_UX_PLAN.md) */
+dialog.export-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.export-dialog > .ai-dialog { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; padding-bottom: 14px; }
+.export-dialog .exp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 4px 2px; margin-right: -4px; }
+.export-dialog .exp-summary { position: sticky; top: 0; }
+.exp-machine { display: grid; gap: 4px; margin: 0 0 12px; }
+.exp-machine select { min-height: 36px; }
+.exp-more { margin-top: 6px; }
+.exp-more > summary { cursor: pointer; padding: 6px 2px; font-size: var(--text-md); color: var(--accent); width: max-content; }
+.exp-more-list { display: grid; gap: 6px; margin-top: 4px; }
+.exports .exp-auto { display: block; margin-top: 3px; font-style: normal; font-size: var(--text-xs); color: var(--accent); }
+.exports .exp-auto[hidden] { display: none; }
+.exp-checks button.link { font-weight: 600; color: inherit; }
+.exp-foot { flex: none; flex-wrap: nowrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.exp-foot-text { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.exp-foot-text p { margin: 0; min-height: 0; }
+.exp-foot-text p:empty { display: none; }
+.exp-foot .quota-note { padding: 0; background: none; border: 0; }
+/* narrow: the summary becomes a strip above the list (thumbnail + figures), the list starts on the first screen */
+@media (max-width: 720px) {
+  .export-dialog .exp-summary { position: static; order: -1; grid-template-columns: 96px minmax(0, 1fr); padding: 8px; gap: 6px 10px; }
+  .export-dialog .exp-thumb { height: 96px; grid-row: span 2; }
+  .export-dialog .exp-facts { font-size: var(--text-sm); }
+  .export-dialog .exp-checks { grid-column: 1 / -1; }
+  .exp-foot { flex-wrap: wrap; }
+  .exp-foot-text { flex-basis: 100%; }
+  .exp-foot [data-close] { display: none; } /* the × at the top closes it */
+  .exp-foot #btnDownload { flex: 1 1 auto; }
+}
