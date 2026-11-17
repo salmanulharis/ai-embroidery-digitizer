@@ -54,7 +54,7 @@ const Presets = (() => {
     const sel = $("presetPick"), keep = sel.value;
     const opt = (v, label, extra = "") => `<option value="${esc(v)}" ${extra}>${esc(label)}</option>`;
     sel.innerHTML = opt("", "Choose a preset…") +
-      `<optgroup label="Built-in">${builtins.map((p) => opt(`b:${p.id}`, p.locked ? `${p.label} – ${TIER_LABEL[p.tier] || "plan"} 🔒` : p.label)).join("")}</optgroup>` +
+      `<optgroup label="Built-in">${builtins.map((p) => opt(`b:${p.id}`, p.locked ? `${p.label} – ${TIER_LABEL[p.tier] || "plan"} 🔒` : p.id === suggested?.id ? `${p.label} · suggested` : p.label)).join("")}</optgroup>` +
       (mine.length || status.feature ? `<optgroup label="My presets · ${countText()}">${mine.map((p) => opt(`u:${p.id}`, p.name)).join("") ||
         opt("@none", "None saved yet", "disabled")}</optgroup>` : "") +
       `<optgroup label="Other">${opt("@defaults", "App defaults (stitch settings)")}</optgroup>`;
@@ -148,12 +148,16 @@ const Presets = (() => {
 
   // ------------------------------------------------------------------ suggestion after the upload
   /** The smart analysis found a preset that suits the picture: offer it, never apply it. */
+  // A preset that suits the picture (smart analysis): marked in the picker and named under
+  // it with one Apply button - the one place for that decision. Never applied by itself.
+  let suggested = null;
   function offer(s) {
-    const box = $("smartInfo");
-    box.querySelector(".preset-offer")?.remove();
-    if (!s || !builtins.some((p) => p.id === s.id && !p.locked)) return;
-    box.insertAdjacentHTML("beforeend", `<span class="preset-offer">Suggested preset: <b>${esc(s.label)}</b> – ${esc(s.reason)}.
-      <button type="button" class="ghost small" data-suggest="${esc(s.id)}">Apply ${esc(s.label)}</button></span>`);
+    suggested = s && builtins.some((p) => p.id === s.id && !p.locked) ? s : null;
+    const box = $("presetSuggest");
+    box.hidden = !suggested;
+    box.innerHTML = suggested ? `<span class="preset-offer">Suggested preset: <b>${esc(suggested.label)}</b> – ${esc(suggested.reason)}.</span>
+      <button type="button" class="ghost small" data-suggest="${esc(suggested.id)}">Apply</button>` : "";
+    renderPicker();
   }
 
   // ------------------------------------------------------------------ applying
@@ -461,7 +465,8 @@ const Presets = (() => {
       if (sug) {
         $("presetPick").value = `b:${sug.dataset.suggest}`;
         showChoice();
-        sug.closest(".preset-offer")?.remove();
+        offer(null);
+        $("presetPick").value = `b:${sug.dataset.suggest}`;
         apply(`b:${sug.dataset.suggest}`).catch((e) => toast(e.message));
       }
     });
@@ -472,6 +477,7 @@ const Presets = (() => {
   /** A new or reopened design: no preset applied yet. */
   function reset() {
     applied = null;
+    if (suggested) offer(null);
     if ($("presetPick")) { $("presetPick").value = ""; showChoice(); }
     sync();
   }

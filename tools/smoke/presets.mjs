@@ -91,8 +91,9 @@ try {
   await openExample();
 
   // the upload analysis offers a preset (the example's lettering is under 6 mm); it is not applied by itself
-  check("suggestion offered after upload", await ev(`/Suggested preset: Small text & logos/.test($("smartInfo").textContent) && !!$("smartInfo").querySelector("[data-suggest]")`),
-    await ev(`$("smartInfo").querySelector(".preset-offer")?.textContent.trim().replace(/\\s+/g, " ") || "none"`));
+  check("suggestion offered after upload", await ev(`/Suggested preset: Small text & logos/.test($("presetSuggest").textContent) && !!$("presetSuggest").querySelector("[data-suggest]") && !$("presetSuggest").hidden`),
+    await ev(`$("presetSuggest").textContent.trim() || "none"`));
+  check("the picker marks the suggested preset", await ev(`/suggested/.test($("presetPick").querySelector('option[value="b:small_text"]').textContent)`));
   check("suggestion not applied by itself", await ev(`$("stitchForm").elements.satin_spacing_mm.value === "0.4" && $("text_mode").value === "auto"`));
 
   // the picker: built-ins, nothing chosen, Apply off until a preset is chosen
@@ -213,9 +214,9 @@ try {
   await shot("p3-free");
 
   // the suggestion button applies the suggested preset
-  await ev(`$("smartInfo").querySelector("[data-suggest]").click(); true`);
+  await ev(`$("presetSuggest").querySelector("[data-suggest]").click(); true`);
   await waitFor(`${idle} && $("stitchForm").elements.thread_weight.value === "60"`, 90000);
-  check("suggestion button applies the preset", await ev(`$("presetPick").value === "b:small_text" && !$("smartInfo").querySelector("[data-suggest]")`));
+  check("suggestion button applies the preset", await ev(`$("presetPick").value === "b:small_text" && $("presetSuggest").hidden`));
 
   // tablet: the settings panel stays beside the preview; the bar fits it
   const fits = (el) => `(() => { const r = ${el}.getBoundingClientRect(), p = $("presetBar").getBoundingClientRect(); return r.width > 0 && r.right <= p.right + 1 && r.left >= p.left - 1; })()`;

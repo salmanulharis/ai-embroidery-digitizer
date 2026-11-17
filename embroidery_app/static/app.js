@@ -352,18 +352,90 @@ async function smartDefaults() {
   const tw = r.stitch && r.stitch.thread_weight;
   if (tw && $("stitchForm").elements.thread_weight) $("stitchForm").elements.thread_weight.value = String(tw);
   const t = r.text || {};
-  const facts = [
-    `${e.num_colors} thread colour${e.num_colors === 1 ? "" : "s"}`,
+  const facts = [ // short: one line in the panel (Details has the explanations)
+    `${e.num_colors} colour${e.num_colors === 1 ? "" : "s"}`,
     e.background === "auto" ? "background removed" : "background kept",
-    t.found ? `text found (${t.lines} line${t.lines === 1 ? "" : "s"}, letters ~${t.letter_height_mm} mm)` : "no small text found",
+    t.found ? `lettering ${t.letter_height_mm} mm` : "no small text",
   ];
-  if (tw === 60) facts.push("fine 60 wt thread suggested");
-  $("smartInfo").innerHTML = `<b>&#10024; Smart settings applied</b><span>${facts.map(esc).join(" · ")}</span>` +
-    (r.notes || []).slice(0, 2).map((n) => `<span class="small muted">${esc(n)}</span>`).join("") +
-    `<span class="small muted">Change anything below if the result is not what you want.</span>`;
-  $("smartInfo").classList.remove("hidden");
+  if (tw === 60) facts.push("60 wt thread");
+  // the picture needs a look (noisy, low resolution, a photo, no plain background): open Picture
+  const look = r.cleanup && r.cleanup !== "none" ? "the picture could be cleaner" : e.background === "none" ? "no plain background found" : "";
+  if (look) {
+    facts.push(`Picture: ${look}`);
+    const sec = document.querySelector('.ed-sec[data-sec="picture"]');
+    if (sec) sec.open = true;
+  }
+  SmartLine.show(facts, r.notes || []);
   Presets.offer(r.preset); // a preset that suits the picture, offered with a button (never applied by itself)
 }
+
+// What the analysis found, as one line; Details opens the explanations, × hides it for this
+// design. Details start open only on a browser's first design.
+const SmartLine = (() => {
+  const SEEN = "smartSeen";
+  function show(facts, notes) {
+    let first = false;
+    try { first = !localStorage.getItem(SEEN); localStorage.setItem(SEEN, "1"); } catch (_) {}
+    const box = $("smartInfo");
+    box.innerHTML = `<div class="smart-line"><button type="button" class="ghost ib smart-x" aria-label="Hide what the analysis found" title="Hide">×</button>` +
+      `<b aria-hidden="true">&#10024;</b><span class="smart-facts"><span class="visually-hidden">Smart settings applied: </span>${facts.map(esc).join(" · ")}</span>` +
+      `<button type="button" class="link smart-more-btn" aria-expanded="${first}" aria-controls="smartMore">Details</button></div>` +
+      `<div class="smart-more" id="smartMore" ${first ? "" : "hidden"}>` +
+      notes.slice(0, 3).map((n) => `<p class="small muted">${esc(n)}</p>`).join("") +
+      `<p class="small muted">These settings are filled in for you; change anything if the result is not what you want.</p></div>`;
+    box.classList.remove("hidden");
+  }
+  function init() {
+    $("smartInfo").addEventListener("click", (ev) => {
+      if (ev.target.closest(".smart-x")) { $("smartInfo").classList.add("hidden"); return; }
+      const more = ev.target.closest(".smart-more-btn");
+      if (!more) return;
+      const open = more.getAttribute("aria-expanded") !== "true";
+      more.setAttribute("aria-expanded", open);
+      $("smartMore").hidden = !open;
+    });
+  }
+  return { show, init };
+})();
+
+// The first steps, on a browser's first designs: numbered marks on Shapes (check the
+// colours and shapes), Stitches (watch them sew) and Export. Each goes when its step is
+// done; never a tour, never in the way. Help and shortcuts switches it on and off.
+const Guide = (() => {
+  const KEY = "guide";
+  const STEPS = [
+    { el: () => document.querySelector('#paneSwitch [data-pane="shapes"]'), tip: "Check the colours and shapes" },
+    { el: () => document.querySelector('#paneSwitch [data-pane="stitches"]'), tip: "Check the stitches – ▶ shows them sewn" },
+    { el: () => $("btnExport"), tip: "Download for your machine" },
+  ];
+  let st = { off: false, done: [] };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (_) {} };
+  function render() {
+    const on = !st.off && st.done.length < STEPS.length && !!state.project;
+    const cur = STEPS.findIndex((_, i) => !st.done.includes(i));
+    STEPS.forEach((s, i) => {
+      const el = s.el();
+      if (!el) return;
+      const show = on && !st.done.includes(i);
+      if (show) { el.dataset.guide = String(i + 1); el.dataset.guideTip = s.tip; } else { delete el.dataset.guide; delete el.dataset.guideTip; }
+      el.classList.toggle("guide-now", show && i === cur);
+    });
+    $("guideOn").checked = !st.off && st.done.length < STEPS.length;
+  }
+  function done(i) {
+    if (st.done.includes(i)) return;
+    // a later step also completes the earlier ones (Export done = the stitches were seen)
+    for (let k = 0; k <= i; k++) if (!st.done.includes(k)) st.done.push(k);
+    save();
+    render();
+  }
+  function init() {
+    try { st = { off: false, done: [], ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch (_) {}
+    $("guideOn").onchange = () => { st = { off: !$("guideOn").checked, done: [] }; save(); render(); };
+    render();
+  }
+  return { init, render, done };
+})();
 
 function aspect() {
   const img = $("srcImg");
@@ -606,6 +678,7 @@ function openProject(meta) {
   setPane("shapes");
   updateHeader();
   renderStatus();
+  Guide.render();
 }
 
 async function loadSource() {
@@ -1156,7 +1229,23 @@ function usedStyles() {
   if ($("stitchForm").elements.photo_stitch?.checked) used.add("@photo");
   return used;
 }
+// The four main stitch numbers: fill gap and fill direction only when something is sewn as
+// fill, satin gap only when something is satin ("show every style" and a changed value keep
+// them). Decided from the stitches themselves, so automatic styles count too.
+const CORE_KINDS = { fill_spacing_mm: "fill", fill_angle: "fill", satin_spacing_mm: "satin" };
+let lastKinds = null;
+function coreParams(kinds = lastKinds) {
+  lastKinds = kinds;
+  const all = $("styleShowAll")?.checked;
+  Object.entries(CORE_KINDS).forEach(([k, kind]) => {
+    const el = $("stitchForm").elements[k], label = el?.closest("label");
+    if (!label) return;
+    label.hidden = !!kinds && kinds.size > 0 && !kinds.has(kind) && !all && !label.classList.contains("mod");
+  });
+}
+
 function updateStyleParams() {
+  coreParams();
   const box = $("styleParams");
   if (!box) return;
   const all = $("styleShowAll")?.checked, used = usedStyles();
@@ -1737,6 +1826,7 @@ function renderKinds() {
   let total = 0;
   for (let i = 0; i < ops.length; i += 4) if (ops[i] === 0) { n[ops[i + 3]] = (n[ops[i + 3]] || 0) + 1; total++; }
   const rows = kinds.map((k, i) => [k, n[i] || 0]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+  coreParams(new Set(rows.map(([k]) => k)));
   $("kindTitle").classList.toggle("hidden", !total);
   $("kindStats").innerHTML = rows.map(([k, c]) => {
     const pct = (100 * c) / total;
@@ -1800,6 +1890,7 @@ function renderChecks() {
 const paneButtons = () => document.querySelectorAll(".ed-views [data-pane]");
 function setPane(pane, { user = false } = {}) {
   if (user) state.autoPane = false;
+  if (user && pane === "stitches") Guide.done(0);
   state.pane = pane;
   $("editor").dataset.view = pane;
   paneButtons().forEach((b) => b.setAttribute("aria-pressed", b.dataset.pane === pane));
@@ -1887,6 +1978,8 @@ function bindEditor() {
   bindShortcuts();
   bindViewBar();
   bindThreadMenu();
+  SmartLine.init();
+  Guide.init();
   try { $("statsMore").open = localStorage.getItem("statsMore") === "1"; } catch (_) {}
   $("statsMore").addEventListener("toggle", () => { try { localStorage.setItem("statsMore", $("statsMore").open ? "1" : "0"); } catch (_) {} });
   HelpButtons.init();
@@ -1958,20 +2051,16 @@ let viewBarCount = () => {};
 // "?" help buttons: shown when you point at a setting (or reach them with Tab); the Help and
 // shortcuts dialog can show them all the time. New users see them for their first visits.
 const HelpButtons = (() => {
-  const KEY = "helpAlways", VISITS = "helpVisits", FIRST = 3;
+  const KEY = "helpAlways";
   function set(on, save = true) {
     document.body.classList.toggle("help-always", !!on);
     $("helpAlways").checked = !!on;
     if (save) try { localStorage.setItem(KEY, on ? "1" : "0"); } catch (_) {}
   }
   function init() {
-    let pref = null, visits = 0;
-    try {
-      pref = localStorage.getItem(KEY);
-      visits = +localStorage.getItem(VISITS) || 0;
-      localStorage.setItem(VISITS, String(visits + 1));
-    } catch (_) {}
-    set(pref === null ? visits < FIRST : pref === "1", false);
+    let pref = null;
+    try { pref = localStorage.getItem(KEY); } catch (_) {}
+    set(pref === "1", false); // new users too: the first-steps guide (Guide) shows the way instead
     $("helpAlways").onchange = () => set($("helpAlways").checked);
   }
   return { init, set };
@@ -2286,6 +2375,7 @@ const Export = (() => {
 
   async function open() {
     if (!state.design || !state.project) return;
+    Guide.done(2);
     closeSheets(false);
     quota = null;
     sheetDeclined = false;
@@ -2946,6 +3036,7 @@ function arrow(ctx, x1, y1, x2, y2) {
 
 function togglePlay() {
   if (!state.preview && !state.playing) return;
+  Guide.done(1);
   state.playing = !state.playing;
   $("btnPlay").innerHTML = ico(state.playing ? "pause" : "play");
   $("btnPlay").setAttribute("aria-label", state.playing ? "Pause sewing simulation" : "Play sewing simulation");

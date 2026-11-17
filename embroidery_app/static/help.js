@@ -661,6 +661,11 @@ const HELP = {
     why: "The size changes everything: whether a shape is satin or fill, how small text comes out, the stitch count. Your last choice is remembered, so next time Enter is enough.",
     eg: "Left chest ≈ 90 mm, cap front ≈ 55 mm, jacket back ≈ 280 mm. Every value stays editable in Size & colours; Custom size keeps the width you type.",
   },
+  first_steps: {
+    t: "First steps",
+    what: "On your first designs, numbers mark the way: 1 Shapes (check the colours and shapes), 2 Stitches (check the stitches, ▶ shows them being sewn) and 3 Export. Each goes away once you have done it.",
+    why: "The order most designs need. Help and shortcuts switches the marks off, or on again.",
+  },
   export_machine: {
     t: "Your machine",
     what: "The embroidery machine you sew on. Its file format is ticked first and the other formats are folded away under “Other machine formats”.",

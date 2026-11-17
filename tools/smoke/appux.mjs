@@ -208,6 +208,43 @@ try {
   await size(1440, 900); await sleep(300);
   await ev(`$("btnBackToOpen").click(); true`); await sleep(500);
 
+  // ================================================ Batch C: first run
+  await waitFor(`currentPage === "editor" && ${idle}`, 60000);
+  check("C: help buttons follow the pointer for new users too", await ev(`!document.body.classList.contains("help-always")`));
+  check("C: the analysis is a short summary (a later design: details closed)", await ev(`!$("smartInfo").classList.contains("hidden") && $("smartMore").hidden && $("smartInfo").offsetHeight < 84`),
+    await ev(`$("smartInfo").offsetHeight + " px: " + $("smartInfo").querySelector(".smart-facts").textContent + " / " + [...$("smartInfo").children].map((c) => c.className + ":" + c.offsetHeight + ":" + getComputedStyle(c).display).join(", ")`));
+  await ev(`$("smartInfo").querySelector(".smart-more-btn").click(); true`); await sleep(100);
+  check("C: Details opens the explanations", await ev(`!$("smartMore").hidden && $("smartInfo").querySelector(".smart-more-btn").getAttribute("aria-expanded") === "true"`));
+  await ev(`$("smartInfo").querySelector(".smart-x").click(); true`); await sleep(100);
+  check("C: × hides it", await ev(`$("smartInfo").classList.contains("hidden")`));
+  check("C: the suggested preset sits with the picker", await ev(`!$("presetSuggest").hidden && !!$("presetSuggest").querySelector("[data-suggest]") && /suggested/.test($("presetPick").selectedOptions[0]?.textContent + [...$("presetPick").options].map((o) => o.textContent).join())`));
+  check("C: the size fields are above the fold (1440 × 900)", await ev(`$("width_mm").getBoundingClientRect().bottom < innerHeight - 60`), await ev(`Math.round($("width_mm").getBoundingClientRect().bottom) + " px"`));
+  await shot("appux-first-run");
+
+  // the fill / satin numbers follow what the design is sewn with
+  await ev(`coreParams(new Set(["fill", "running"])); true`);
+  check("C: no satin in the design: no satin gap", await ev(`$("stitchForm").elements.satin_spacing_mm.closest("label").hidden && !$("stitchForm").elements.fill_spacing_mm.closest("label").hidden`));
+  await ev(`$("styleShowAll").click(); true`); await sleep(100);
+  check("C: …unless every style is shown", await ev(`!$("stitchForm").elements.satin_spacing_mm.closest("label").hidden`));
+  await ev(`$("styleShowAll").click(); renderKinds(); true`); await sleep(100);
+  check("C: the example has both: both shown", await ev(`!$("stitchForm").elements.satin_spacing_mm.closest("label").hidden && !$("stitchForm").elements.fill_spacing_mm.closest("label").hidden`));
+
+  // the first steps
+  await ev(`localStorage.removeItem("guide"); Guide.init(); true`); await sleep(100);
+  const g = (p) => `document.querySelector('#paneSwitch [data-pane="${p}"]')`;
+  check("C: first steps: 1 Shapes (now), 2 Stitches, 3 Export", await ev(`${g("shapes")}.dataset.guide === "1" && ${g("shapes")}.classList.contains("guide-now") && ${g("stitches")}.dataset.guide === "2" && $("btnExport").dataset.guide === "3"`));
+  await pane("shapes"); await sleep(100); await pane("stitches"); await sleep(300);
+  check("C: going to Stitches finishes step 1", await ev(`!${g("shapes")}.dataset.guide && ${g("stitches")}.classList.contains("guide-now")`));
+  await shot("appux-guide");
+  await ev(`togglePlay(); true`); await sleep(300); await ev(`if (state.playing) togglePlay(); true`);
+  check("C: playing finishes step 2", await ev(`!${g("stitches")}.dataset.guide && $("btnExport").classList.contains("guide-now")`));
+  await openExport(); await ev(`$("exportDialog").close(); true`); await sleep(100);
+  check("C: Export finishes the steps", await ev(`!document.querySelector("[data-guide]") && !$("guideOn").checked`));
+  await ev(`$("guideOn").click(); true`); await sleep(100);
+  check("C: Help and shortcuts can show them again", await ev(`${g("shapes")}.dataset.guide === "1"`));
+  await ev(`$("guideOn").click(); true`); await sleep(100);
+  check("C: …and switch them off", await ev(`!document.querySelector("[data-guide]")`));
+
 } catch (e) {
   results.push("ERROR " + e.message);
   try { await shot("appux-error"); } catch (_) {}

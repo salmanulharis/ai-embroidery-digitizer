@@ -1128,3 +1128,28 @@ dialog.export-dialog[open] { display: flex; flex-direction: column; overflow: hi
   .place-actions #btnPlaceBack { order: 3; flex-basis: 100%; }
   .place-actions button.primary { flex: 1 1 auto; }
 }
+
+/* ------------------------------------------------------------------ app UX, batch C: first run (docs/APP_UX_PLAN.md) */
+.smart { gap: 0; padding: 6px 6px 6px 10px; }
+.smart-line { display: block; font-size: var(--text-md); line-height: 1.5; }
+.smart-line > b { margin-right: 4px; }
+.smart-facts { color: var(--text); }
+.smart-line .link { margin-left: 6px; font-size: var(--text-sm); }
+.smart-x { float: right; width: 24px; min-height: 22px; margin: -1px 0 0 4px; padding: 0; border-color: transparent; color: var(--muted); font-size: 16px; line-height: 1; }
+.smart-more { padding: 4px 0 2px; }
+.smart-more p { margin: 4px 0 0; }
+.preset-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0 0; padding: 6px 8px; border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--text); }
+.preset-suggest[hidden] { display: none; }
+.preset-suggest .preset-offer { display: inline; margin: 0; padding: 0; border: 0; flex: 1 1 180px; }
+.preset-suggest button { min-height: 28px; padding: 2px 12px; color: var(--accent); }
+/* first steps: a numbered mark on Shapes, Stitches and Export; the current one says what to do */
+[data-guide] { position: relative; }
+[data-guide]::after { content: attr(data-guide); position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; background: var(--warn); color: var(--card);
+  box-shadow: 0 0 0 2px var(--card); pointer-events: none; }
+.guide-now[data-guide-tip]::before { content: attr(data-guide-tip); position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  z-index: 45; padding: 5px 10px; border-radius: 8px; background: var(--tooltip-bg); color: var(--tooltip-text); font-size: var(--text-sm);
+  font-weight: 500; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 18px rgba(16, 24, 40, .2); }
+header .ed-export.guide-now[data-guide-tip]::before { left: auto; right: 0; transform: none; }
+@media (max-width: 899px) { .guide-now[data-guide-tip]::before { display: none; } } /* the numbers stay */
