@@ -34,7 +34,8 @@ const pending = new Map();
 const errors = [];
 const logs = [];
 async function connect() {
-  for (let i = 0; i < 50; i++) {
+  // a cold start on a CI runner can take well over 10 s: wait up to 60 s, then say so clearly
+  for (let i = 0; i < 300 && !ws; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
       const page = list.find((t) => t.type === "page");
@@ -42,6 +43,7 @@ async function connect() {
     } catch (_) {}
     await sleep(200);
   }
+  if (!ws) throw new Error(`Chrome did not answer on port ${PORT} within 60 s (SMOKE_CHROME=${CHROME})`);
   await new Promise((r) => (ws.onopen = r));
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
