@@ -1150,7 +1150,7 @@ dialog.export-dialog[open] { display: flex; flex-direction: column; overflow: hi
 [data-guide]::after { content: attr(data-guide); position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
   display: grid; place-items: center; font-size: 11px; font-weight: 700; line-height: 1; background: var(--warn); color: var(--card);
   box-shadow: 0 0 0 2px var(--card); pointer-events: none; }
-.guide-now[data-guide-tip]::before { content: attr(data-guide-tip); position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+.guide-now[data-guide-tip]:is(.guide-tip, :hover, :focus-visible)::before { content: attr(data-guide-tip); position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   z-index: 45; padding: 5px 10px; border-radius: 8px; background: var(--tooltip-bg); color: var(--tooltip-text); font-size: var(--text-sm);
   font-weight: 500; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 18px rgba(16, 24, 40, .2); }
 header .ed-export.guide-now[data-guide-tip]::before { left: auto; right: 0; transform: none; }
@@ -1195,3 +1195,42 @@ header .ed-export.guide-now[data-guide-tip]::before { left: auto; right: 0; tran
 }
 @media (max-width: 560px) and (prefers-reduced-motion: reduce) { .ed-left, .ed-right { transition: none; } }
 @container (max-width: 640px) { .ed-viewbar .seg-sel { max-width: 116px; padding-right: 2px; } }
+
+/* ------------------------------------------------------------------ app UX, batch E: account, admin, consistency (docs/APP_UX_PLAN.md) */
+/* my account: the plan across the top, then smaller cards */
+.acc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.acc-wide { grid-column: 1 / -1; }
+.acc-span2 { grid-column: span 2; }
+.acc-plan { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px 24px; }
+.acc-plan .sub:first-child { margin-top: 6px; }
+.acc-num { margin: 4px 0; }
+.acc-num .big-num { font-size: 22px; }
+.acc-grid .card h3 { margin-top: 0; }
+@media (max-width: 1000px) { .acc-grid { grid-template-columns: 1fr 1fr; } .acc-span2 { grid-column: 1 / -1; } .acc-plan { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .acc-grid, .acc-plan { grid-template-columns: 1fr; } }
+/* the AI settings entry inside the user menu */
+.user-ai { justify-content: flex-start; }
+.user-ai .badge { margin-left: auto; }
+/* admin: a section picker on narrow screens, tiles that fill the row, a Save bar only when something changed */
+.admin-pick { display: none; max-width: 320px; }
+@media (max-width: 960px) {
+  .admin-pick { display: block; }
+  .admin-nav { display: none !important; }
+}
+.stats-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 14px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--card); box-shadow: 0 -6px 18px rgba(16, 24, 40, .12); }
+.save-bar[hidden] { display: none; }
+.save-bar .grow { flex: 1 1 auto; }
+.save-bar button.primary { width: auto; margin: 0; }
+#setForm label.mod > .lbl::before, #setForm label.check.mod::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+/* one empty state: an icon and one sentence */
+.empty-state { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--raised);
+  color: var(--muted); font-size: var(--text-md); }
+.empty-state[hidden] { display: none; }
+.empty-state .es-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--card); color: var(--ok); font-weight: 700; }
+/* one dialog frame: the body scrolls, the button row stays at the bottom */
+dialog.form-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+dialog.form-dialog > .ai-dialog { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+dialog.form-dialog > .ai-dialog > .row.end:last-child { position: sticky; bottom: -18px; z-index: 2; margin: 14px -20px -18px; padding: 10px 20px 14px;
+  background: var(--card); border-top: 1px solid var(--line); }

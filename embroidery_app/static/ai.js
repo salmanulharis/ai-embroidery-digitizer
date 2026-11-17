@@ -343,7 +343,7 @@ const AI = (() => {
   async function init(config) {
     catalog = config.ai || [];
     try { localStorage.removeItem(OLD_BROWSER_STORE); sessionStorage.removeItem(OLD_BROWSER_STORE); } catch (_) {}
-    $("btnAiSettings").onclick = openDialog;
+    $("btnAiSettings").onclick = () => { $("userMenu").classList.add("hidden"); $("btnUser").setAttribute("aria-expanded", "false"); openDialog(); };
     $("aiClose").onclick = closeDialog;
     $("aiDialog").addEventListener("cancel", () => { cfg = clone(saved); });
     $("aiProviderPick").onchange = () => { readForm(); showProvider($("aiProviderPick").value); };

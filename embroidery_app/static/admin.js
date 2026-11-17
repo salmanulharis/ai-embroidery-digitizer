@@ -57,6 +57,9 @@ const Admin = (() => {
     return html;
   }
 
+  // one empty state everywhere: an icon and one sentence
+  const emptyState = (text) => `<p class="empty-state"><span class="es-icon" aria-hidden="true">&#9675;</span> ${esc(text)}</p>`;
+
   // ------------------------------------------------------------------ navigation
   async function open(to) {
     Views.show("admin");
@@ -64,6 +67,7 @@ const Admin = (() => {
   }
   async function go(t) {
     tab = t;
+    $("adminSection").value = t;
     $("adminNav").querySelectorAll("[data-tab]").forEach((b) => {
       const on = b.dataset.tab === t;
       b.classList.toggle("on", on);
@@ -101,9 +105,12 @@ const Admin = (() => {
         ${section("Plans", '<div id="ovPlans"></div>', '<button type="button" class="ghost small" data-goto-tab="plans">Manage plans &rarr;</button>')}
         ${section("Most active (30 days)", '<div id="ovTop"></div>', '<button type="button" class="ghost small" data-goto-tab="usage">User usage &rarr;</button>')}
       </div>`;
-    Charts.columns($("ovChart"), { data: g.series, title: "Designs downloaded per day", series: SERIES_GEN });
+    const any = g.series.some((row) => SERIES_GEN.some((s) => +row[s.key] > 0));
+    if (any) Charts.columns($("ovChart"), { data: g.series, title: "Designs downloaded per day", series: SERIES_GEN });
+    else $("ovChart").innerHTML = emptyState("No designs downloaded in the last 30 days.");
     Charts.hbars($("ovPlans"), s.by_plan.map((p) => ({ label: p.plan + (p.enabled ? "" : " (disabled)"), value: p.n })), { fmt: (v) => `${v} account${v === 1 ? "" : "s"}` });
-    Charts.hbars($("ovTop"), g.top_users.map((t) => ({ label: t.name || t.email, value: t.n })), { fmt: num, empty: "No downloads yet." });
+    if (g.top_users.length) Charts.hbars($("ovTop"), g.top_users.map((t) => ({ label: t.name || t.email, value: t.n })), { fmt: num });
+    else $("ovTop").innerHTML = emptyState("No downloads yet.");
     bindTabLinks();
   }
   const SERIES_GEN = [{ key: "succeeded", label: "Downloaded", color: "--good" }, { key: "failed", label: "Failed (not counted)", color: "--critical" },
@@ -143,18 +150,19 @@ const Admin = (() => {
     users.list = r.users; users.total = r.total;
     $("ucount").textContent = `${r.total} account${r.total === 1 ? "" : "s"}${users.q || users.plan || users.status || users.usage_status ? " match" : ""}`;
     const me = Auth.user();
-    $("utable").innerHTML = `<tr><th scope="col">Account</th><th scope="col">Plan</th><th scope="col">Designs</th><th scope="col">Status</th><th scope="col">Last active</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>` +
+    $("utable").innerHTML = `<tr><th scope="col">Account</th><th scope="col">Plan</th><th scope="col">Designs</th><th scope="col">Status</th><th scope="col">Last active</th><th scope="col">Actions</th></tr>` +
       r.users.map((u) => {
         const e = esc(u.email), self = u.id === me.id;
         const actions = `<button type="button" class="ghost small" data-act="details" aria-label="Details of ${e}">Details</button>` + (u.env_admin
-          ? `<span class="small muted">${self ? "You · " : ""}set in the deployment secrets</span>`
+          ? ""
           : `<button type="button" class="ghost small" data-act="edit" aria-label="Edit ${e}">Edit</button>
              <button type="button" class="ghost small" data-act="password" aria-label="Reset password of ${e}">Password</button>
              ${self ? "" : `<button type="button" class="ghost small" data-act="active" aria-label="${u.active ? "Deactivate" : "Activate"} ${e}">${u.active ? "Deactivate" : "Activate"}</button>
              <button type="button" class="ghost small danger" data-act="delete" aria-label="Delete ${e}">Delete</button>`}`);
         return `<tr data-id="${u.id}" class="${u.active ? "" : "off"}">
           <td data-label="Account"><b>${esc(u.name || u.email)}</b>${u.name ? `<br><span class="small muted">${e}</span>` : ""}${u.username ? `<br><span class="small muted">@${esc(u.username)}</span>` : ""}
-            ${u.role === "super_admin" ? ' <span class="badge on">Super Admin</span>' : ""}</td>
+            ${u.role === "super_admin" ? ' <span class="badge on">Super Admin</span>' : ""}
+            ${u.env_admin ? `<br><span class="small muted">${self ? "You · " : ""}set in the deployment secrets</span>` : ""}</td>
           <td data-label="Plan">${esc(u.plan)}${u.expired ? ` <span class="small warn-text">(${esc(u.assigned_plan)} ended)</span>` : ""}${u.expires_at && !u.expired ? `<br><span class="small muted">until ${day(u.expires_at)}</span>` : ""}</td>
           <td data-label="Designs">${allowance(u)} ${u.limit_source === "override" ? '<span class="badge" title="Individual allowance">custom</span>' : ""}<br>${statusChip(u.usage_status)}</td>
           <td data-label="Status"><span class="status ${u.active ? "good" : "bad"}">${u.active ? "&#9679; Active" : "&#9675; Deactivated"}</span></td>
@@ -636,7 +644,8 @@ const Admin = (() => {
         <span class="small muted">${esc(s.help)} (default ${s.default ? "on" : "off"})</span></label>` : `
         <label><span class="lbl">${esc(s.label)}</span><input type="number" name="${s.key}" min="${s.min}" max="${s.max}" step="1" value="${s.value}" required>
         <span class="small muted">${esc(s.help)} (${s.min}–${s.max}, default ${s.default})</span></label>`).join("")}</div>`)).join("")}
-      <div class="row end"><button type="submit" class="primary">Save settings</button></div></form>
+      <div class="save-bar" id="setBar" hidden><span id="setCount"></span><span class="grow"></span>
+        <button type="button" class="ghost" id="setDiscard">Discard</button><button type="submit" class="primary">Save settings</button></div></form>
       ${section("Clean-up", `<p class="small muted">${num(r.open_projects)} temporary design${r.open_projects === 1 ? " is" : "s are"} on the server now. Clean-up runs automatically every 5 minutes;
         run it now to remove closed, idle and expired designs at once.</p><button type="button" id="runClean">Run clean-up now</button>`)}
       ${section("What is stored", `<ul class="small plain-list">
@@ -644,12 +653,29 @@ const Admin = (() => {
           encrypted AI keys, saved presets (settings, name and description only; deleted with the account), usage metadata (what was done, when, success, AI service and model, duration, token counts) and this audit log.</li>
         <li><b>Never kept:</b> uploaded files, generated stitch files, designs, prompts or AI answers. Designs exist only as temporary files while in use.</li>
         <li>Usage records and audit entries are deleted after the retention periods above.</li></ul>`)}`;
+    const fields = () => [...$("setForm").querySelectorAll("input[name]")];
+    const val = (i) => (i.type === "checkbox" ? (i.checked ? 1 : 0) : +i.value);
+    const saved = new Map(fields().map((i) => [i.name, val(i)]));
+    const changed = () => {
+      let n = 0;
+      fields().forEach((i) => { const c = val(i) !== saved.get(i.name); i.closest("label").classList.toggle("mod", c); n += c; });
+      $("setBar").hidden = !n;
+      $("setCount").textContent = `${n} change${n === 1 ? "" : "s"} not saved`;
+    };
+    $("setForm").addEventListener("input", changed);
+    $("setForm").addEventListener("change", changed);
+    $("setDiscard").onclick = () => { fields().forEach((i) => { if (i.type === "checkbox") i.checked = !!saved.get(i.name); else i.value = saved.get(i.name); }); changed(); };
     $("setForm").onsubmit = async (ev) => {
       ev.preventDefault();
       const body = {};
       new FormData($("setForm")).forEach((v, k) => (body[k] = +v));
       $("setForm").querySelectorAll("[data-toggle]").forEach((c) => (body[c.name] = c.checked ? 1 : 0)); // unticked boxes are not in FormData
-      try { await api("/api/admin/settings", json("PUT", body)); toast("Settings saved.", true); } catch (e) { toast(e.message); }
+      try {
+        await api("/api/admin/settings", json("PUT", body));
+        fields().forEach((i) => saved.set(i.name, val(i)));
+        changed();
+        toast("Settings saved.", true);
+      } catch (e) { toast(e.message); }
     };
     $("runClean").onclick = async () => {
       try {
@@ -686,12 +712,15 @@ const Admin = (() => {
       <td class="small">${Object.entries(e.detail).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join("<br>")}</td></tr>`).join(""));
     auditBefore = r.entries.length ? r.entries[r.entries.length - 1].id : auditBefore;
     $("amore").disabled = r.entries.length < 100;
-    if (!more && !r.entries.length) $("atable").insertAdjacentHTML("beforeend", '<tr><td colspan="5" class="muted">No entries.</td></tr>');
+    if (!more && !r.entries.length) $("atable").insertAdjacentHTML("beforeend", `<tr><td colspan="5">${emptyState(auditQ ? "Nothing matches the search." : "No entries yet.")}</td></tr>`);
   }
 
   // ------------------------------------------------------------------ wiring
   function init() {
     $("adminNav").addEventListener("click", (ev) => { const b = ev.target.closest("[data-tab]"); if (b) go(b.dataset.tab); });
+    // phones: a section picker instead of a sideways-scrolling strip (the current section is always visible)
+    $("adminSection").innerHTML = [...$("adminNav").querySelectorAll("[data-tab]")].map((b) => `<option value="${esc(b.dataset.tab)}">${esc(b.textContent)}</option>`).join("");
+    $("adminSection").onchange = () => go($("adminSection").value);
     $("userForm").addEventListener("submit", submitUserDialog);
     $("userGenerate").onclick = () => { $("userFormPassword").value = Auth.generatePassword(); Auth.formStatus("userDialogStatus", "New password generated."); };
     $("userCopy").onclick = copyPassword;

@@ -1,6 +1,7 @@
 # App UX plan: start, export, account, admin, phones and first run
 
-Status: **planned, nothing built** (written 2026-11-17). It's Phase 7 in [ROADMAP.md](ROADMAP.md) §1 and follows
+Status: **all batches (A–E) built** on branch `app-ux` (2026-11-17), decisions in §6 taken as recommended; see
+"what was built" under each batch for where it differs. It's Phase 7 in [ROADMAP.md](ROADMAP.md) §1 and follows
 [EDITOR_UX_PLAN.md](EDITOR_UX_PLAN.md) (Phase 6, the editor itself, done in v1.6.0).
 
 Based on a screenshot tour of v1.6.0 (sign-in, start screen, editor on first open, Export dialog, My account,
@@ -139,6 +140,16 @@ no new dependencies, and limits only through `entitlements`.
 Done when: at 1440 × 900 and 390 × 844 the Download button is visible without scrolling; a returning user
 downloads their usual file in two clicks (Export → Download).
 
+**What was built for A (and where it differs)**
+- `prefs.py` (machines, placements, `user_prefs` table = migration 5, `GET/PUT /api/me/prefs`, tables in
+  `/api/config`); `Prefs` in `account.js` (also kept in `localStorage`). Machines: Tajima/WONYO/Dahao/SWF/Ricoma → DST,
+  Brother → PES, Janome → JEF, Bernina and Melco → EXP, Barudan → U01, Husqvarna/Pfaff → VP3, Singer → XXX.
+- The dialog has a fixed footer (allowance note, state, Close, Download); only the list scrolls. On ≤ 720 px the
+  summary is a strip above the list and Close is the × only. The worksheet is added only when the plan has
+  `zip_export` (otherwise the check offers it, as before). The machine format falls back to DST when the plan
+  doesn't include it. "Select all" is gone.
+- Tests: `tests/test_prefs.py`; new browser suite `tools/smoke/appux.mjs` (in `run_all.py`).
+
 ### Batch B: Start screen and the size question (about 3 days)
 
 **B1. "What is it for?" before the first preparation**
@@ -171,6 +182,19 @@ downloads their usual file in two clicks (Export → Download).
 Done when: first upload → stitches at the right size in one step; a returning user's path is drop → Enter → Export
 → Download.
 
+**What was built for B (and where it differs)**
+- `#placeStep` replaces the drop zone after a file is chosen (button, drop or paste). "Try an example logo" skips
+  it (a demo should be instant) and so does `upload()` called by code. The placement sizes the **longest side**.
+  The picture analysis now also returns `measurements.design_aspect` (the design without its background), so the
+  size is right before the first preparation; when that changes the width by more than 10 %, the analysis runs
+  again at the real size (small lettering is judged correctly). The hoop is the smallest square or 360 × 200 hoop
+  with 6 mm to spare (the cap hoop for Cap front).
+- Placements live in `prefs.PLACEMENTS`, checked against the width ranges at import and in `tests/test_prefs.py`.
+- Upload progress uses `XMLHttpRequest` (fetch cannot report it), shown inside the step; no paste button on touch
+  (the clipboard read permission prompt is not worth it), the drop zone says "paste a picture (Ctrl+V)".
+- The feature cards show until an account has chosen a placement or a machine (instead of "no downloads yet"),
+  then one line with the usual choices.
+
 ### Batch C: First run of the editor (about 2 days)
 
 **C1. The smart report becomes one line**
@@ -198,6 +222,18 @@ Done when: first upload → stitches at the right size in one step; a returning 
 Done when: on the first open the Size section is above the fold at 1440 × 900, with no "?" marks visible until
 you point at a setting.
 
+**What was built for C (and where it differs)**
+- `SmartLine`: the facts in short words with Details (open on a browser's first design) and ×; it is up to three
+  short lines in the 300 px panel, not always one. Picture opens itself when the analysis suggests a clean-up or
+  found no plain background.
+- `#presetSuggest` under the picker, and "· suggested" in the list. The offer waits for the built-in presets if
+  they load after the analysis (that race also existed before).
+- `Guide`: numbered marks via `data-guide` (CSS `::after`), the current step's tip via `::before` (hidden below
+  900 px, the numbers stay). Step 1 is done by switching to Stitches yourself, 2 by playing, 3 by opening Export.
+  The "first 3 visits" help-button default is gone.
+- `coreParams()`: fill gap / fill direction / satin gap hide when the stitches have none of that kind (from the
+  preview's stitch kinds, so automatic styles count), unless *show every style* is on or the value was changed.
+
 ### Batch D: Phones and tablets (about 2 days)
 
 **D1. The view bar is always one row**
@@ -222,6 +258,17 @@ you point at a setting.
   file-name menu Phase 6 left out, built once for all widths.
 
 Done when: at 390 × 844 the preview is at least 60 % of the screen with a sheet closed and 45 % with it open.
+
+**What was built for D (and where it differs)**
+- View bar: `flex-wrap: nowrap`, drop-downs below 1000 px of preview width, zoom / fit / full screen / help in a ⋯
+  menu (`#viewMore`) below 640 px. `appux.mjs` checks one row and nothing outside the bar at 7 sizes × 2 views.
+- Tablets keep the side drawers (they already leave about half of the preview visible); **phones (≤ 560 px)** get
+  the half-height bottom sheets with a grip, ↕ (taller / shorter) and drag up / down; the preview shrinks to the
+  space above the sheet and fits the design again (`--main-top` measured when a sheet opens).
+- The bottom bar is one row on every size (status inline on tablets; a dot and Update on phones). Auto-update is
+  also in Help and shortcuts (`#autoUpdatePref`, mirrors the bar's box).
+- The file name is a menu button (`#btnFileMenu`: New design…, Close design); "File" on phones. "New design"
+  stays as a button too.
 
 ### Batch E: Account, admin and consistency (about 2–3 days)
 
@@ -256,6 +303,19 @@ Done when: at 390 × 844 the preview is at least 60 % of the screen with a sheet
   account presets, the Shapes list and the Checks group ("No problems found ✓").
 
 ---
+
+**What was built for E (and where it differs)**
+- My account: title "My account", the plan across the top (allowance, Included, Not on your plan), then **Your
+  defaults** (machine and usual placement, the same preferences as Export and the start step), My presets, AI
+  settings, Profile, sessions.
+- AI settings is in the user menu (same `#btnAiSettings`); the plan chip shows only when it says something (a
+  limit, or an ended plan).
+- Admin: a section picker below 960 px; tiles fill the row; empty chart / lists use the empty state; the
+  deployment-secrets note sits under the account; Settings has change marks and a Save bar only when something
+  changed (with Discard). Group summaries on the settings headings were left out: the marks and the count say
+  what changed.
+- One back control ("← Editor" / "← Start"); one dialog frame (body scrolls, the last button row is sticky) for every
+  `.form-dialog`; one empty-state style (`.empty-state`), also "No problems found" in Checks.
 
 ## 4. Order, size and risk
 

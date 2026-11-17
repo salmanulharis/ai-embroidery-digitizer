@@ -661,6 +661,11 @@ const HELP = {
     why: "The size changes everything: whether a shape is satin or fill, how small text comes out, the stitch count. Your last choice is remembered, so next time Enter is enough.",
     eg: "Left chest ≈ 90 mm, cap front ≈ 55 mm, jacket back ≈ 280 mm. Every value stays editable in Size & colours; Custom size keeps the width you type.",
   },
+  account_defaults: {
+    t: "Your defaults",
+    what: "Your machine and what your designs are usually for. Export ticks your machine's file first; after you choose a file, the usual placement is pre-selected.",
+    why: "Asked once, remembered for your account (also on another computer).",
+  },
   file_menu: {
     t: "File",
     what: "The open design's name. Its menu starts a new design or closes this one (the design is deleted from the server when closed).",

@@ -409,7 +409,7 @@ const Guide = (() => {
     { el: () => document.querySelector('#paneSwitch [data-pane="stitches"]'), tip: "Check the stitches – ▶ shows them sewn" },
     { el: () => $("btnExport"), tip: "Download for your machine" },
   ];
-  let st = { off: false, done: [] };
+  let st = { off: false, done: [] }, shownFor = -1, tipTimer = 0;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (_) {} };
   function render() {
     const on = !st.off && st.done.length < STEPS.length && !!state.project;
@@ -421,6 +421,15 @@ const Guide = (() => {
       if (show) { el.dataset.guide = String(i + 1); el.dataset.guideTip = s.tip; } else { delete el.dataset.guide; delete el.dataset.guideTip; }
       el.classList.toggle("guide-now", show && i === cur);
     });
+    // the current step's tip shows for a few seconds when it becomes current (then on hover / focus),
+    // so it never sits over other controls for long
+    if (on && cur !== shownFor && STEPS[cur]?.el()) {
+      shownFor = cur;
+      const el = STEPS[cur].el();
+      el.classList.add("guide-tip");
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => el.classList.remove("guide-tip"), 6000);
+    }
     $("guideOn").checked = !st.off && st.done.length < STEPS.length;
   }
   function done(i) {
@@ -1885,6 +1894,7 @@ function renderChecks() {
   $("checkCount").textContent = n ? `· ${n}` : "";
   $("checkCount").hidden = !n;
   $("rightPanel").querySelector(".ed-scroll").classList.toggle("checks-first", n > 0);
+  $("checksOk").hidden = n > 0 || !state.preview;
 }
 
 // ------------------------------------------------------------------ the editor: panes, sheets, bottom bar

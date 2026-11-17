@@ -30,7 +30,8 @@ pytest                            # pipeline, exports, API, editing, AI (mocked)
 start; that account is created at startup and adds everyone else. See [Accounts](#accounts),
 [Plans, allowance and usage](#plans-allowance-and-usage) and [Privacy](#privacy-temporary-designs-and-what-is-stored).
 
-AI is optional. Open **AI settings** in the app to add your own key, or set server-wide keys in `.env`.
+AI is optional. Open **AI settings** (account menu) to add your own key, or set server-wide keys in `.env`.
+**My account** shows the plan, your defaults (machine, usual placement), presets, AI settings and sign-ins.
 See [AI assistant](#ai-assistant).
 
 ## The editor
@@ -49,12 +50,24 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   creates the stitches again (Stitches, threads, shapes) a moment later, without covering the screen. Requests run
   one at a time, and changes made meanwhile are sent together with the latest values. A design that takes over
   ~3 s to stitch switches to **Update** in the bottom bar; *Auto-update* can also be turned off there.
-* **Export** opens a dialog: files grouped by use, a summary (size, hoop fit, stitches, time), checks and the
-  allowance note. It brings the stitches up to date first, so a download always matches the screen.
+* **What is it for?** After a file is chosen (button, drop or Ctrl+V paste), one step asks the placement – left
+  chest, cap front, sleeve, full front, jacket back or a custom width. It sets the longest side of the design
+  (measured without the background), the smallest hoop that fits and the small-lettering judgement before the
+  design is prepared; the last choice is remembered, so Enter is enough. "Try an example logo" skips it.
+* **Export** opens a dialog: **your machine** (remembered for the account) ticks its format first and folds the
+  other formats away; the worksheet is added when the file has no thread colours (DST, EXP, U01); the Download
+  button stays in view and says what you get. Checks lead to the problem (*Show me*, *Change the size*). It brings
+  the stitches up to date first, so a download always matches the screen.
+* **First steps**: on a browser's first designs, numbers mark the way – 1 Shapes, 2 Stitches, 3 Export – and go
+  away as each is done (Help and shortcuts switches them on or off). The analysis is a short summary with
+  *Details*; a suggested preset sits under the preset picker with one *Apply*.
+* **Phones**: the view and bottom bars stay one row; Settings and Design open as half-height sheets with the
+  preview above them (↕ or a drag for full height).
 * **Shapes list** (Threads panel → *Shapes*): every shape by thread colour with size, style and direction; select
   with a click or the keyboard (↑ ↓, Enter, Space) – a keyboard path to every shape.
 * **Help and shortcuts** (⌨ above the preview or `?`): the `?` help buttons appear when you point at a setting (or
-  with Tab); *Always show the help buttons* keeps them visible (on for the first visits). Keyboard shortcuts: F fit, 1 / 2 = 100 / 200 %, + / − zoom, S Shapes / Stitches,
+  with Tab); *Always show the help buttons* keeps them visible; *Auto-update* and the first steps can be switched
+  there too. Keyboard shortcuts: F fit, 1 / 2 = 100 / 200 %, + / − zoom, S Shapes / Stitches,
   O original picture, V B E L G editing tools, Enter update, Ctrl+E export. **Full screen** where the browser allows it.
 * **Right panel**: *Selection* is only its heading until you select something. *Threads* lists the threads being
   sewn in order; switched-off ones sit in a closed *Not sewn* group, and the ⋯ menu merges similar colours or opens

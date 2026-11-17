@@ -10,6 +10,8 @@ const Views = (() => {
   let current = null;
   function show(name) {
     current = name;
+    // one back control, named after where it goes
+    document.querySelectorAll("[data-view-close]").forEach((b) => (b.innerHTML = `&larr; ${state.project ? "Editor" : "Start"}`));
     document.body.classList.toggle("view-account", name === "account");
     document.body.classList.toggle("view-admin", name === "admin");
     window.scrollTo(0, 0);
@@ -70,7 +72,7 @@ const Account = (() => {
     chip.dataset.level = lv;
     chip.title = u.unlimited ? "Unlimited design downloads" : `${u.used} of ${u.limit} design downloads used ${periodWord(u)}`;
     chip.setAttribute("aria-label", `Your plan: ${chip.title}. Open my account`);
-    chip.classList.remove("hidden");
+    chip.classList.toggle("hidden", !!u.unlimited && !data.subscription?.expired); // unlimited: nothing to watch
   }
 
   function meter(u) {
@@ -91,39 +93,48 @@ const Account = (() => {
 
   function render() {
     const u = data.user;
-    $("accountTitle").textContent = `Welcome${u.display_name ? `, ${u.display_name}` : ""}`;
-    $("accountSub").textContent = `Signed in as ${u.email}${u.username ? ` (@${u.username})` : ""}`;
+    $("accountTitle").textContent = "My account";
+    $("accountSub").textContent = u.display_name ? `${u.display_name} · ${u.email}` : u.email;
+    const on = data.features.filter((f) => f.on), off = data.features.filter((f) => !f.on);
+    const list = (fs, yes) => `<ul class="feature-check">${fs.map((f) => `<li class="${yes ? "on" : "off"}"><span aria-hidden="true">${yes ? "✓" : "–"}</span>
+        ${esc(f.label)}<span class="visually-hidden">: ${yes ? "included" : "not included"}</span></li>`).join("")}</ul>`;
     $("accPlan").innerHTML = `
       <div class="row between"><h3 id="accPlanTitle">Your plan</h3><span class="badge on">${esc(data.plan.name)}</span></div>
       ${data.plan.description ? `<p class="small muted">${esc(data.plan.description)}</p>` : ""}
-      <h4 class="sub">Design downloads <i data-help="quota"></i></h4>
-      ${meter(data.usage)}
-      ${validity(data.subscription)}
-      <h4 class="sub">Included</h4>
-      <ul class="feature-check">${data.features.map((f) => `<li class="${f.on ? "on" : "off"}"><span aria-hidden="true">${f.on ? "✓" : "–"}</span>
-        ${esc(f.label)}<span class="visually-hidden">: ${f.on ? "included" : "not included"}</span></li>`).join("")}</ul>
-      <p class="small muted">Need more designs or features? Contact your administrator about an upgrade.</p>`;
+      <div class="acc-plan">
+        <div><h4 class="sub">Design downloads <i data-help="quota"></i></h4>${meter(data.usage)}${validity(data.subscription)}</div>
+        <div><h4 class="sub">Included</h4>${list(on, true)}</div>
+        <div><h4 class="sub">Not on your plan</h4>${off.length ? list(off, false) + `<p class="small muted">Need one of these or more designs? Ask your administrator about an upgrade.</p>`
+          : `<p class="small muted">Everything is included.</p>`}</div>
+      </div>`;
+    // your usual machine and placement (prefs.py): the same choices as in Export and on the start screen
+    const opts = (items, cur, none) => `<option value="">${none}</option>` + items.map((x) => `<option value="${esc(x.key)}" ${x.key === cur ? "selected" : ""}>${esc(x.label)}${x.format ? ` – ${esc(x.format.toUpperCase())}` : x.size_mm ? ` – ${x.size_mm} mm` : ""}</option>`).join("");
+    $("accPrefs").innerHTML = `<h3>Your defaults</h3>
+      <label><span class="lbl">Your machine <i data-help="export_machine"></i></span><select id="accMachine">${opts(state.config.machines || [], Prefs.get("machine"), "Not chosen (DST)")}</select></label>
+      <label><span class="lbl">Designs are usually for <i data-help="placement"></i></span><select id="accPlacement">${opts(state.config.placements || [], Prefs.get("placement"), "Ask each time")}</select></label>
+      <p class="small muted">Used by Export and after you choose a file. Saved for your account.</p>`;
+    $("accMachine").onchange = () => Prefs.set("machine", $("accMachine").value || null).then(() => toast("Saved.", true));
+    $("accPlacement").onchange = () => Prefs.set("placement", $("accPlacement").value || null).then(() => toast("Saved.", true));
     const ai = data.ai;
     const aiLine = (label, x) => x
       ? `<li><b>${esc(label)}:</b> ${esc(x.label)} · ${esc(x.model)} ${x.ready ? `<span class="status good">✓ ${x.own_key ? "your key" : "app access"}</span>` : `<span class="status bad">✗ not set up</span>`}</li>`
       : `<li><b>${esc(label)}:</b> <span class="muted">built-in (no AI service)</span></li>`;
     $("accAi").innerHTML = `<h3>AI settings</h3>
       ${ai.allowed ? `<ul class="plain">${aiLine("Advice & stitch checks", ai.advice)}${aiLine("Picture clean-up", ai.cleanup)}</ul>
-        <p class="small muted">Your keys are stored encrypted and used only for your requests. They are never shown again.</p>`
-        : `<p class="small">AI services are not included in your plan. The built-in assistant still suggests settings and checks stitches.</p>`}
-      <button type="button" id="accAiOpen">&#9881; Open AI settings</button>`;
+        <p class="small muted">Keys are stored encrypted, used only for your requests and never shown again.</p>`
+        : `<p class="small">Not included in your plan. The built-in assistant still suggests settings and checks stitches.</p>`}
+      <button type="button" class="ghost" id="accAiOpen">Change…</button>`;
     $("accAiOpen").onclick = () => AI.open();
     const ps = data.presets || { count: 0, limit: 0, feature: false };
     const psCount = ps.limit == null ? `${ps.count} saved` : `${ps.count} of ${ps.limit} saved`;
     $("accPresets").innerHTML = `<h3>My presets ${Tip.icon("presets")}</h3>
-      <p class="big-num">${esc(psCount)}</p>
+      <p class="acc-num"><span class="big-num">${esc(psCount)}</span></p>
       <p class="small muted">${!ps.feature
         ? ps.count ? "Your plan no longer includes saving presets. The ones you have can still be applied, edited and deleted."
           : "Saving your own presets is not included in your plan. The built-in presets are in the editor's settings panel."
-        : ps.can_save ? "Save the settings of a design as a preset in the editor (Settings → Save as preset…)."
+        : ps.can_save ? (ps.count ? "Save more in the editor: Preset ⋯ → Save as preset…" : "None yet. In the editor: Preset ⋯ → Save as preset…")
           : "You have reached your plan's number of presets. Delete one to save a new preset; the others stay usable."}</p>
-      <p class="small muted">Presets hold settings only, never your pictures or designs.</p>
-      <button type="button" id="accPresetsOpen">Manage presets</button>`;
+      <button type="button" class="ghost" id="accPresetsOpen">Manage…</button>`;
     $("accPresetsOpen").onclick = () => Presets.openManage();
     $("accProfile").innerHTML = `<h3>Profile</h3>
       <form id="profileForm" class="stack">

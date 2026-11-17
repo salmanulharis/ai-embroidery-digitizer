@@ -289,6 +289,53 @@ try {
   check("D: New design goes to the start screen", await ev(`currentPage === "upload" && $("fileMenu").hidden`));
   await ev(`$("btnBackToOpen").click(); true`); await sleep(400);
 
+  // ================================================ Batch E: account, admin, consistency
+  await size(1440, 900); await sleep(300);
+  check("E: AI settings is in the user menu, not the header", await ev(`!!$("btnAiSettings").closest("#userMenu")`));
+  check("E: the plan chip is hidden for an unlimited plan", await ev(`$("usageChip").classList.contains("hidden")`));
+  await ev(`$("btnUser").click(); true`); await sleep(150);
+  await ev(`$("btnAiSettings").click(); true`); await sleep(300);
+  check("E: …and opens the AI settings (menu closed)", await ev(`$("aiDialog").open && $("userMenu").classList.contains("hidden")`));
+  await ev(`$("aiDialog").close(); true`);
+  await ev(`Prefs.set("machine", "janome"); true`); await sleep(300);
+  await ev(`$("btnUser").click(); $("btnAccount").click(); true`); await waitFor(`!!$("accPrefs").querySelector("select")`, 10000); await sleep(200);
+  check("E: My account (title), one back control named after where it goes", await ev(`$("accountTitle").textContent === "My account" && /Editor/.test(document.querySelector("#accountView [data-view-close]").textContent)`));
+  check("E: the plan shows what is included and what is not", await ev(`/Included/.test($("accPlan").textContent) && /Not on your plan/.test($("accPlan").textContent)`));
+  check("E: your defaults: machine and placement", await ev(`$("accMachine").value === "janome" && $("accPlacement").value === (Prefs.get("placement") || "")`));
+  await ev(change(`$("accMachine")`, "bernina")); await sleep(500);
+  check("E: …saved for the account", await ev(`api("/api/me/prefs").then((p) => p.machine === "bernina")`));
+  check("E: the presets hint points to the preset menu", await ev(`/Preset ⋯/.test($("accPresets").textContent) || /not included/.test($("accPresets").textContent)`), await ev(`$("accPresets").textContent.replace(/\s+/g, " ").slice(0, 120)`));
+  await shot("appux-account");
+  await ev(`Prefs.set("machine", null); true`);
+  await ev(`document.querySelector("#accountView [data-view-close]").click(); true`); await sleep(300);
+
+  await ev(`$("btnUser").click(); $("btnAdmin").click(); true`); await sleep(1500);
+  check("E: admin users: the deployment-secrets note sits with the account", await ev(`(() => { document.querySelector('[data-tab="users"]').click(); return true; })()`) && await waitFor(`!!document.querySelector("#utable td")`, 10000) &&
+    await ev(`[...document.querySelectorAll("#utable tr")].some((tr) => /deployment secrets/.test(tr.cells[0]?.textContent || "")) && document.querySelector("#utable th:last-child").textContent === "Actions"`));
+  await ev(`document.querySelector('[data-tab="settings"]').click(); true`); await waitFor(`!!$("setForm")`, 10000); await sleep(200);
+  check("E: admin settings: no Save bar until something changes", await ev(`$("setBar").hidden`));
+  await ev(`{ const i = $("setForm").querySelector('input[type="number"]'); i.value = +i.value + 1; i.dispatchEvent(new Event("input", { bubbles: true })); } true`); await sleep(100);
+  check("E: …a change shows it, marked", await ev(`!$("setBar").hidden && /1 change/.test($("setCount").textContent) && !!$("setForm").querySelector("label.mod")`));
+  await ev(`$("setDiscard").click(); true`); await sleep(100);
+  check("E: Discard puts it back", await ev(`$("setBar").hidden && !$("setForm").querySelector("label.mod")`));
+  await shot("appux-admin-settings");
+  await size(390, 844, true); await sleep(400);
+  check("E: phone: a section picker shows the current section", await ev(`$("adminSection").offsetParent !== null && $("adminSection").value === "settings" && $("adminNav").offsetParent === null`));
+  await ev(change(`$("adminSection")`, "users")); await sleep(800);
+  check("E: …and switches sections", await ev(`!!$("utable") && document.querySelector('[data-tab="users"]').classList.contains("on")`));
+  await shot("appux-admin-phone");
+  await size(1440, 900); await sleep(300);
+  await ev(`document.querySelector("#adminView [data-view-close]").click(); true`); await sleep(300);
+
+  // one dialog frame: the button row stays at the bottom
+  await ev(`$("btnKeys").click(); true`); await sleep(200);
+  check("E: dialogs keep their button row in view (sticky)", await ev(`getComputedStyle($("keysDialog").querySelector(".ai-dialog > .row.end:last-child")).position === "sticky"`));
+  await ev(`$("keysDialog").close(); true`);
+  // one empty state: Checks says when nothing is wrong
+  await ev(`$("warnings2").innerHTML = ""; $("warnings3").innerHTML = ""; renderChecks(); true`);
+  check("E: no warnings: 'No problems found'", await ev(`!$("checksOk").hidden`));
+  await ev(`renderStats(); true`);
+
 } catch (e) {
   results.push("ERROR " + e.message);
   try { await shot("appux-error"); } catch (_) {}

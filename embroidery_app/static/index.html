@@ -85,7 +85,6 @@
   </div>
   <div class="hdr-actions">
     <button type="button" class="ghost usage-chip hidden" id="usageChip"><span class="meter-dot" aria-hidden="true"></span><span id="usageChipText"></span></button>
-    <button type="button" class="ghost" id="btnAiSettings" aria-haspopup="dialog"><svg class="ic" aria-hidden="true"><use href="#i-sparkle"/></svg> <span class="hide-sm hide-ed">AI settings</span> <span id="aiBadge" class="badge">Built-in</span></button>
     <div class="user-menu">
       <button type="button" class="ghost" id="btnUser" aria-expanded="false" aria-controls="userMenu" aria-label="Account">
         <span class="avatar" id="userAvatar" aria-hidden="true">?</span><span class="user-email" id="userEmail"></span></button>
@@ -93,6 +92,7 @@
         <p class="small muted user-pop-head"><span><span id="userMenuEmail"></span><span class="user-pop-name" id="userMenuName"></span></span><span class="badge" id="userRole"></span></p>
         <button type="button" class="ghost" id="btnAccount"><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg> My account</button>
         <button type="button" class="ghost" id="btnAdmin"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg> Admin console</button>
+        <button type="button" class="ghost user-ai" id="btnAiSettings" aria-haspopup="dialog"><svg class="ic" aria-hidden="true"><use href="#i-sparkle"/></svg> AI settings <span id="aiBadge" class="badge">Built-in</span></button>
         <button type="button" class="ghost" id="btnMyPassword"><svg class="ic" aria-hidden="true"><use href="#i-key"/></svg> Change password</button>
         <div class="theme-row"><span class="small muted" id="themeLabel">Theme</span>
           <div class="theme-pick" id="themePick" role="radiogroup" aria-labelledby="themeLabel">
@@ -424,6 +424,7 @@
         </section>
         <section class="ed-group" id="checkGroup" aria-labelledby="checkTitle">
           <h3 id="checkTitle">Checks <span class="grp-count warn" id="checkCount" hidden></span></h3>
+          <p class="empty-state" id="checksOk" hidden><span class="es-icon" aria-hidden="true">&#10003;</span> No problems found.</p>
           <div id="warnings2" class="warnings"></div>
           <div id="warnings3" class="warnings"></div>
           <div class="row review-row">
@@ -458,15 +459,16 @@
   <!-- MY ACCOUNT (every signed-in user) -->
   <section id="accountView" class="panel hidden" aria-labelledby="accountTitle">
     <div class="view-head">
-      <div><h2 id="accountTitle" tabindex="-1">Welcome</h2><p class="muted small" id="accountSub"></p></div>
-      <button type="button" class="ghost" data-view-close>&larr; Back to my design</button>
+      <div><h2 id="accountTitle" tabindex="-1">My account</h2><p class="muted small" id="accountSub"></p></div>
+      <button type="button" class="ghost view-back" data-view-close>&larr; Editor</button>
     </div>
-    <div class="dash-grid">
-      <div class="card" id="accPlan"></div>
-      <div class="card" id="accAi"></div>
+    <div class="dash-grid acc-grid">
+      <div class="card acc-wide" id="accPlan"></div>
+      <div class="card" id="accPrefs"></div>
       <div class="card" id="accPresets"></div>
+      <div class="card" id="accAi"></div>
       <div class="card" id="accProfile"></div>
-      <div class="card" id="accSessions"></div>
+      <div class="card acc-span2" id="accSessions"></div>
     </div>
   </section>
 
@@ -474,8 +476,9 @@
   <section id="adminView" class="panel hidden" aria-labelledby="adminTitle">
     <div class="view-head">
       <div><h2 id="adminTitle" tabindex="-1">Admin console</h2><p class="muted small">Accounts, plans, usage and settings</p></div>
-      <button type="button" class="ghost" data-view-close>&larr; Back to the app</button>
+      <button type="button" class="ghost view-back" data-view-close>&larr; Editor</button>
     </div>
+    <label class="admin-pick"><span class="lbl">Section</span><select id="adminSection"></select></label>
     <div class="admin-layout">
       <nav class="admin-nav" aria-label="Admin console" id="adminNav">
         <button type="button" data-tab="overview">Overview</button>

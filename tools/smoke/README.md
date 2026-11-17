@@ -13,6 +13,7 @@ protocol and print PASS / FAIL per check, script exceptions and console errors. 
 | `batchc.mjs` | Phase 4 batch C: merge similar colours (range, pairs, count, Esc, merge in one step, one Undo), split view (handle, keys, drag, remembered, only in the stitch view), Calibrate 100 % (card box, saved, used by 100 %, Standard size, phone) (28 checks) |
 | `phase5.mjs` | Phase 5: theme (System / Light / Dark against the device setting, keys, remembered from the first paint, rulers repaint), woven fabric, machine speed (time only, Undo), thread chart (offered, Thread order shows brand + number, None), PEC + XXX in the export dialog, the admin auto-update switch (26 checks). Start the server with `THREAD_CHARTS_DIR` pointing at a folder holding `Smoke Rayon.gpl` (any small GIMP palette with that file name) |
 | `layout.mjs` | Phase 6 batches A–C (docs/EDITOR_UX_PLAN.md): at 7 screen sizes in both views nothing overlaps in the header, view bar or bottom bar, nothing floats over the preview, no sideways scroll, status not cut off; short sewing progress, singular figures, one-line empty selection, thread row selects its shapes, same-named threads numbered; Show menu (count, Esc, click elsewhere, O key), style drop-down on a narrow preview, Fabric & thread section (undo, marks), one-row number fields, help buttons on hover / always (139 checks) |
+| `appux.mjs` | Phase 7 (docs/APP_UX_PLAN.md): Export (your machine first, worksheet added, Download in view on desktop and phone, checks with actions), the "What is it for?" step (size from the longest side, hoop, remembered choice, paste, Esc), first run (short analysis summary, suggested preset at the picker, first-steps guide, fewer core settings), one-row view and bottom bars at 7 sizes, phone ⋯ menu, half-height sheets, file menu, My account defaults, admin section picker and Save bar, dialog frame, empty state (108 checks) |
 | `presets.mjs` | Phase 3: preset picker, apply (values, one undo step, baseline, "Changed" badge), undo/redo of a preset, save, name clash (keep both), manage + delete, app defaults, account card, admin tiers + plan limits, Free account restrictions + lock popover, suggestion after upload, tablet / phone layout (39 checks; re-runnable on the same data) |
 
 ## Run
@@ -34,6 +35,7 @@ Needs Node 22+ (built-in `fetch` and `WebSocket`) and Chrome.
    node tools/smoke/batchc.mjs ./smoke-out
    node tools/smoke/phase5.mjs ./smoke-out
    node tools/smoke/layout.mjs ./smoke-out
+   node tools/smoke/appux.mjs ./smoke-out
    ```
 
 **All at once** (what CI runs; starts its own throwaway server, admin and thread chart):
