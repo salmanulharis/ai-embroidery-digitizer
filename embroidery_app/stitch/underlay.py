@@ -6,6 +6,9 @@ Under fills:
   edge_tatami    edge run + an open tatami lattice across the fill (the default)
   double_tatami  edge run + two crossing lattices at +-45 deg to the fill: more
                  support for stretchy or fluffy fabric
+  by_size        chosen by the fill's size: an edge run alone where the widest circle
+                 is under BY_SIZE_EDGE_ONLY_MM (a lattice there only piles up thread),
+                 edge run + lattice from there
 
 Under satin columns:
   none           no foundation
@@ -37,6 +40,7 @@ ZIGZAG_MIN_WIDTH_MM = 2.5
 # circle fits = wide satin, in between = narrow satin.
 LETTERING_MM, WIDE_SATIN_MM = 2.0, 4.0
 ZIGZAG_INSET_MM = 0.4  # zigzag foundation stays this far inside the edges
+BY_SIZE_EDGE_ONLY_MM = 6.0  # "by_size" fill foundation: narrower fills get an edge run only
 
 Pieces = list[list[Pt]]
 
@@ -72,6 +76,8 @@ def column_width(poly: Polygon) -> float:
 def fill_foundation(style: str, poly: Polygon, angle: float, spacing: float, start: Pt, smart: bool = False) -> Pieces:
     if style == "none":
         return []
+    if style == "by_size":
+        style = "edge" if widest_circle(poly) < BY_SIZE_EDGE_ONLY_MM else "edge_tatami"
     if style == "edge":
         return _edge_run(poly, start)
     if style == "double_tatami":

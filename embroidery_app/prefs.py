@@ -11,8 +11,13 @@ steps (docs/APP_UX_PLAN.md, batches A and B; docs/AUTOMATION_UX_PLAN.md, batch B
 - ``fabric``: the fabric most designs are sewn on (fabrics.py); a new design starts with it.
 - ``thread_chart``: the thread brand (threads.py, a chart file the server has); a new design
   starts with it, so the worksheet lists that brand's thread numbers.
+- ``preset``: the usual preset ("b:<built-in id>" or "u:<own preset id>"); a new design
+  starts with it (applied with the starting values, so nothing is marked as changed). Only
+  the account's own presets; a deleted one is forgotten. The tier is checked in the editor,
+  which never receives a locked preset's values.
 
-The machine also gives a new design its speed for the time estimate (``spm``).
+The machine also gives a new design its speed for the time estimate (``spm``) and the hoops it
+takes (``hoops``: names from ``HOOPS``), which the editor prefers when it picks a hoop.
 
 Both tables live here and go to the browser in ``/api/config``. A preference is a key
 from these tables, never design data: nothing about a picture, a file name or a design is
@@ -22,27 +27,50 @@ stored (privacy rules in CLAUDE.md). Unknown keys and values are refused.
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from . import db, threads
 from .export import FORMATS
 from .fabrics import FABRIC_IDS
 from .models import STITCH_RANGES
+from .presets import BUILTINS
 from .ingest.raster import RASTER_RANGES
 from .ingest.vector import VECTOR_RANGES
 
 # key -> label shown in the Export dialog, the file format that machine reads, and the speed
 # (stitches per minute) a new design's time estimate starts with: a usual working speed, not
 # the machine's maximum (machine_spm, Fabric, thread & machine; it only changes the figures).
+# The hoops the editor offers (width x height of the sewing field, mm). Options are chosen by
+# their position in this list, so new hoops are added at the end.
+HOOPS: list[dict] = [
+    {"name": "100 x 100 mm", "width": 100, "height": 100},
+    {"name": "150 x 150 mm", "width": 150, "height": 150},
+    {"name": "200 x 200 mm", "width": 200, "height": 200},
+    {"name": "300 x 300 mm", "width": 300, "height": 300},
+    {"name": "360 x 200 mm", "width": 360, "height": 200},
+    {"name": "Cap 70 x 140 mm", "width": 140, "height": 70},
+    {"name": "Left chest ~90 mm", "width": 90, "height": 90},
+    {"name": "130 x 180 mm (5 x 7 in)", "width": 130, "height": 180},
+    {"name": "160 x 260 mm (6 x 10 in)", "width": 160, "height": 260},
+]
+_COMMERCIAL_HOOPS = ("100 x 100 mm", "150 x 150 mm", "200 x 200 mm", "300 x 300 mm", "360 x 200 mm",
+                     "Cap 70 x 140 mm", "Left chest ~90 mm")
+_HOME_HOOPS = ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "160 x 260 mm (6 x 10 in)", "200 x 200 mm")
+
+# key -> label, file format, speed (stitches per minute: a usual working speed, not the machine's
+# maximum; machine_spm only changes the figures) and the usual hoop sizes of that kind of machine
+# (the common sizes of each range, to confirm against the machine's own list).
 MACHINES: dict[str, dict] = {
-    "tajima": {"label": "Tajima, WONYO, Dahao, SWF, Ricoma (most commercial)", "format": "dst", "spm": 850},
-    "brother": {"label": "Brother / Babylock", "format": "pes", "spm": 650},
-    "janome": {"label": "Janome / Elna", "format": "jef", "spm": 650},
-    "bernina": {"label": "Bernina", "format": "exp", "spm": 650},
-    "melco": {"label": "Melco", "format": "exp", "spm": 850},
-    "barudan": {"label": "Barudan", "format": "u01", "spm": 850},
-    "husqvarna": {"label": "Husqvarna Viking / Pfaff", "format": "vp3", "spm": 650},
-    "singer": {"label": "Singer", "format": "xxx", "spm": 600},
+    "tajima": {"label": "Tajima, WONYO, Dahao, SWF, Ricoma (most commercial)", "format": "dst", "spm": 850, "hoops": _COMMERCIAL_HOOPS},
+    "brother": {"label": "Brother / Babylock", "format": "pes", "spm": 650, "hoops": _HOME_HOOPS},
+    "janome": {"label": "Janome / Elna", "format": "jef", "spm": 650, "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "200 x 200 mm")},
+    "bernina": {"label": "Bernina", "format": "exp", "spm": 650, "hoops": _HOME_HOOPS},
+    "melco": {"label": "Melco", "format": "exp", "spm": 850, "hoops": _COMMERCIAL_HOOPS},
+    "barudan": {"label": "Barudan", "format": "u01", "spm": 850, "hoops": _COMMERCIAL_HOOPS},
+    "husqvarna": {"label": "Husqvarna Viking / Pfaff", "format": "vp3", "spm": 650,
+                  "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "200 x 200 mm", "360 x 200 mm")},
+    "singer": {"label": "Singer", "format": "xxx", "spm": 600, "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "160 x 260 mm (6 x 10 in)")},
 }
 
 # key -> label, the longest side of the finished design in mm (None = keep the editor's
@@ -64,7 +92,10 @@ VALID = {
     "placement": lambda v: v in PLACEMENTS,
     "fabric": lambda v: v in FABRIC_IDS,
     "thread_chart": lambda v: isinstance(v, str) and v in threads.charts(),
+    # "b:<built-in id>" or "u:<own preset id>"; whose preset it is is checked in save / get
+    "preset": lambda v: (v[2:] in {b.id for b in BUILTINS}) if v.startswith("b:") else bool(_OWN_PRESET.fullmatch(v)),
 }
+_OWN_PRESET = re.compile(r"u:[1-9][0-9]{0,11}")
 KEYS = tuple(VALID)
 
 
@@ -104,14 +135,27 @@ def get(user_id: int) -> dict:
         data = json.loads(row["prefs"]) if row else {}
     except ValueError:
         data = {}
-    # a value that is no longer offered (a removed machine, a thread chart taken off the server)
-    # is forgotten, not an error
-    return {k: v for k, v in data.items() if k in VALID and _valid(k, v)}
+    # a value that is no longer offered (a removed machine, a thread chart taken off the server,
+    # a deleted preset) is forgotten, not an error
+    out = {k: v for k, v in data.items() if k in VALID and _valid(k, v)}
+    if "preset" in out and not _preset_is_theirs(user_id, out["preset"]):
+        del out["preset"]
+    return out
+
+
+def _preset_is_theirs(user_id: int, value: str) -> bool:
+    """A built-in, or one of this account's own presets (never another account's)."""
+    if not value.startswith("u:"):
+        return True
+    with db.tx() as c:
+        return c.execute("SELECT 1 FROM user_presets WHERE id = ? AND user_id = ?", (int(value[2:]), user_id)).fetchone() is not None
 
 
 def save(user_id: int, body: dict) -> dict:
     """Merge ``body`` into the account's preferences and return them all."""
     change = clean(body)
+    if change.get("preset") and not _preset_is_theirs(user_id, change["preset"]):
+        raise ValueError("Choose one of your own presets.")
     with db.tx() as c:
         row = c.execute("SELECT prefs FROM user_prefs WHERE user_id = ?", (user_id,)).fetchone()
         data = json.loads(row["prefs"]) if row else {}
@@ -131,8 +175,11 @@ def _check_tables() -> None:
     lo = max(RASTER_RANGES["width_mm"][0], VECTOR_RANGES["width_mm"][0])
     hi = min(RASTER_RANGES["width_mm"][1], VECTOR_RANGES["width_mm"][1])
     spm_lo, spm_hi = STITCH_RANGES["machine_spm"]
+    names = [h["name"] for h in HOOPS]
+    assert len(set(names)) == len(names)
     for k, m in MACHINES.items():
         assert m["format"] in FORMATS, k
+        assert m["hoops"] and set(m["hoops"]) <= set(names), k
         assert spm_lo <= m["spm"] <= spm_hi and m["spm"] % 50 == 0, k  # the editor's speed field steps by 50
     for k, p in PLACEMENTS.items():
         assert p["size_mm"] is None or lo <= p["size_mm"] <= hi, k

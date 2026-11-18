@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from typing import Callable
 
+import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
@@ -341,6 +342,61 @@ def ring_from(poly: Polygon, start: Pt, step: float, holes: bool = False) -> Pie
         pts.append(pts[0])
         pieces.append(pts)
     return pieces
+
+
+CURVE_TOLERANCE_MM = 0.15  # ring_adaptive: how far a stitch may cut across the outline
+CURVE_MIN_STEP_MM = 1.0  # ... and its shortest stitch (well above the shortest the thread takes)
+CURVE_SAMPLE_MM = 0.1
+
+
+def ring_adaptive(poly: Polygon, start: Pt, step: float, holes: bool = False) -> Pieces:
+    """Like ``ring_from``, but stitches get shorter where the outline bends, so they stay
+    within CURVE_TOLERANCE_MM of it (a 2 mm hole at 2.5 mm stitches is a pentagon, not a
+    triangle); straight parts keep ``step``. Stitches are never shorter than CURVE_MIN_STEP_MM."""
+    rings = [poly.exterior, *(poly.interiors if holes else [])]
+    pieces: Pieces = []
+    for ring in rings:
+        line = LineString(ring.coords)
+        length = line.length
+        if length < 3 * CURVE_MIN_STEP_MM:
+            continue
+        d0 = line.project(Point(start))
+        n = max(3, math.ceil(length / CURVE_SAMPLE_MM))
+        ts = [length * k / n for k in range(n + 1)]
+        dense = np.array([(p.x, p.y) for p in (line.interpolate((d0 + t) % length) for t in ts)])
+        out, i = [tuple(dense[0])], 0
+        while i < n:
+            best = None
+            for j in range(i + 1, n + 1):
+                if ts[j] - ts[i] > step + 1e-9:
+                    break
+                if ts[j] - ts[i] >= CURVE_MIN_STEP_MM and _within(dense, i, j, CURVE_TOLERANCE_MM):
+                    best = j
+                elif best is not None:
+                    break  # the outline turned away: stop at the last stitch that kept close
+            if best is None:  # a bend tighter than the shortest stitch: take the shortest stitch
+                best = next((j for j in range(i + 1, n + 1) if ts[j] - ts[i] >= CURVE_MIN_STEP_MM), n)
+            if n - best and ts[n] - ts[best] < CURVE_MIN_STEP_MM:
+                best = n  # no stitch shorter than the minimum at the end of the ring
+            out.append(tuple(dense[best]))
+            i = best
+        pieces.append([(float(x), float(y)) for x, y in out])
+    return pieces
+
+
+def _within(pts: np.ndarray, i: int, j: int, tol: float) -> bool:
+    """Do the outline points between i and j stay within ``tol`` of the straight stitch i-j?"""
+    if j - i < 2:
+        return True
+    a, b = pts[i], pts[j]
+    ab = b - a
+    seg = float(ab @ ab)
+    mid = pts[i + 1:j]
+    if seg < 1e-12:
+        return float(np.max(np.hypot(*(mid - a).T))) <= tol
+    t = np.clip(((mid - a) @ ab) / seg, 0.0, 1.0)
+    d = mid - (a + t[:, None] * ab)
+    return float(np.max(np.hypot(d[:, 0], d[:, 1]))) <= tol
 
 
 def _steps(length: float, step: float) -> list[float]:

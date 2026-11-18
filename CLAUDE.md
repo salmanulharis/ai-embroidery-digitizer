@@ -44,10 +44,11 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   by `tests/test_presets.py` + `tests/golden/presets.json` (`UPDATE_GOLDEN=1` after a deliberate change). Own presets:
   `custom_presets` + `max_custom_presets`, counted in the write transaction; after a downgrade they stay usable, only
   create / duplicate are refused. Premium built-in values are never sent without the tier.
-- `prefs.py`: per-account preferences (the machine for Export and a new design's speed, the usual placement for the
-  start step, the usual fabric and thread brand a new design starts with) as keys validated by `VALID` (fixed tables
-  `MACHINES`, `PLACEMENTS`, sent in `/api/config`; fabric ids; thread charts on the server), stored in `user_prefs`;
-  never design data.
+- `prefs.py`: per-account preferences (the machine for Export, a new design's speed and the hoops listed first, the
+  usual placement for the start step, the usual fabric, thread brand and preset a new design starts with) as keys
+  validated by `VALID` (fixed tables `HOOPS` (append only: options are chosen by position), `MACHINES`, `PLACEMENTS`,
+  sent in `/api/config`; fabric ids; thread charts on the server; own presets checked per account), stored in
+  `user_prefs`; never design data.
 - `usage.generation(uid, pid, feature)` wraps every stitch-output download: one charge per design (partial unique
   index `usage_one_charge`), atomic check+reserve, refunded on error. Re-downloads are free; SVG artwork is free.
 - `temp_projects` is the ownership authority for projects (not meta.json). Projects are temporary: deleted on new

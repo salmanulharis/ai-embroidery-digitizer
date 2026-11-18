@@ -32,7 +32,7 @@ class Fabric:
 
 def _settings(
     pull: float, fill: float, satin: float, foundation: float, satin_max: float = 10.0,
-    fill_under: str = "edge_tatami", satin_under: str = "edge", knockdown: bool = False,
+    fill_under: str = "edge_tatami", satin_under: str = "edge", knockdown: bool = False, sew_order: str = "standard",
 ) -> dict:
     return {
         "pull_compensation_mm": pull,
@@ -44,6 +44,7 @@ def _settings(
         "satin_underlay": satin_under,
         "satin_max_width_mm": satin_max,
         "knockdown": knockdown,
+        "sew_order": sew_order,  # every fabric sets it, so leaving the cap leaves its order too
     }
 
 
@@ -67,7 +68,7 @@ FABRICS: tuple[Fabric, ...] = (
     Fabric("towel", "Towel / terry", _settings(0.30, 0.40, 0.40, 2.0, fill_under="double_tatami", satin_under="edge_zigzag", knockdown=True),
            "Tearaway or washaway + water-soluble topping", "75/11 sharp",
            "Loops can swallow small text: make lettering larger than on flat fabric."),
-    Fabric("cap", "Cap", _settings(0.25, 0.38, 0.38, 2.0, satin_max=7.0),
+    Fabric("cap", "Cap", _settings(0.25, 0.38, 0.38, 2.0, satin_max=7.0, sew_order="cap"),
            "Cap backing (tearaway)", "75/11 sharp",
            "Keep the design under about 57 mm tall; sew from the centre outwards and from the bottom up."),
 )

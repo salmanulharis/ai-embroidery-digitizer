@@ -410,6 +410,27 @@ def blend_partners(design: Design, layer: ColorLayer, params: StitchParams) -> l
     return out
 
 
+def _centre(design: Design) -> Pt:
+    return (design.width_mm / 2, design.height_mm / 2)
+
+
+def _start_point(design: Design, params: StitchParams) -> Pt:
+    """Where the search for the first shape starts (StitchParams.sew_order)."""
+    if params.sew_order == "centre":
+        return _centre(design)
+    if params.sew_order == "cap":
+        return (design.width_mm / 2, design.height_mm)
+    return (0.0, 0.0)
+
+
+def cap_order(items: list[_Item], design: Design) -> list[_Item]:
+    """Caps are sewn from the bottom centre outwards (the front panel is held at the bottom
+    and pushed up and out by the stitching): the pieces of a colour by their distance from the
+    middle of the bottom edge, nearest first."""
+    origin = Point(design.width_mm / 2, design.height_mm)
+    return sorted(items, key=lambda it: it.geom.distance(origin))
+
+
 def _entry_distance(item: _Item, pos: Pt) -> float:
     return item.geom.distance(Point(pos))
 
@@ -477,7 +498,7 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
     design = design.normalized()
     blocks: list[ColorBlock] = []
     geoms: dict[int, BaseGeometry] = {}
-    pos: Pt = (0.0, 0.0)
+    pos: Pt = _start_point(design, params)
     oid = 0
     stroke_oids: set[int] = set()
     narrow_spots: list[Pt] = []
@@ -530,7 +551,13 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
             for it in items:
                 it.ink = ink
         block = ColorBlock(rgb=layer.rgb, name=layer.name)
-        ordered = sewing_order(items, pos) if params.optimize_order else None
+        if params.sew_order == "cap":  # caps: from the bottom centre outwards, in every colour
+            ordered = cap_order(items, design)
+        elif params.sew_order == "centre" and blocks and position == len(enabled) - 1:
+            # the last colour ends near the centre (the frame comes back a short way)
+            ordered = sewing_order(items, _centre(design))[::-1]
+        else:
+            ordered = sewing_order(items, pos) if params.optimize_order else None
         while items:
             if ordered is not None:
                 item = ordered.pop(0)

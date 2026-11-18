@@ -190,6 +190,32 @@ const Presets = (() => {
     }
     await Jobs.flush(); // earlier changes are recorded on their own
     const before = { stitch: stitchValues(), extract: extractValues() };
+    const { touchedStitch, touchedExtract, notes } = fill(sections);
+
+    const after = { stitch: stitchValues(), extract: extractValues() };
+    const stitchChanged = changedKeys(before.stitch, after.stitch), extractChanged = changedKeys(before.extract, after.extract);
+    // the preset is the new starting point for the settings it holds
+    if (state.baseline) {
+      touchedStitch.forEach((k) => (state.baseline.stitch[k] = after.stitch[k]));
+      touchedExtract.forEach((k) => (state.baseline.extract[k] = after.extract[k]));
+    }
+    applied = sections ? { name: label, values: snapshot() } : null; // any change after this shows "Changed"
+    markModified();
+
+    // one undo step: with the picture (the design is prepared again), or the stitch settings alone
+    if (extractChanged.length) Jobs.extract({ step: { label: `preset ${label}`, stitch: { before: before.stitch, after: after.stitch } } });
+    else if (stitchChanged.length) {
+      History.stitchChange(`preset ${label}`);
+      if (state.design) Jobs.stitch();
+    }
+    const n = stitchChanged.length + extractChanged.length;
+    toast(`Applied ${label} · ${n ? plural(n, "setting") + " changed" : "no settings changed"}.` +
+      (n ? " Undo with Ctrl+Z or the Undo button." : "") + (notes.length ? ` ${notes.join(" ")}` : ""), true);
+  }
+
+  /** Puts a preset's settings in the form: the fabric's values first, then the preset's own;
+   *  picture settings for pictures only. ``sections`` null = the app defaults. */
+  function fill(sections) {
     const touchedStitch = new Set(), touchedExtract = new Set();
     const notes = [];
 
@@ -221,26 +247,34 @@ const Presets = (() => {
     if (sections?.size) Object.entries(sections.size).forEach(([k, v]) => (ex[k] = v == null ? "" : v));
     Object.keys(ex).forEach((k) => touchedExtract.add(k));
     if (Object.keys(ex).length) setExtractValues(ex);
+    return { touchedStitch, touchedExtract, notes };
+  }
 
-    const after = { stitch: stitchValues(), extract: extractValues() };
-    const stitchChanged = changedKeys(before.stitch, after.stitch), extractChanged = changedKeys(before.extract, after.extract);
-    // the preset is the new starting point for the settings it holds
-    if (state.baseline) {
-      touchedStitch.forEach((k) => (state.baseline.stitch[k] = after.stitch[k]));
-      touchedExtract.forEach((k) => (state.baseline.extract[k] = after.extract[k]));
-    }
-    applied = sections ? { name: label, values: snapshot() } : null; // any change after this shows "Changed"
-    markModified();
-
-    // one undo step: with the picture (the design is prepared again), or the stitch settings alone
-    if (extractChanged.length) Jobs.extract({ step: { label: `preset ${label}`, stitch: { before: before.stitch, after: after.stitch } } });
-    else if (stitchChanged.length) {
-      History.stitchChange(`preset ${label}`);
-      if (state.design) Jobs.stitch();
-    }
-    const n = stitchChanged.length + extractChanged.length;
-    toast(`Applied ${label} · ${n ? plural(n, "setting") + " changed" : "no settings changed"}.` +
-      (n ? " Undo with Ctrl+Z or the Undo button." : "") + (notes.length ? ` ${notes.join(" ")}` : ""), true);
+  /** A new design starts with the account's usual preset (prefs "preset", My account): its
+   *  settings become starting values - no undo step, nothing marked as changed. The size is left
+   *  to the placement or the width typed on the start screen. Null when it is not there (deleted,
+   *  not loaded) or not in the plan; else {label, stitch: [setting keys it set]}. */
+  function applyStart(value) {
+    const f = value && find(value);
+    if (!f || f.p.locked || !f.p.sections) return null;
+    const { size, ...sections } = f.p.sections; // eslint-disable-line no-unused-vars
+    const { touchedStitch } = fill(sections);
+    applied = { name: nameOf(f.p), values: snapshot() };
+    $("presetPick").value = value;
+    showChoice();
+    return { label: nameOf(f.p), stitch: [...touchedStitch] };
+  }
+  /** After the starting values are all in: "Changed" compares with them. */
+  function settle() {
+    if (applied) applied.values = snapshot();
+    sync();
+  }
+  /** Presets to start new designs with (My account): the built-ins in the plan, then your own. */
+  function choices() {
+    return {
+      builtins: builtins.filter((p) => !p.locked).map((p) => ({ key: `b:${p.id}`, label: p.label })),
+      mine: mine.map((p) => ({ key: `u:${p.id}`, label: p.name })),
+    };
   }
 
   // ------------------------------------------------------------------ saving
@@ -483,8 +517,11 @@ const Presets = (() => {
     });
     window.addEventListener("resize", hidePop);
     $("leftPanel").querySelector(".ed-scroll")?.addEventListener("scroll", hidePop, { passive: true });
-    load();
+    loading = load();
   }
+  let loading = null;
+  /** Resolves once the presets have loaded (or failed to). */
+  const ready = () => loading || Promise.resolve();
   /** A new or reopened design: no preset applied yet. */
   function reset() {
     applied = null;
@@ -493,5 +530,5 @@ const Presets = (() => {
     sync();
   }
 
-  return { init, load, reset, sync, openManage, apply, offer, reoffer, status: () => status };
+  return { init, load, ready, reset, sync, settle, openManage, apply, applyStart, choices, offer, reoffer, status: () => status };
 })();

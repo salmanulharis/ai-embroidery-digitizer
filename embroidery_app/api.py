@@ -43,15 +43,7 @@ from .stitch.safety import DENSITY_CELL_MM, DENSITY_LIMIT
 log = logging.getLogger("embroidery")
 STATIC = Path(__file__).parent / "static"
 
-HOOPS = [
-    {"name": "100 x 100 mm", "width": 100, "height": 100},
-    {"name": "150 x 150 mm", "width": 150, "height": 150},
-    {"name": "200 x 200 mm", "width": 200, "height": 200},
-    {"name": "300 x 300 mm", "width": 300, "height": 300},
-    {"name": "360 x 200 mm", "width": 360, "height": 200},
-    {"name": "Cap 70 x 140 mm", "width": 140, "height": 70},
-    {"name": "Left chest ~90 mm", "width": 90, "height": 90},
-]
+HOOPS = prefs.HOOPS  # the hoops and which machine takes which: prefs.py
 
 
 @asynccontextmanager

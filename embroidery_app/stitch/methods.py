@@ -259,7 +259,8 @@ def sew_running(item: "_Item", angle: float, params: StitchParams, start: Pt) ->
 
 def sew_outline(item: "_Item", angle: float, params: StitchParams, start: Pt) -> list[Run]:
     """Running (or triple) stitch around a shape's outline and holes."""
-    pieces = gen.ring_from(item.geom, start, params.running_stitch_length_mm, holes=True)
+    ring = gen.ring_adaptive if params.running_curves else gen.ring_from  # shorter stitches on tight curves
+    pieces = ring(item.geom, start, params.running_stitch_length_mm, holes=True)
     if params.running_repeats >= 3:
         pieces = [gen.running(LineString(p), params.running_stitch_length_mm, 3) for p in pieces]
     return _runs("running", pieces, item.oid)

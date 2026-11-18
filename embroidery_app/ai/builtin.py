@@ -19,6 +19,11 @@ from ..geometry import iter_polygons
 from ..ingest.raster import _assign, _border_background, _denoise, _fold_edge_shades, _kmeans_lab
 from ..models import GUIDED_STYLES, STITCH_RANGES, THREAD_WEIGHTS, Design, StitchParams, StitchPlan
 
+# Fine 60 wt thread is thinner: satin needs closer stitches to cover (the "Small text & logos"
+# preset's value). The analysis, the thin-lettering fix and the fine_spacing check use it.
+FINE_SATIN_SPACING_MM = 0.35
+FINE_SPACING_CHECK_MM = 0.38  # satin spacing above this with 60 wt: standard (40 wt) density
+
 # Settings the assistant may change, with their valid ranges (models.STITCH_RANGES, as in the UI).
 STITCH_LIMITS: dict[str, tuple] = {
     **{k: STITCH_RANGES[k] for k in ("fill_spacing_mm", "fill_stitch_length_mm", "satin_spacing_mm", "satin_max_width_mm",
@@ -154,7 +159,7 @@ def analyze_image(rgba: np.ndarray, width_mm: float = 100.0) -> dict:
             "min_feature_mm": min_feature,
             "denoise": denoise,
         },
-        "stitch": {"thread_weight": thread_weight},
+        "stitch": _thread_stitch(thread_weight),
         "text": text,
         "cleanup": cleanup,
         "notes": notes,
@@ -201,6 +206,11 @@ def _thinnest_mm(labels: np.ndarray, groups, mm_per_px: float) -> float | None:
         found = dt[ridge]
         widths.append(2 * found[found < 1e30])
     return float(np.percentile(np.concatenate(widths), 10) * mm_per_px) if widths and sum(map(len, widths)) else None
+
+
+def _thread_stitch(thread_weight: int) -> dict:
+    """The analysis's stitch settings: the thread weight, with closer satin for fine thread."""
+    return {"thread_weight": 60, "satin_spacing_mm": FINE_SATIN_SPACING_MM} if thread_weight == 60 else {"thread_weight": thread_weight}
 
 
 def _size_advice(text: dict, thin_mm: float | None, width_mm: float) -> tuple[list[str], int]:
@@ -286,7 +296,7 @@ def analyze_design(design: Design) -> dict:
         "kind": "vector",
         "design_type": "logo",
         "extract": {"num_colors": max(1, colours)},
-        "stitch": {"thread_weight": thread_weight},
+        "stitch": _thread_stitch(thread_weight),
         "text": m["text"],
         "cleanup": "none",
         "notes": notes,
@@ -488,12 +498,20 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
                 f"{risk['thin']} spot(s) in small lettering are thinner than a 40 wt thread column and could not be "
                 "widened without closing gaps between letters. Fine 60 wt thread (with a 65/9 or 70/10 needle) sews "
                 "narrower columns cleanly - or make the design larger. See the Machine check view.",
-                thread_weight=60, code="thin_lettering", fix="Use fine 60 wt thread", resize=grow)
+                thread_weight=60, code="thin_lettering", resize=grow,
+                **({"satin_spacing_mm": FINE_SATIN_SPACING_MM, "fix": f"Use fine 60 wt thread ({FINE_SATIN_SPACING_MM} mm satin)"}
+                   if params.satin_spacing_mm > FINE_SATIN_SPACING_MM else {"fix": "Use fine 60 wt thread"}))
         else:
             add("medium", "Lettering thinner than the machine can sew",
                 f"{risk['thin']} spot(s) in small lettering are thinner than even fine thread can sew as satin; they are "
                 "sewn as a triple run or slightly narrow. Make the design larger for crisp letters. See the Machine check view.", code="thin_lettering", fix="Use fine 60 wt thread",
                 resize=grow)
+    if params.thread_weight == 60 and params.satin_spacing_mm > FINE_SPACING_CHECK_MM and any(
+            r.kind == "satin" for b in plan.blocks for r in b.runs):
+        add("medium", "Fine thread with standard spacing",
+            f"60 wt thread is thinner than standard thread: at {params.satin_spacing_mm:g} mm the satin may not cover. "
+            f"{FINE_SATIN_SPACING_MM} mm keeps it full.", satin_spacing_mm=FINE_SATIN_SPACING_MM, code="fine_spacing",
+            fix="Closer satin ({satin_spacing_mm} mm)")
     if risk.get("stack") or risk.get("short"):
         n = risk.get("stack", 0) + risk.get("short", 0)
         add("high", "Spots where the thread may break",

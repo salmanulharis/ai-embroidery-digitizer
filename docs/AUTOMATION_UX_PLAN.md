@@ -1,6 +1,6 @@
 # Automation, grouping and help: findings and what was built
 
-Status: **all batches (A–E, then F–J) built** (2026-11-18). It's Phase 8 in [ROADMAP.md](ROADMAP.md) §1 and follows
+Status: **all batches (A–E, F–J, then K–P) built** (2026-11-18). It's Phase 8 in [ROADMAP.md](ROADMAP.md) §1 and follows
 [EDITOR_UX_PLAN.md](EDITOR_UX_PLAN.md) (Phase 6) and [APP_UX_PLAN.md](APP_UX_PLAN.md) (Phase 7). The open decisions were
 taken as recommended; the machine speeds in B are starting values to confirm.
 
@@ -133,6 +133,29 @@ nothing checked the colour order after merges or for vector paint order; width-b
   Fills, small-lettering strokes and decorative styles keep the set value. Off = byte-identical stitches.
 - The width-based foundation (`satin_underlay = "auto"`) already existed; no fabric uses it until a sew-out.
 
+## 2c. Round three (K–P)
+
+- **K. Fine thread**: `ai/builtin.FINE_SATIN_SPACING_MM` (0.35, the Small text & logos value). The analysis answers
+  `stitch: {thread_weight: 60, satin_spacing_mm: 0.35}` for small lettering (AI-refined answers too); the editor
+  never widens the spacing (`applySmartStitch`) and puts both in the baseline. The thin-lettering fix includes it;
+  check `fine_spacing` (60 wt, satin spacing over 0.38 mm, satin in the design) offers it on its own.
+- **L. Hoops by machine**: `prefs.HOOPS` (moved from api.py; appended 130 × 180 and 160 × 260 mm; append only) and
+  `MACHINES[*].hoops`. The hoop list puts your machine's hoops first (`renderHoops`); `bestHoop` takes the smallest of
+  them that fits, else the smallest of all. Values are the common sizes of each range, to confirm.
+- **M. Usual preset**: preference `preset` ("b:<id>" / "u:<id>", own presets checked per account, a deleted one is
+  forgotten). `applyStartValues`: usual fabric, then the preset (`Presets.applyStart`, without its size; locked
+  built-ins are skipped), then a placement's fabric; all starting values. My account › *Start new designs with*.
+- **N. Where sewing starts**: `StitchParams.sew_order` = standard (unchanged) | centre (first shape nearest the
+  centre, the last colour sewn towards it) | cap (`planner.cap_order`: each colour by distance from the bottom centre).
+  Every fabric sets it ("cap" for Cap, "standard" otherwise), so leaving the cap leaves its order; saved designs keep
+  their values until a fabric is chosen again.
+- **O. Foundation and curves**: fill foundation `by_size` (its own name: per-shape "auto" already means satin by
+  width): edge run alone under `BY_SIZE_EDGE_ONLY_MM` (6 mm widest circle), else edge run + lattice.
+  `running_curves`: shape outlines use `generators.ring_adaptive` (stitches within 0.15 mm of the outline, at least
+  1 mm, at most the outline length) - a 2 mm hole becomes a pentagon instead of a triangle.
+- **P. Check my stitches** without AI runs like an update (no overlay) and lists only findings the Checks do not show,
+  with their changes; with AI it is unchanged.
+
 ## 3. Tests
 - New: `tests/test_checks.py`, `tests/test_style_groups.py`, `tests/test_help_coverage.py`, and preference tests in
   `tests/test_prefs.py`.
@@ -141,9 +164,12 @@ nothing checked the colour order after merges or for vector paint order; width-b
 - F–J: `tests/test_automation.py` (artwork analysis, `/analysis`, tone and presets, size / keep fixes, same thread,
   colour order end to end, compensation by width). Two older tests now state the exact rule: the only change offered
   for skipped marks keeps them (`test_text_detail.py`, `test_checks.py`).
+- K–P: `tests/test_automation_more.py`. The golden plans prove every new option is byte-identical when off.
 
 ## 4. Open
-- Confirm the machine speeds (`prefs.MACHINES[*].spm`).
+- Confirm the machine speeds and hoops (`prefs.MACHINES[*].spm`, `hoops`).
+- Sew-outs: Where sewing starts (centre, cap - the Cap fabric chooses it), Automatic-by-size fill foundation, shorter
+  stitches on tight curves.
 - Sew-out for *Compensation grows with satin width* (`PULL_REF_WIDTH_MM`, `PULL_SCALE`) before any preset or fabric
   turns it on; the tone thresholds for High contrast / Soft colours are first guesses to tune with real pictures.
 - Design-level warnings (`Design.warnings`, from preparing the picture) stay plain text: they are stored with the

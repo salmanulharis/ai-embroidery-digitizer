@@ -101,9 +101,18 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
 * **Thread brand** (Fabric, thread & machine): with thread charts in `THREAD_CHARTS_DIR`, the nearest thread of that
   brand for every colour, in the Thread order list, the worksheet and VP3 files. No chart is bundled (see Licences).
 * **Machine speed** (Fabric, thread & machine) for the time estimate; the worksheet also estimates the bobbin thread.
-* **Your defaults** (My account): your machine, usual placement, usual fabric and thread brand (`prefs.py`). A new
-  design starts with the fabric (a Cap front placement starts on Cap fabric), the thread brand and a usual speed for
-  your machine; these count as its starting values, so they are not marked as changed.
+* **Your defaults** (My account): your machine, usual placement, usual fabric, thread brand and the preset new
+  designs start with (`prefs.py`). A new design starts with the fabric, then the usual preset (without its size), then
+  a placement's fabric (Cap front starts on Cap fabric), the thread brand and a usual speed for your machine; these
+  count as its starting values, so they are not marked as changed. Your machine's usual hoops are listed first under
+  Size and picked first.
+* **Where sewing starts** (Advanced › Sewing order & thread cuts): Nearest shapes (as always), From the centre (start
+  and end near the centre: less frame travel) or Cap (every colour from the bottom centre outwards; the Cap fabric
+  chooses it). **Fill foundation Automatic by size** (edge run only on fills narrower than 6 mm) and **Shorter stitches
+  on tight curves** for running outlines are further choices. All are off by default; the stitches are unchanged.
+* **Fine thread**: choosing 60 wt from the smart analysis or the thin-lettering fix also sets 0.35 mm satin spacing;
+  the check *Fine thread with standard spacing* offers it otherwise. Without an AI service, *Check my stitches* lists
+  only what the Checks do not already show, without the full-screen wait.
 * **Theme** (account menu: System / Light / Dark) and a **woven** fabric texture under the stitches.
 * **Merge similar colours** (Threads ⋯ menu): pairs of threads that look alike (CIEDE2000), each merged into the
   colour that covers more; all in one step, one Undo separates them.

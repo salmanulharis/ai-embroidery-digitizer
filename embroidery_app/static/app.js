@@ -234,7 +234,7 @@ async function init() {
   Admin.init();
   state.config = await api("/api/config");
   const hoop = $("hoop");
-  hoop.innerHTML = '<option value="">Custom size</option>' + state.config.hoops.map((h, i) => `<option value="${i}">${esc(h.name)}</option>`).join("");
+  renderHoops();
   hoop.onchange = () => {
     const h = state.config.hoops[hoop.value];
     if (h) {
@@ -285,6 +285,7 @@ async function init() {
   await AI.init(state.config); // this account's AI settings
   Account.init(state.config); // plan + usage chip, account page, admin console
   await Prefs.load(); // machine and usual placement (prefs.py)
+  renderHoops(); // your machine's hoops first
   renderStart();
   Presets.init(); // built-in and own settings presets (presets.js)
   history.replaceState({ page: "upload" }, "");
@@ -367,8 +368,7 @@ async function smartDefaults() {
     ["brightness", "contrast", "sharpen"].forEach((k) => ($(k).value = 0));
     showAdjustValues();
   }
-  const tw = r.stitch && r.stitch.thread_weight;
-  if (tw && $("stitchForm").elements.thread_weight) $("stitchForm").elements.thread_weight.value = String(tw);
+  state.smartStitch = applySmartStitch(r.stitch);
   const { facts, look } = smartFacts(r);
   // the picture needs a look (noisy, low resolution, a photo, no plain background): open Picture
   if (look) {
@@ -377,6 +377,17 @@ async function smartDefaults() {
   }
   SmartLine.show(facts, r.notes || []);
   Presets.offer(r.preset); // a preset that suits the picture, offered with a button (never applied by itself)
+}
+
+/** The analysis's stitch settings: the thread weight and, for fine thread, its closer satin
+ *  (never a wider spacing than the form has). Returns the values set, for the baseline. */
+function applySmartStitch(st) {
+  const f = $("stitchForm").elements, set = {};
+  if (st?.thread_weight && f.thread_weight) set.thread_weight = f.thread_weight.value = String(st.thread_weight);
+  if (st?.satin_spacing_mm && f.satin_spacing_mm && +f.satin_spacing_mm.value > st.satin_spacing_mm) {
+    set.satin_spacing_mm = f.satin_spacing_mm.value = String(st.satin_spacing_mm);
+  }
+  return set;
 }
 
 /** What the analysis found, short: one line in the panel (Details has the explanations).
@@ -521,14 +532,33 @@ function aspect() {
 // what the smart analysis says about small lettering. Values from prefs.PLACEMENTS.
 const placementOf = (key) => (state.config.placements || []).find((p) => p.key === key) || null;
 const clampWidth = (w) => Math.max(10, Math.min(500, Math.round(w)));
+/** The hoops of the account's machine (prefs.MACHINES "hoops", names from the hoop list). */
+const machineHoops = () => new Set((state.config.machines || []).find((m) => m.key === Prefs.get("machine"))?.hoops || []);
 function bestHoop(w, h, cap) {
   const hoops = state.config.hoops.map((hp, i) => ({ ...hp, i }));
   if (cap) { const c = hoops.find((x) => /cap/i.test(x.name)); if (c) return String(c.i); }
   const m = 6; // a little room around the design
-  const fits = hoops.filter((x) => !/cap|chest/i.test(x.name))
+  const fitting = (list) => list.filter((x) => !/cap|chest/i.test(x.name))
     .filter((x) => (w + m <= x.width && h + m <= x.height) || (w + m <= x.height && h + m <= x.width))
     .sort((a, b) => a.width * a.height - b.width * b.height);
-  return fits.length ? String(fits[0].i) : "";
+  const mine = machineHoops();
+  // the smallest of your machine's hoops that fits; when none of them does, the smallest of all
+  const fits = (mine.size && fitting(hoops.filter((x) => mine.has(x.name)))) || [];
+  const any = fits.length ? fits : fitting(hoops);
+  return any.length ? String(any[0].i) : "";
+}
+/** The hoop list under Size: your machine's hoops first, then the others (each option's value is
+ *  its place in the list, so a chosen hoop stays chosen when the list is drawn again). */
+function renderHoops() {
+  const sel = $("hoop"), cur = sel.value, mine = machineHoops();
+  const opt = ([h, i]) => `<option value="${i}">${esc(h.name)}</option>`;
+  const all = state.config.hoops.map((h, i) => [h, i]);
+  const yours = all.filter(([h]) => mine.has(h.name));
+  sel.innerHTML = '<option value="">Custom size</option>' + (yours.length
+    ? `<optgroup label="Your machine's hoops">${yours.map(opt).join("")}</optgroup>` +
+      `<optgroup label="Other hoops">${all.filter(([h]) => !mine.has(h.name)).map(opt).join("")}</optgroup>`
+    : all.map(opt).join(""));
+  sel.value = cur;
 }
 const fabricLabel = (id) => ((state.config.fabrics || []).find((f) => f.id === id)?.label || id).replace(/ \(.*\)$/, "").toLowerCase();
 /** The fabric a placement starts with (prefs.PLACEMENTS "fabric"), when the server has it. */
@@ -544,16 +574,22 @@ function setFabric(id) {
   applyFabric(id);
   return true;
 }
-/** A new design starts with the account's usual fabric (a placement's fabric wins), thread brand
- *  and its machine's speed (prefs.py, My account). These become part of its starting values, so
- *  they are not marked as changed. */
+/** A new design starts with the account's usual fabric, usual preset (it wins over the usual
+ *  fabric), a placement's fabric (it wins over both: a cap), thread brand and its machine's speed
+ *  (prefs.py, My account). These become part of its starting values, so they are not marked as
+ *  changed. Returns the usual preset applied ({label, stitch}) or null. */
 function applyStartValues(placement) {
   const f = $("stitchForm"), keys = new Set();
-  const fabric = placementFabric(placement) || Prefs.get("fabric");
-  if (fabric && setFabric(fabric)) {
+  const addFabric = (fabric) => {
+    if (!fabric || !setFabric(fabric)) return;
     keys.add("fabric");
     Object.keys((state.config.fabrics || []).find((x) => x.id === fabric)?.settings || {}).forEach((k) => keys.add(k));
-  }
+  };
+  const place = placementFabric(placement);
+  if (!place) addFabric(Prefs.get("fabric"));
+  const usual = Presets.applyStart(Prefs.get("preset"));
+  (usual?.stitch || []).forEach((k) => keys.add(k));
+  addFabric(place);
   const chart = Prefs.get("thread_chart"), cs = f.elements.thread_chart;
   if (chart && cs && [...cs.options].some((o) => o.value === chart)) { cs.value = chart; keys.add("thread_chart"); }
   const spm = (state.config.machines || []).find((m) => m.key === Prefs.get("machine"))?.spm;
@@ -561,6 +597,7 @@ function applyStartValues(placement) {
   const now = stitchValues();
   state.startStitch = Object.fromEntries([...keys].filter((k) => k in now).map((k) => [k, now[k]]));
   updateStyleParams();
+  return usual;
 }
 /** Size and hoop for a placement; ``a`` = width / height of the design. False: nothing set. */
 function applyPlacement(key, a) {
@@ -746,8 +783,14 @@ async function upload(file, { placement = null, width = null, onProgress = null 
     showPage("editor");
     await busy("Analysing your picture…", analyse).catch(() => {});
   }
-  applyStartValues(placement); // your usual fabric, thread brand and machine speed (My account)
+  await Presets.ready(); // the usual preset needs the presets
+  const usual = applyStartValues(placement); // your usual fabric, preset, thread brand and machine speed (My account)
   setBaseline(); // what this design starts with: marks and resets compare with it
+  Presets.settle(); // "Changed" next to the usual preset compares with these starting values
+  if (usual) {
+    if (state.smart) SmartLine.update(smartFacts(state.smart).facts, state.smart.notes || []); // e.g. its thread
+    toast(`Started with your usual preset ${usual.label}.`, true);
+  }
   History.reset();
   await Jobs.extract({ delay: 0 }); // the stitches follow by themselves
 }
@@ -756,7 +799,7 @@ async function upload(file, { placement = null, width = null, onProgress = null 
 function openProject(meta) {
   Jobs.reset();
   if (state.playing) togglePlay();
-  Object.assign(state, { project: meta, design: null, preview: null, smart: null, smartWidth: 0, viewMoved: false, autoPane: true, baseline: null, startStitch: null });
+  Object.assign(state, { project: meta, design: null, preview: null, smart: null, smartWidth: 0, smartStitch: null, viewMoved: false, autoPane: true, baseline: null, startStitch: null });
   SmartRefresh.reset();
   $("placement").value = "";
   Shapes.reset();
@@ -1224,6 +1267,7 @@ const UNDERLAY_LABELS = {
     ["edge_tatami", "Edge run + lattice (standard)"],
     ["edge", "Edge run only (light)"],
     ["double_tatami", "Edge run + double lattice (stretchy or fluffy fabric)"],
+    ["by_size", "Automatic by size (edge run only on small fills)"],
     ["none", "None"],
   ],
   satin: [
@@ -1245,6 +1289,8 @@ UNDERLAY_FIELDS.push(["pattern", "tile", "Pattern fill pattern"]);
 UNDERLAY_FIELDS.push(["motif", "motif", "Motif"]);
 UNDERLAY_LABELS.photo = [["rows", "Rows, one thread (Photo Flash)"], ["reef", "Reef: meander, one thread"], ["colour", "Rows in every colour"]];
 UNDERLAY_FIELDS.push(["photo_style", "photo", "Photo stitch style"]);
+UNDERLAY_LABELS.sew = [["standard", "Nearest shapes (standard)"], ["centre", "From the centre (start and end near it)"], ["cap", "Cap: bottom centre outwards"]];
+UNDERLAY_FIELDS.push(["sew_order", "sew", "Where sewing starts"]);
 const CHECKS = [
   ["optimize", "Smart stitch reduction"],
   ["underlay", "Foundation stitches (recommended)"],
@@ -1258,6 +1304,7 @@ const CHECKS = [
   ["photo_stitch", "Photo stitch: the whole picture as a photo texture"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
   ["pull_by_width", "Compensation grows with satin width"],
+  ["running_curves", "Shorter stitches on tight curves (outlines)"],
 ];
 // Settings that only matter for some stitch styles (see stitch/outlines.py, fills.py,
 // decorative.py, guided.py): shown under "Style settings" when the design uses one of
@@ -1276,9 +1323,9 @@ const isStyleParam = (k) => k in STYLE_PARAMS;
 // help entry), title, settings]. Settings not named here are listed under "Other settings".
 const ADVANCED_GROUPS = [
   ["adv_foundation", "Foundation", ["fill_underlay", "satin_underlay", "underlay_spacing_mm"]],
-  ["adv_length", "Stitch length & texture", ["fill_stitch_length_mm", "running_stitch_length_mm", "fill_pattern"]],
+  ["adv_length", "Stitch length & texture", ["fill_stitch_length_mm", "running_stitch_length_mm", "running_curves", "fill_pattern"]],
   ["adv_satin", "Satin width & compensation", ["satin_max_width_mm", "push_compensation_mm", "pull_by_width"]],
-  ["adv_order", "Sewing order & thread cuts", ["optimize_order", "trim_threshold_mm", "tie_stitches", "min_object_area_mm2"]],
+  ["adv_order", "Sewing order & thread cuts", ["sew_order", "optimize_order", "trim_threshold_mm", "tie_stitches", "min_object_area_mm2"]],
   ["adv_effects", "Special effects", ["knockdown", "trapunto", "triple_run", "photo_stitch"]],
 ];
 // settings that change only the figures (time estimate): with the fabric, thread and machine
@@ -1437,8 +1484,8 @@ const changedKeys = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.ke
 
 /** The settings a fresh design starts from (after the upload and its smart analysis). */
 function setBaseline(saved = null) {
-  const tw = state.smart?.stitch?.thread_weight;
-  state.baseline = saved || { extract: extractValues(), stitch: { ...defaultStitch, ...(state.startStitch || {}), ...(tw ? { thread_weight: String(tw) } : {}) } };
+  // the analysis's stitch values, then the starting values (fabric, usual preset, …), which win
+  state.baseline = saved || { extract: extractValues(), stitch: { ...defaultStitch, ...(state.smartStitch || {}), ...(state.startStitch || {}) } };
   markModified();
 }
 

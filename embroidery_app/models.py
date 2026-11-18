@@ -200,7 +200,9 @@ def normalize_angle(value: float) -> float:
 FILL_PATTERNS = ("standard", "brick", "diagonal", "random")
 
 # Named foundation (underlay) types, see stitch/underlay.py.
-FILL_UNDERLAYS = ("none", "edge", "edge_tatami", "double_tatami")
+# "by_size": edge run only under small fills, edge run + lattice under larger ones (its own name:
+# the per-shape foundation choice is shared with satin, where "auto" already means by width)
+FILL_UNDERLAYS = ("none", "edge", "edge_tatami", "double_tatami", "by_size")
 SATIN_UNDERLAYS = ("none", "center", "edge", "zigzag", "edge_zigzag", "double_zigzag", "auto")
 UNDERLAY_STYLES = tuple(dict.fromkeys(FILL_UNDERLAYS + SATIN_UNDERLAYS))
 
@@ -496,6 +498,10 @@ class Design:
 
 
 THREAD_WEIGHTS = (40, 60)
+# Where sewing starts (StitchParams.sew_order, stitch/planner.py): "standard" = the nearest shapes
+# from the design's top-left corner (as always); "centre" = start at the shape nearest the centre
+# and end the last colour near it; "cap" = every colour from the bottom centre outwards.
+SEW_ORDERS = ("standard", "centre", "cap")
 
 
 @dataclass
@@ -514,6 +520,7 @@ class StitchParams:
     satin_min_width_mm: float = 1.0  # 40 wt: narrower than ~1 mm breaks thread (Melco, ZSK)
     running_stitch_length_mm: float = 2.5
     running_repeats: int = 1  # 3 = bean / triple stitch
+    running_curves: bool = False  # shape outlines: shorter stitches on tight curves (generators.ring_adaptive)
     border_width_mm: float = 2.0  # zigzag / E-stitch borders (a stroked line keeps its own width)
     border_spacing_mm: float = 1.2  # gap between zigzag / E-stitch border stitches
     stipple_spacing_mm: float = 2.0  # gap between the lines of stipple and maze fills
@@ -544,6 +551,7 @@ class StitchParams:
     push_compensation_mm: float = 0.0
     min_object_area_mm2: float = 0.05  # keeps dots/punctuation of lettering (enlarged to a sewable dot); specks are removed in step 2
     trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
+    sew_order: str = "standard"  # where sewing starts: SEW_ORDERS (the Cap fabric sets "cap")
     tie_stitches: bool = True
     max_stitch_mm: float = 7.0
     machine_spm: int = 750  # average speed incl. slowdowns (stitches/min): time estimate only, see StitchPlan.stats
@@ -579,6 +587,8 @@ class StitchParams:
             self.photo_style = "rows"
         if self.satin_underlay not in SATIN_UNDERLAYS:
             self.satin_underlay = "edge"
+        if self.sew_order not in SEW_ORDERS:
+            self.sew_order = "standard"
         if not isinstance(self.thread_chart, str) or not re.fullmatch(r"[a-z0-9-]{0,48}", self.thread_chart):
             self.thread_chart = ""  # a chart id (file name); unknown ids are ignored where charts are used
 

@@ -307,12 +307,23 @@ const AI = (() => {
   }
 
   async function review() {
-    const r = await busy(payload("vision") ? "The AI is checking your stitches…" : "Checking your stitches…",
-      () => api(`/api/projects/${state.project.id}/ai/review`, json("POST", { ai: payload("vision") })));
+    const ai = payload("vision");
+    const ask = () => api(`/api/projects/${state.project.id}/ai/review`, json("POST", { ai }));
+    // without AI the check takes a moment and Checks already show its important findings: it runs
+    // like any update (no overlay) and lists only what Checks do not show
+    const r = await (ai ? busy("The AI is checking your stitches…", ask) : work("Checking your stitches…", ask));
     const verdict = { good: ["good", "Looks good to sew"], ok: ["ok", "OK – a few things to consider"], needs_work: ["bad", "Needs attention before sewing"] }[r.overall] || ["ok", r.overall];
     const icon = { high: "⚠", medium: "●", low: "ℹ" };
     const form = $("stitchForm");
-    const changes = Object.entries(r.changes || {});
+    let changes = Object.entries(r.changes || {}), inChecks = 0;
+    if (r.source !== "ai") {
+      const shown = new Set(Checks.list().map((c) => c.code).filter(Boolean));
+      const rest = r.issues.filter((i) => !(i.code && shown.has(i.code)));
+      inChecks = r.issues.length - rest.length;
+      const keys = new Set(rest.flatMap((i) => Object.keys(i.change || {})));
+      changes = changes.filter(([k]) => keys.has(k));
+      r.issues = rest;
+    }
     const now = (k) => { const el = form.elements[k]; return el ? (el.type === "checkbox" ? (el.checked ? "on" : "off") : el.value) : "–"; };
     const fmt = (v) => (v === true ? "on" : v === false ? "off" : v);
     $("aiReviewResult").innerHTML = `
@@ -321,7 +332,8 @@ const AI = (() => {
         <span class="small muted">${r.source === "ai" ? `Checked by ${esc(r.provider)} (${esc(r.model)}) and built-in rules` : "Built-in check"}</span></p>
       ${r.issues.length ? `<ul class="issues">${r.issues.map((i) => `<li class="${i.severity}"><span aria-hidden="true">${icon[i.severity]}</span>
         <b>${esc(i.title)}</b>${i.by_ai ? ` <span class="badge">AI</span>` : ""} – <span class="small">${esc(i.detail)}</span></li>`).join("")}</ul>`
-        : `<p class="small">No problems found.</p>`}
+        : `<p class="small">${inChecks ? "Nothing more than the Checks show." : "No problems found."}</p>`}
+      ${inChecks ? `<p class="small muted">${inChecks} finding${inChecks === 1 ? " is" : "s are"} under Checks, with ${inChecks === 1 ? "its" : "their"} fixes.</p>` : ""}
       ${changes.length ? `<table class="ai-table"><tr><th>Setting</th><th>Suggested</th><th>Now</th></tr>
         ${changes.map(([k, v]) => `<tr class="diff"><td>${esc(settingLabel(k))}</td><td><b>${esc(fmt(v))}</b></td><td>${esc(now(k))}</td></tr>`).join("")}</table>
         <button type="button" class="primary" data-apply-review>Apply suggestions &amp; recreate stitches</button>` : ""}`;

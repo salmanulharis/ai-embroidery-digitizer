@@ -39,7 +39,7 @@ from . import db, entitlements
 from .entitlements import EntitlementError
 from .fabrics import FABRIC_IDS
 from .ingest.raster import BACKGROUNDS, RASTER_RANGES
-from .models import FILL_PATTERN_TILES, FILL_PATTERNS, FILL_UNDERLAYS, SATIN_UNDERLAYS, STITCH_RANGES, THREAD_WEIGHTS
+from .models import FILL_PATTERN_TILES, FILL_PATTERNS, FILL_UNDERLAYS, SATIN_UNDERLAYS, SEW_ORDERS, STITCH_RANGES, THREAD_WEIGHTS
 
 SCHEMA = 1
 SECTIONS = ("stitch", "fabric", "image", "size")
@@ -118,6 +118,7 @@ KEYS: dict[str, Key] = {
     "tie_stitches": _BOOL_S,
     "optimize_order": _BOOL_S,
     "trapunto": _BOOL_S,
+    "running_curves": _BOOL_S,
     "motif_warp": _BOOL_S,
     "photo_stitch": _BOOL_S,
     # fabric & thread
@@ -129,6 +130,7 @@ KEYS: dict[str, Key] = {
     "underlay_spacing_mm": _num("fabric", *STITCH_RANGES["underlay_spacing_mm"]),
     "fill_underlay": _enum("fabric", FILL_UNDERLAYS),
     "satin_underlay": _enum("fabric", SATIN_UNDERLAYS),
+    "sew_order": _enum("fabric", SEW_ORDERS),
     "knockdown": _BOOL_F,
     "pull_by_width": _BOOL_F,
     # picture (raster designs)

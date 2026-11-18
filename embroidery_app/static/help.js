@@ -7,7 +7,7 @@ const HELP = {
   hoop: {
     t: "Hoop size",
     what: "The frame on your machine that holds the fabric tight while sewing.",
-    why: "Picking your hoop sets a design width that fits inside it with a safe margin.",
+    why: "Picking your hoop sets a design width that fits inside it with a safe margin. With your machine chosen in My account, its usual hoops are listed first and picked first.",
     eg: "Choose “Left chest” for a small logo on a polo shirt.",
   },
   width_mm: {
@@ -373,6 +373,12 @@ const HELP = {
     why: "Shorter jumps mean fewer thread cuts and less machine time; the stitches themselves do not change.",
     eg: "Leave it on. Turn it off only to compare with the plain nearest-shape-next order.",
   },
+  sew_order: {
+    t: "Where sewing starts",
+    what: "Nearest shapes starts with the shapes nearest the design's top-left corner. From the centre starts with the shape nearest the centre and sews the last colour towards it, so the design also ends near the centre. Cap sews every colour from the bottom centre outwards.",
+    why: "The machine starts at the centre of the hoop: starting and ending near it means less travel of the frame. On a cap, sewing from the bottom centre outwards pushes the fabric away instead of bunching it.",
+    eg: "The Cap fabric chooses Cap. Try From the centre on large designs. Check with a test sew-out.",
+  },
   fill_pattern: {
     t: "Fill texture",
     what: "How the needle points of tatami fill rows shift from row to row. Standard spreads them in a brick pattern; diagonal lines them up into visible twill lines; random hides every line.",
@@ -461,7 +467,7 @@ const HELP = {
     t: "Foundation under fills",
     what: "Stitches sewn first, under each filled area, to hold the fabric still. Edge run + lattice is a run just inside the outline plus an open grid; the double lattice adds a second, crossing grid.",
     why: "Without a foundation the fill pulls the fabric in and the edges look ragged; stretchy or fluffy fabric needs more of it.",
-    eg: "Standard for most fabric; double lattice for fleece and towels; edge run only for small or light fills.",
+    eg: "Standard for most fabric; double lattice for fleece and towels; edge run only for small or light fills. Automatic by size gives small fills (narrower than 6 mm) an edge run only and larger fills the lattice too.",
   },
   satin_underlay: {
     t: "Foundation under satin",
@@ -532,7 +538,13 @@ const HELP = {
     t: "Outline stitch length",
     what: "Length of each stitch in thin outline lines.",
     why: "Shorter stitches follow curves more smoothly.",
-    eg: "2.5 mm for most lines, 1.5–2 mm for small, tight curves.",
+    eg: "2.5 mm for most lines, 1.5–2 mm for small, tight curves – or turn on “Shorter stitches on tight curves”.",
+  },
+  running_curves: {
+    t: "Shorter stitches on tight curves",
+    what: "Outlines sewn as a running stitch get shorter stitches where they bend, so no stitch cuts across the curve by more than 0.15 mm; straight parts keep the outline stitch length. Stitches stay at least 1 mm long.",
+    why: "A small hole or dot sewn with long stitches becomes a polygon (a 2 mm hole at 2.5 mm stitches is a triangle).",
+    eg: "Off by default. Turn it on for small round lettering or dotted details; check with a test sew-out.",
   },
   underlay_spacing_mm: {
     t: "Foundation spacing",
@@ -677,6 +689,12 @@ const HELP = {
     what: "The fabric most of your designs are sewn on. Every new design starts with its settings (foundation, compensation, density), as if you had chosen it under Fabric, thread & machine.",
     why: "One choice less for every design. A Cap front placement still starts on Cap fabric.",
     eg: "A shop that mostly sews polo shirts: Polo piqué.",
+  },
+  account_preset: {
+    t: "Start new designs with",
+    what: "A preset every new design starts with, after the smart analysis and your usual fabric: its settings are the design's starting values, so nothing is marked as changed. Its size settings are left out (the placement or the width you type decide the size).",
+    why: "If you always apply the same preset, you no longer have to. A Cap front placement still starts on Cap fabric; built-in presets work only while your plan includes them.",
+    eg: "Your own “Polo logos” preset, or Small text & logos for a shop that sews mostly lettering.",
   },
   file_menu: {
     t: "File",
@@ -884,6 +902,11 @@ const HELP = {
     what: "A colour sewn only as outlines or lettering comes before a fill it borders.",
     why: "Sewn last, outlines and lettering sit on top and cover the fill's edge; sewn first, the fill pushes over them. The button moves each such colour to just after the last fill it borders (one undo step). Ignore it if the order is on purpose.",
   },
+  check_fine_spacing: {
+    t: "Fine thread with standard spacing",
+    what: "The design uses fine 60 wt thread, but satin stitches are as far apart as for standard 40 wt thread.",
+    why: "Fine thread is thinner, so the satin may not cover the fabric. The fix sets 0.35 mm, the spacing of the Small text & logos preset.",
+  },
   check_fix_all: {
     t: "Fix all",
     what: "Applies the setting change of every important check at once, as one undo step.",
@@ -936,7 +959,13 @@ const OPTION_HELP = {
     edge_tatami: "A run just inside the outline plus an open grid: right for most fabric.",
     edge: "Only the run inside the outline: small or light fills.",
     double_tatami: "Two crossing grids: fleece, towels, stretchy knits.",
+    by_size: "Small fills get only the edge run, larger fills the grid too.",
     none: "No foundation: only for very light designs on firm fabric.",
+  },
+  sew_order: {
+    standard: "Starts with the shapes nearest the top-left corner, as always.",
+    centre: "Starts at the centre and ends the last colour near it: less frame travel.",
+    cap: "Every colour from the bottom centre outwards: for caps.",
   },
   satin_underlay: {
     edge: "A run inside both edges: most fabric.",

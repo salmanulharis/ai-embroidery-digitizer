@@ -101,7 +101,7 @@ def _merge_suggestion(base: dict, ai: dict, label: str, model: str) -> dict:
     if ai.get("detail_level") == "high" or ai.get("has_small_text") is True:
         ext["min_feature_mm"] = min(ext["min_feature_mm"], _DETAIL_HIGH_MM)
     if ai.get("has_small_text") is True and out.get("text", {}).get("found"):
-        out.setdefault("stitch", {})["thread_weight"] = 60
+        out["stitch"] = builtin._thread_stitch(60)  # fine thread, with its closer satin
     elif ai.get("detail_level") == "low":
         ext["min_feature_mm"] = max(ext["min_feature_mm"], _DETAIL_LOW_MM)
     if ai.get("picture_quality") in _QUALITY_DENOISE:

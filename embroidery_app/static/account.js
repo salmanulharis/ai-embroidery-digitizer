@@ -50,6 +50,17 @@ const Account = (() => {
   const when = (t, opts = { dateStyle: "medium" }) => (t ? new Date(t * 1000).toLocaleString(undefined, opts) : "");
   const whenLong = (t) => when(t, { dateStyle: "medium", timeStyle: "short" });
 
+  /** Your defaults: the preset new designs start with (built-ins in the plan, then your own). */
+  function presetField() {
+    const { builtins, mine } = Presets.choices(), cur = Prefs.get("preset");
+    if (!builtins.length && !mine.length) return "";
+    const o = (x) => `<option value="${esc(x.key)}" ${x.key === cur ? "selected" : ""}>${esc(x.label)}</option>`;
+    return `<label><span class="lbl">Start new designs with <i data-help="account_preset"></i></span><select id="accPreset">` +
+      `<option value="">No preset (the smart analysis and your defaults)</option>` +
+      (builtins.length ? `<optgroup label="Built-in presets">${builtins.map(o).join("")}</optgroup>` : "") +
+      (mine.length ? `<optgroup label="Your presets">${mine.map(o).join("")}</optgroup>` : "") + `</select></label>`;
+  }
+
   /** "ok" | "approaching" | "exhausted" | "unlimited" - always shown with words, not colour alone. */
   function level(u) {
     if (u.unlimited) return "unlimited";
@@ -114,11 +125,13 @@ const Account = (() => {
       <label><span class="lbl">Designs are usually for <i data-help="placement"></i></span><select id="accPlacement">${opts(state.config.placements || [], Prefs.get("placement"), "Ask each time")}</select></label>
       <label><span class="lbl">Usual fabric <i data-help="account_fabric"></i></span><select id="accFabric">${opts((state.config.fabrics || []).map((f) => ({ key: f.id, label: f.label })), Prefs.get("fabric"), "No usual fabric (General)")}</select></label>
       ${(state.config.thread_charts || []).length ? `<label><span class="lbl">Thread brand <i data-help="thread_chart"></i></span><select id="accChart">${opts(state.config.thread_charts.map((c) => ({ key: c.id, label: c.name })), Prefs.get("thread_chart"), "None – colours only")}</select></label>` : ""}
+      ${presetField()}
       <p class="small muted">Used by Export, after you choose a file and for every new design. Saved for your account.</p>`;
-    $("accMachine").onchange = () => Prefs.set("machine", $("accMachine").value || null).then(() => toast("Saved.", true));
+    $("accMachine").onchange = () => Prefs.set("machine", $("accMachine").value || null).then(() => { renderHoops(); toast("Saved.", true); });
     $("accPlacement").onchange = () => Prefs.set("placement", $("accPlacement").value || null).then(() => toast("Saved.", true));
     $("accFabric").onchange = () => Prefs.set("fabric", $("accFabric").value || null).then(() => toast("Saved. New designs start with it.", true));
     if ($("accChart")) $("accChart").onchange = () => Prefs.set("thread_chart", $("accChart").value || null).then(() => toast("Saved. New designs start with it.", true));
+    if ($("accPreset")) $("accPreset").onchange = () => Prefs.set("preset", $("accPreset").value || null).then(() => toast("Saved. New designs start with it.", true));
     const ai = data.ai;
     const aiLine = (label, x) => x
       ? `<li><b>${esc(label)}:</b> ${esc(x.label)} · ${esc(x.model)} ${x.ready ? `<span class="status good">✓ ${x.own_key ? "your key" : "app access"}</span>` : `<span class="status bad">✗ not set up</span>`}</li>`
