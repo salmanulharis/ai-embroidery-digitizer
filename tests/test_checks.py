@@ -71,7 +71,10 @@ def test_review_issues_carry_code_change_and_ids():
     r = review_plan(plan_stitches(d, p), d, p)
     by = {i["code"]: i for i in r["issues"]}
     assert by["underlay_off"]["change"] == {"underlay": True}
-    assert by["skipped_marks"]["ids"] == [d.objects[1].id] and "change" not in by["skipped_marks"]
+    # the skipped mark (0.01 mm²) is kept by going down to the default, never lower (marks become a sewable dot)
+    assert by["skipped_marks"]["ids"] == [d.objects[1].id]
+    assert by["skipped_marks"]["change"] == {"min_object_area_mm2": StitchParams().min_object_area_mm2}
+    assert by["skipped_marks"]["fix"].startswith("Keep them")
     assert r["changes"]["underlay"] is True  # the combined changes stay as before
     assert all(i["code"] for i in r["issues"])
 

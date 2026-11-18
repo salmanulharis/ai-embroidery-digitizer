@@ -28,7 +28,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from .ai import tasks as ai_tasks
-from .ai.builtin import review_plan
+from .ai.builtin import analyze_design, analyze_image, review_plan
 from .config import settings
 from .export import FORMATS, design_to_eps, design_to_svg, export_embroidery, plan_preview_json, render_png, worksheet
 from .ingest import detect_kind
@@ -51,7 +51,7 @@ from .models import (
     rgb_to_hex,
 )
 from .stitch import plan_stitches
-from .stitch.planner import describe_objects
+from .stitch.planner import _fill_like, describe_objects
 from .stitch.optimize import MAX_COVERAGE_LOSS_PCT, coverage_loss_pct
 
 PROJECTS = settings.data_dir / "projects"
@@ -955,7 +955,7 @@ def _stitch(pid: str, params: dict) -> dict:
     if dense_tiny:
         warnings.append("Some very small shapes are set to dense stitching - this can pile up thread and cause thread breaks.")
     preview["warnings"] = warnings
-    preview["checks"] = _stitch_checks(plan, design, p, stats, preview.get("risks", []), warnings, dense_tiny)
+    preview["checks"] = _stitch_checks(plan, design, p, stats, preview.get("risks", []), warnings, dense_tiny, preview["objects"])
     return preview
 
 
@@ -964,6 +964,9 @@ def _stitch(pid: str, params: dict) -> dict:
 # one-click setting change. "warnings" stays as plain text for older readers.
 #   actions: "show" = Machine check view at the spots of ``spots`` (risk types), "size" = the
 #   design size, "select" = select ``ids``; "change" + "fix" = a setting change and its label.
+#   Further one-click fixes, each a button of its own: "resize" = {width_mm} (a design width,
+#   offered within the chosen hoop), "merge" = {pairs, label} (colours to merge, as the
+#   Merge similar colours dialog does), "order" = {layers, label} (a new colour sequence).
 REVIEW_IN_CHECKS = ("high", "medium")  # low findings stay in "Check my stitches"
 _CHECK_ACTIONS = {
     "stitch_count": ["size"], "oversize": ["size"], "cap_height": ["size"],
@@ -974,7 +977,7 @@ _CHECK_SPOTS = {"thread_break": ["short", "stack", "dense"], "thin_lettering": [
 
 
 def _stitch_checks(plan: StitchPlan, design: Design, params: StitchParams, stats: dict, risks: list,
-                   warnings: list[str], dense_tiny: list[str]) -> list[dict]:
+                   warnings: list[str], dense_tiny: list[str], objects: list[dict] | None = None) -> list[dict]:
     codes = []  # the code of each warning, in the same order
     if stats["stitches"] > 100_000:
         codes.append(("stitch_count", "high"))
@@ -1010,11 +1013,123 @@ def _stitch_checks(plan: StitchPlan, design: Design, params: StitchParams, stats
         if issue.get("change"):  # the same problem found twice: its fixes go together
             own["change"] = {**own.get("change", {}), **issue["change"]}
             own["fix"] = issue["fix"] if "fix" not in own else f"{own['fix']} · {issue['fix']}"
+        if issue.get("resize") and "resize" not in own:
+            own["resize"] = issue["resize"]
+    for extra in (_same_thread_check, _colour_order_check):
+        try:
+            found = extra(design, params, objects)
+        except Exception:  # advice only: the stitches are shown without it
+            log.exception("%s failed", extra.__name__)
+            found = None
+        if found:
+            checks.append(found)
     for c in checks:
         c["actions"] = [a for a in _CHECK_ACTIONS.get(c["code"], []) if a != "select" or c.get("ids")]
         if c["code"] in _CHECK_SPOTS:
             c["spots"] = _CHECK_SPOTS[c["code"]]
     return checks
+
+
+def _sewn_layers(design: Design):
+    """Enabled colours that have something to sew, in sewing order."""
+    used = {o.layer for o in design.objects if o.enabled}
+    return [l for l in design.layers if l.enabled and l.index in used]
+
+
+def _same_thread_check(design: Design, params: StitchParams, objects=None) -> dict | None:
+    """Colours that match the same thread of the chosen brand (threads.py) sew as one thread
+    with an extra colour change: offer to merge each into the heavier one (merge_many)."""
+    from . import threads  # noqa: PLC0415
+
+    layers = _sewn_layers(design)
+    found = threads.matches(params.thread_chart, [l.rgb for l in layers]) if len(layers) > 1 else None
+    if not found:
+        return None
+    groups: dict[tuple, list] = {}
+    for pos, (layer, m) in enumerate(zip(layers, found)):
+        groups.setdefault((m["number"], m["name"]), []).append((pos, layer, m))
+    pairs, names = [], []
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda g: (-_colour_weight(design, g[1].index), g[0]))  # heaviest stays (ties: sewn first)
+        keep = group[0][1]
+        thread = f"{group[0][2]['brand']} {group[0][2]['number']}"
+        for _, layer, _m in group[1:]:
+            pairs.append({"source": layer.index, "target": keep.index})
+        names.append(f"{' and '.join(g[1].name for g in group)} ({thread})")
+    if not pairs:
+        return None
+    n = len(pairs)
+    changes = "an extra colour change" if n == 1 else f"{n} extra colour changes"
+    text = f"{'; '.join(names)} match the same thread, so they sew as one thread with {changes}."
+    return {"code": "same_thread", "severity": "medium", "title": "Same thread twice", "text": text,
+            "merge": {"pairs": pairs, "label": "Merge them" if n == 1 else f"Merge {n} colours"}}
+
+
+# Methods that sew outlines and lettering (thin, on top) and fills (wide areas under them).
+_DETAIL_METHODS = frozenset({"satin", "satin_band", "satin_line", "column", "stroke", "dot", "running", "outline"})
+ORDER_TOUCH_MM = 0.5  # a detail this close to a fill borders it
+ORDER_MIN_FILL_MM2 = 20.0  # smaller fills are details themselves
+
+
+def _colour_order_check(design: Design, params: StitchParams, objects=None) -> dict | None:
+    """An outline or lettering colour sewn before a fill it borders: the fill's edge (and its
+    shrink compensation) then pushes over it. Digitizers sew outlines and lettering last;
+    offer the sequence with each such colour moved to just after the last fill it borders."""
+    if not objects or params.photo_stitch:
+        return None
+    layers = _sewn_layers(design)
+    if len(layers) < 2:
+        return None
+    shapes = {o.id: o for o in design.objects}
+    by_layer: dict[int, list] = {}
+    for d in objects:
+        if d.get("enabled") and d.get("method") not in (None, "none") and d.get("id") in shapes:
+            by_layer.setdefault(d["layer"], []).append(d)
+    detail = [l.index for l in layers if by_layer.get(l.index) and all(d["method"] in _DETAIL_METHODS for d in by_layer[l.index])]
+    fills = {l.index: [shapes[d["id"]].geometry for d in by_layer.get(l.index, []) if _fill_like(d["method"])] for l in layers}
+    fills = {k: g for k, g in fills.items() if g and sum(x.area for x in g) >= ORDER_MIN_FILL_MM2}
+    sequence = [l.index for l in design.layers]
+    if not any(sequence.index(f) > sequence.index(d) for d in detail for f in fills):
+        return None  # nothing to look at (the usual case): no geometry work
+
+    import shapely  # noqa: PLC0415
+
+    def body(index):
+        parts = [shapes[d["id"]] for d in by_layer[index]]
+        return union_all([o.geometry.buffer(max(o.stroke_width_mm, 0.1) / 2) if o.kind == "line" else o.geometry for o in parts])
+
+    fill_body = {k: union_all(v) for k, v in fills.items()}
+    moves = []
+    for d in reversed(detail):  # from the last: moved colours keep their order among themselves
+        at = sequence.index(d)
+        later = [f for f in fill_body if sequence.index(f) > at]
+        if not later:
+            continue
+        geom = body(d)
+        touching = [f for f in later if shapely.dwithin(geom, fill_body[f], ORDER_TOUCH_MM)]
+        if not touching:
+            continue
+        last = max(touching, key=sequence.index)
+        sequence.remove(d)
+        sequence.insert(sequence.index(last) + 1, d)
+        moves.append((d, last))
+    if not moves:
+        return None
+    name = {l.index: l.name for l in design.layers}
+    moves.reverse()
+    if len(moves) == 1:
+        d, f = moves[0]
+        text = (f"{name[d]} (an outline or lettering colour) is sewn before {name[f]}, which it borders: the fill "
+                "then pushes over its edge. Outlines and lettering usually go last.")
+        label = f"Sew {name[d]} after {name[f]}"
+    else:
+        text = (f"{len(moves)} outline or lettering colours ({', '.join(name[d] for d, _ in moves)}) are sewn before "
+                "fills they border: the fills then push over their edges. Outlines and lettering usually go last.")
+        label = "Sew outlines last"
+    return {"code": "colour_order", "severity": "medium", "title": "Outline sewn before its fill", "text": text,
+            "order": {"layers": sequence, "label": label}}
 
 
 def _original_ref(design: Design, params: StitchParams) -> str:
@@ -1226,10 +1341,34 @@ def ai_revert(pid: str) -> dict:
     return meta
 
 
+def _analysis_width(meta: dict, width_mm: float | None) -> float:
+    width = float(width_mm or (meta.get("extract_options") or {}).get("width_mm") or 100)
+    return max(10.0, min(width, 500.0))
+
+
 def ai_suggest(pid: str, ai: dict | None, width_mm: float | None = None) -> dict:
     rgba, meta = _raster_rgba(pid)
-    width = float(width_mm or (meta.get("extract_options") or {}).get("width_mm") or 100)
-    return ai_tasks.suggest_settings(rgba, max(10.0, min(width, 500.0)), ai)
+    return ai_tasks.suggest_settings(rgba, _analysis_width(meta, width_mm), ai)
+
+
+def analysis(pid: str, width_mm: float | None = None) -> dict:
+    """The built-in analysis only (no AI, so no AI quota or rate), for pictures and artwork
+    files (SVG, AI, PDF: their shapes are measured, ai/builtin.analyze_design). The editor
+    uses it for artwork after the upload and for any design after a width change, so what
+    it says about lettering and the suggested preset stay true."""
+    meta = _meta(pid)
+    if meta["kind"] != "raster":
+        return _analyze_artwork(pid, _analysis_width(meta, width_mm))
+    rgba, meta = _raster_rgba(pid)
+    return analyze_image(rgba, _analysis_width(meta, width_mm))
+
+
+def _analyze_artwork(pid: str, width_mm: float) -> dict:
+    design = svg_to_design((_dir(pid) / "vector.svg").read_text(encoding="utf-8"), _options(VectorOptions, {"width_mm": width_mm}))
+    design.normalize()
+    if not design.objects:
+        raise ValueError("Nothing to stitch was found in this artwork.")
+    return analyze_design(design)
 
 
 def ai_review(pid: str, ai: dict | None) -> dict:

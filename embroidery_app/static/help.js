@@ -520,7 +520,13 @@ const HELP = {
     t: "Shrink compensation",
     what: "Makes shapes very slightly wider to make up for the fabric pulling stitches inwards.",
     why: "Without it, shapes come out thinner and small gaps can appear between colours.",
-    eg: "0.2 mm for normal fabric, 0.3–0.4 mm for stretchy polo or knit shirts.",
+    eg: "0.2 mm for normal fabric, 0.3–0.4 mm for stretchy polo or knit shirts. “Compensation grows with satin width” (Advanced › Satin width & compensation) adjusts it for each satin column.",
+  },
+  pull_by_width: {
+    t: "Compensation grows with satin width",
+    what: "Satin columns get shrink compensation by their width: half the value you set for 2 mm columns, the value at 4 mm, up to twice it from 8 mm. Fills keep the value as it is.",
+    why: "Wide satin pulls in more than narrow satin, so one value is too little for wide columns and makes small lettering fat.",
+    eg: "Off by default. Try it on designs that mix bold columns and small lettering, and check with a test sew-out.",
   },
   running_stitch_length_mm: {
     t: "Outline stitch length",
@@ -801,7 +807,7 @@ const HELP = {
   check_thin_lettering: {
     t: "Lettering thinner than the machine can sew",
     what: "Strokes in small lettering narrower than a sewable satin column, already widened as far as the gaps between letters allow.",
-    why: "Fine 60 wt thread sews narrower columns cleanly; a larger design gives crisper letters.",
+    why: "Fine 60 wt thread sews narrower columns cleanly; a larger design gives crisper letters. “Make it … mm wide” makes the thinnest lines as wide as the thread can sew, at most what the chosen hoop takes.",
   },
   check_dense_tiny: {
     t: "Dense stitching on tiny shapes",
@@ -831,7 +837,7 @@ const HELP = {
   check_skipped_marks: {
     t: "Small marks are not stitched",
     what: "Shapes smaller than “Skip shapes smaller than” (Advanced › Sewing order & thread cuts) are left out.",
-    why: "They are often dots and punctuation. Select them to see them; lower that setting or make the design larger to keep them.",
+    why: "They are often dots and punctuation. Select them to see them; “Keep them” lowers that setting just below the smallest one (they are sewn as small dots), or make the design larger.",
   },
   check_tiny_shapes: {
     t: "Many very small shapes",
@@ -866,7 +872,22 @@ const HELP = {
   check_cap_height: {
     t: "Design too tall for a cap",
     what: "Taller than about 57 mm, the usual front panel of a structured cap.",
-    why: "Make it smaller under Size, or choose another placement.",
+    why: "“Make it … mm wide” makes it 57 mm tall; or change the size under Size, or choose another placement.",
+  },
+  check_same_thread: {
+    t: "Same thread twice",
+    what: "Two or more colours match the same thread of the chosen thread brand.",
+    why: "They would sew with one thread anyway, but as separate colours: an extra colour change (and stop) each time. “Merge them” makes them one colour; Undo separates them again.",
+  },
+  check_colour_order: {
+    t: "Outline sewn before its fill",
+    what: "A colour sewn only as outlines or lettering comes before a fill it borders.",
+    why: "Sewn last, outlines and lettering sit on top and cover the fill's edge; sewn first, the fill pushes over them. The button moves each such colour to just after the last fill it borders (one undo step). Ignore it if the order is on purpose.",
+  },
+  check_fix_all: {
+    t: "Fix all",
+    what: "Applies the setting change of every important check at once, as one undo step.",
+    why: "Faster than one button each. Size, merge and order fixes stay buttons of their own: they change the design, not only its settings.",
   },
   check_cap_satin: {
     t: "Wide satin on a cap",

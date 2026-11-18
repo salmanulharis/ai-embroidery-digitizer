@@ -63,7 +63,13 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   appear in *Checks*, each with its way to a fix: a one-click setting change (one undo step, never applied by
   itself), *Show me* (the Check view zoomed to the problem spots, ‹ › steps through them), *Change the size*, *Fit
   to the hoop* / *Use the … hoop*, or *Select them* for the shapes concerned. × hides a check for this design.
-  The server sends them as `checks` (code, severity, text, actions, change); `warnings` stays as plain text.
+  Further one-click fixes: *Make it … mm wide* (a design too tall for a cap, lettering thinner than the thread can
+  sew; never larger than the chosen hoop takes), *Keep them* (small marks below "Skip shapes smaller than"),
+  *Merge them* (two colours that match the same thread of the chosen brand) and *Sew … after …* (an outline or
+  lettering colour sewn before a fill it borders). With two or more setting fixes among the important checks,
+  *Fix all* applies them as one undo step.
+  The server sends them as `checks` (code, severity, text, actions, change, resize, merge, order); `warnings` stays
+  as plain text.
 * **Find a setting** (🔍 next to the preset, or `/`): filters the settings panel to the settings whose name or help
   matches (also trade words: *underlay*, *tatami*, *pull comp*), opening their sections only for the search.
 * **First steps**: on a browser's first designs, numbers mark the way – 1 Shapes, 2 Stitches, 3 Export – and go
@@ -122,8 +128,11 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   keeps the current settings (stitch, fabric & thread; optionally picture and size) under a name, *Manage* applies,
   edits, updates, duplicates and deletes them. Applying is one undo step and makes the preset the baseline, so the
   changed marks show what differs from it. Presets hold settings only, never the picture, shapes or threads.
-  After an upload the smart analysis may *suggest* a preset (e.g. Small text & logos for lettering under 6 mm),
-  offered with a button and never applied by itself. Locked presets show which plan includes them.
+  After an upload the smart analysis may *suggest* a preset (e.g. Small text & logos for lettering under 6 mm,
+  High contrast for a faded picture, Soft colours for pastel artwork), offered with a button and never applied by
+  itself. Artwork files (SVG, AI, PDF) are analysed too, on their shapes (lettering, thin lines, colours, the
+  design's proportions for the placement size). After a size change the analysis is asked again (built-in, not an
+  AI request), so the lettering line and the suggested preset stay true; it never changes a setting. Locked presets show which plan includes them.
   Built-in values are starting points to confirm with a sew-out, like the fabric presets.
 * **Style settings** (borders, stipple, cross stitch, motifs, pattern / jagged fills, photo stitch) are listed only
   for the styles the design uses; *Show the settings of every stitch style* lists them all.
@@ -545,6 +554,7 @@ Everything except `/api/config` and sign-in needs a session; a project is reacha
 | GET | `/api/projects/{id}/export/{fmt}` | `dst exp u01 pes jef vp3 svg png txt zip wilcom`. `wilcom`: the package for continuing in Wilcom (DST + EPS/SVG artwork + worksheet + how-to, a download of its own). For `zip`, `?formats=dst,pes,txt` picks the files (default: DST, EXP, PES, SVG, PNG, worksheet). The first stitch-output download of a design counts against the allowance (403 `quota_exceeded` / `feature_unavailable` with an explanation) |
 | POST | `/api/ai/models` | `{ai:{provider, api_key, base_url}}` → live models + recommended picks |
 | POST | `/api/projects/{id}/ai/suggest` | `{ai?, width_mm?}` → recommended preparation settings (`ai/analyze` = old name) |
+| POST | `/api/projects/{id}/analysis` | `{width_mm?}` → the built-in analysis only (pictures and artwork files) with `preset`; not an AI request |
 | POST | `/api/projects/{id}/ai/clean` | `{ai, mode: redraw\|remove_background\|enhance, colors?}` (needs an image-capable AI) |
 | POST | `/api/projects/{id}/ai/revert` | back to the original picture |
 | POST | `/api/projects/{id}/ai/review` | `{ai?}` → issues + setting changes for the current stitches |

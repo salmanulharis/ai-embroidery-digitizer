@@ -162,6 +162,15 @@ const Presets = (() => {
     renderPicker();
   }
 
+  /** The analysis again after a size change (SmartRefresh): the offer follows it (another
+   *  preset, a new reason, or none) until a preset has been applied to this design. */
+  function reoffer(s) {
+    if (applied) return;
+    const now = suggested || asked;
+    if ((s?.id || null) === (now?.id || null) && (s?.reason || "") === (now?.reason || "")) return;
+    offer(s);
+  }
+
   // ------------------------------------------------------------------ applying
   const formKey = (k) => (k === "running_repeats" ? "triple_run" : k);
   const formValue = (k, v) => (k === "running_repeats" ? v >= 3 : k === "thread_weight" ? String(v) : v);
@@ -484,5 +493,5 @@ const Presets = (() => {
     sync();
   }
 
-  return { init, load, reset, sync, openManage, apply, offer, status: () => status };
+  return { init, load, reset, sync, openManage, apply, offer, reoffer, status: () => status };
 })();

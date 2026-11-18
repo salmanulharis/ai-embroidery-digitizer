@@ -1,6 +1,6 @@
 # Automation, grouping and help: findings and what was built
 
-Status: **all batches (A–E) built** (2026-11-18). It's Phase 8 in [ROADMAP.md](ROADMAP.md) §1 and follows
+Status: **all batches (A–E, then F–J) built** (2026-11-18). It's Phase 8 in [ROADMAP.md](ROADMAP.md) §1 and follows
 [EDITOR_UX_PLAN.md](EDITOR_UX_PLAN.md) (Phase 6) and [APP_UX_PLAN.md](APP_UX_PLAN.md) (Phase 7). The open decisions were
 taken as recommended; the machine speeds in B are starting values to confirm.
 
@@ -85,13 +85,66 @@ change, and help where it was missing.**
 - `tests/test_help_coverage.py` fails when a setting, group, style, foundation or texture choice, or check code has no
   help.
 
+## 2b. More automation (F–J): findings J1–J9 and what was built
+
+Findings: artwork files got no analysis (and their placement size came from the canvas, not the artwork); size advice
+was a sentence, not a button; *Small marks are not stitched* had no fix; fixes came one at a time; the analysis went
+stale after a size change; only 4 of 12 built-in presets could be suggested; two colours could match the same thread;
+nothing checked the colour order after merges or for vector paint order; width-based compensation was missing.
+
+### F. Size, keep and Fix all
+- `review_plan` issues may carry `resize: {width_mm}`: *Design too tall for a cap* (57 mm tall, rounded down) and
+  *Lettering thinner than the machine can sew* (the thinnest lines as wide as the narrowest column of the thread,
+  `strokes.thread_limits`, at most ×3, rounded up to 5 mm; measured on the design's shapes, `measure_design`).
+  The editor offers *Make it … mm wide* within the chosen hoop (either way round, 6 mm room) and the Size field's
+  range; the design is prepared again as one undo step.
+- *Small marks are not stitched* offers *Keep them*: "Skip shapes smaller than" just below the smallest skipped mark,
+  never below the default (marks become a sewable dot). The reviewer still never suggests deleting marks.
+- *Fix all (n)*: every high / medium check's setting change as one undo step (the first wins on the same setting).
+  Size, merge and order fixes stay buttons of their own.
+
+### G. Artwork files
+- `ai/builtin.analyze_design`: the shapes drawn at up to 20 px/mm (2.5 M px), then the same measures as pictures
+  (`detect_text`, `_thinnest_mm`, `_size_advice`): lettering, 60 wt advice, size notes, colour count, proportions.
+- `POST /api/projects/{id}/analysis` (built-in only, `work` rate bucket, not recorded as an AI request) answers for
+  pictures and artwork. `/ai/suggest` is unchanged (pictures only). The editor uses `/analysis` after an artwork
+  upload, so the summary line, the preset offer, 60 wt and the placement's size (measured proportions) work for vectors.
+
+### H. Analysis that keeps up, more presets
+- `SmartRefresh` (app.js): after an extract whose width differs by 5 % or more from the width measured at, the
+  analysis is asked again; it updates the summary line (while shown) and the preset offer (`Presets.reoffer`, until a
+  preset was applied). It never changes a setting; `state.smart` (what the upload filled in) stays.
+- Picture tone (`measurements.lightness_range`, `lightness`, `chroma`; no spread with a transparent background):
+  *High contrast* when the lightness spreads over less than 45 (faded), *Soft colours* when light (≥ 72) with a
+  little colour (chroma 8–35). Never for photos. Tier rules as before.
+- Fixed on the way: a colour filling the whole picture gave an infinite line width (NaN in the answer).
+
+### I. Thread and order checks (service.py)
+- `same_thread`: enabled colours that match the same thread of the chosen chart; *Merge them* merges each into the
+  heaviest (`merge-many`, one undo step).
+- `colour_order`: a colour sewn only as outlines / lettering (satin, columns, strokes, running) before a fill
+  (≥ 20 mm²) it borders (0.5 mm); the button moves it to just after the last such fill (`PUT layers`, one undo step).
+  Uses the per-shape methods the stitch run already computed; no geometry work unless the order is suspect.
+- Both run after the review, each guarded: a failure never stops the stitches.
+
+### J. Compensation by satin width (opt-in)
+- `StitchParams.pull_by_width` (off; Advanced › Satin width & compensation; a preset key in "fabric"): satin, satin
+  bands, satin lines and smart-direction columns get `satin_pull` = the set value × width / 4 mm, within ×0.5–×2.
+  Fills, small-lettering strokes and decorative styles keep the set value. Off = byte-identical stitches.
+- The width-based foundation (`satin_underlay = "auto"`) already existed; no fabric uses it until a sew-out.
+
 ## 3. Tests
 - New: `tests/test_checks.py`, `tests/test_style_groups.py`, `tests/test_help_coverage.py`, and preference tests in
   `tests/test_prefs.py`.
 - Browser tests: `layout.mjs` and `phase5.mjs` only had the section's new name changed.
 - Stitch output is unchanged: the golden plans weren't touched.
+- F–J: `tests/test_automation.py` (artwork analysis, `/analysis`, tone and presets, size / keep fixes, same thread,
+  colour order end to end, compensation by width). Two older tests now state the exact rule: the only change offered
+  for skipped marks keeps them (`test_text_detail.py`, `test_checks.py`).
 
 ## 4. Open
 - Confirm the machine speeds (`prefs.MACHINES[*].spm`).
+- Sew-out for *Compensation grows with satin width* (`PULL_REF_WIDTH_MM`, `PULL_SCALE`) before any preset or fabric
+  turns it on; the tone thresholds for High contrast / Soft colours are first guesses to tune with real pictures.
 - Design-level warnings (`Design.warnings`, from preparing the picture) stay plain text: they are stored with the
   design, and changing them would change saved designs.

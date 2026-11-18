@@ -465,6 +465,24 @@ def ai_suggest(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
     return _ai_task(user, "ai_suggest", body, run)
 
 
+class AnalysisBody(BaseModel):
+    width_mm: Optional[float] = None
+
+
+@protected.post("/api/projects/{pid}/analysis")
+def analysis(pid: str, body: AnalysisBody, user: dict = Depends(auth.require_user)):
+    """The built-in analysis again at another design width (no AI: not an AI request, not
+    recorded as one): the editor keeps what it says about lettering and the suggested preset
+    true after a size change. Same answer as /ai/suggest without AI, with ``preset``."""
+    result = service.analysis(pid, body.width_mm)
+    try:
+        result["preset"] = presets.suggest(result, float(body.width_mm or 100), user["id"])
+    except Exception:
+        log.exception("preset suggestion failed")
+        result["preset"] = None
+    return result
+
+
 @protected.post("/api/projects/{pid}/ai/analyze")
 def ai_analyze(pid: str, body: AIBody, user: dict = Depends(auth.require_user)):
     """Older name of /ai/suggest, kept for compatibility."""

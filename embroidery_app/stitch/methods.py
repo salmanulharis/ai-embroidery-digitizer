@@ -41,10 +41,28 @@ def _after(runs: list[Run], start: Pt) -> Pt:
     return runs[-1].points[-1] if runs else start
 
 
-def _compensate(poly: Polygon, params: StitchParams) -> Polygon:
-    if params.pull_compensation_mm <= 0:
+# Shrink compensation by column width (StitchParams.pull_by_width): wide satin pulls in more
+# than narrow satin, so a single value is too little for wide columns and makes small
+# lettering fat. The set value applies at PULL_REF_WIDTH_MM and scales with the width,
+# within PULL_SCALE. An engineering estimate in the direction of Wilcom's width-dependent
+# compensation; check with a sew-out.
+PULL_REF_WIDTH_MM = 4.0
+PULL_SCALE = (0.5, 2.0)
+
+
+def satin_pull(params: StitchParams, width_mm: float) -> float:
+    """Shrink compensation for a satin column of this (average) width."""
+    base = params.pull_compensation_mm
+    if not params.pull_by_width or base <= 0 or not width_mm > 0:
+        return base
+    return round(base * min(max(width_mm / PULL_REF_WIDTH_MM, PULL_SCALE[0]), PULL_SCALE[1]), 3)
+
+
+def _compensate(poly: Polygon, params: StitchParams, pull: float | None = None) -> Polygon:
+    pull = params.pull_compensation_mm if pull is None else pull
+    if pull <= 0:
         return poly
-    grown = poly.buffer(params.pull_compensation_mm, join_style="mitre", mitre_limit=2.0)
+    grown = poly.buffer(pull, join_style="mitre", mitre_limit=2.0)
     parts = sorted(iter_polygons(grown), key=lambda p: -p.area)
     return parts[0] if parts else poly
 
@@ -138,7 +156,7 @@ def sew_satin(item: "_Item", angle: float, params: StitchParams, start: Pt) -> l
     if params.underlay:
         found = underlay.satin_foundation(params.satin_underlay, item.geom, item.satin_angle, params.underlay_spacing_mm, start, params.max_stitch_mm)
         runs += _runs("underlay", found, item.oid)
-    poly = _compensate(item.geom, params)
+    poly = _compensate(item.geom, params, satin_pull(params, underlay.column_width(item.geom)))
     if item.satin_angle is not None:
         # satin rows run across the column: its ends lie along the row direction + 90
         poly = _push(poly, item.satin_angle, params.push_compensation_mm)
@@ -153,7 +171,8 @@ def sew_satin_band(item: "_Item", angle: float, params: StitchParams, start: Pt)
     if params.underlay:
         runs += _runs("underlay", [gen.running(item.centre, 2.0)], item.oid)
     cur = _after(runs, start)
-    band = gen.satin_band(item.geom, item.centre, params.satin_spacing_mm, params.pull_compensation_mm, cur, params.max_stitch_mm)
+    pull = satin_pull(params, underlay.column_width(item.geom))
+    band = gen.satin_band(item.geom, item.centre, params.satin_spacing_mm, pull, cur, params.max_stitch_mm)
     return runs + _runs("satin", [band], item.oid)
 
 
@@ -164,7 +183,7 @@ def sew_satin_line(item: "_Item", angle: float, params: StitchParams, start: Pt)
     if params.underlay and item.width >= 1.5:
         runs += _runs("underlay", [gen.running(line, 2.0)], item.oid)
         line = LineString(list(line.coords)[::-1])  # satin comes back over the underlay
-    satin = gen.satin_line(line, item.width, params.satin_spacing_mm, params.pull_compensation_mm, params.max_stitch_mm)
+    satin = gen.satin_line(line, item.width, params.satin_spacing_mm, satin_pull(params, item.width), params.max_stitch_mm)
     return runs + _runs("satin", [satin], item.oid)
 
 
@@ -227,7 +246,7 @@ def sew_columns(item: "_Item", angle: float, params: StitchParams, start: Pt) ->
     pieces = smart.sew_shape(
         smart.analyse_columns(item.geom), item.geom, start,
         lambda width: _stroke_spacing(params, width), params.satin_spacing_mm,
-        params.pull_compensation_mm, params.max_stitch_mm, thread_limits(params).min_column_mm, params.underlay,
+        satin_pull(params, underlay.column_width(item.geom)), params.max_stitch_mm, thread_limits(params).min_column_mm, params.underlay,
     )
     return [Run(kind, pts, item.oid) for kind, pts in pieces if len(pts) >= 2]
 

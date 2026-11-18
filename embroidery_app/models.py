@@ -535,6 +535,10 @@ class StitchParams:
     fill_underlay: str = "edge_tatami"  # foundation under fills (see stitch/underlay.py)
     satin_underlay: str = "edge"  # foundation under single-angle satin
     pull_compensation_mm: float = 0.2
+    # satin compensation that grows with the column's width (stitch/methods.satin_pull): half
+    # of the value above for 2 mm columns, the value at 4 mm, up to twice it from 8 mm; off =
+    # the same compensation for every column (opt-in until it has been sewn)
+    pull_by_width: bool = False
     # push compensation: fills and satin columns are shortened by this much at each end
     # (stitches push the fabric outward along the column); 0 = off
     push_compensation_mm: float = 0.0

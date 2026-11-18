@@ -338,46 +338,92 @@ function bindAdjustments() {
   showAdjustValues();
 }
 
-// Built-in picture analysis right after upload: smart settings by default (no AI key needed).
+// Built-in analysis right after upload: smart settings by default (no AI key needed). Pictures
+// get preparation settings (/ai/suggest without AI); artwork files (SVG, AI, PDF) are measured
+// on their shapes (/analysis): lettering, thin lines, colours and the design's proportions.
 async function smartDefaults() {
   state.smart = null;
+  state.smartWidth = 0;
   $("smartInfo").classList.add("hidden");
-  if (state.project.kind !== "raster") return;
+  const raster = state.project.kind === "raster", width = +$("width_mm").value || 100;
   let r;
   try {
-    r = await api(`/api/projects/${state.project.id}/ai/suggest`, json("POST", { ai: null, width_mm: +$("width_mm").value || 100 }));
+    r = raster
+      ? await api(`/api/projects/${state.project.id}/ai/suggest`, json("POST", { ai: null, width_mm: width }))
+      : await api(`/api/projects/${state.project.id}/analysis`, json("POST", { width_mm: width }));
   } catch (e) {
     return; // the analysis is a convenience: the standard settings still work
   }
   state.smart = r;
+  state.smartWidth = width; // the width it was measured at (SmartRefresh measures again after a size change)
   const e = r.extract || {};
-  $("num_colors").value = "";
-  if (e.background) $("background").value = e.background;
-  if (e.min_feature_mm != null) $("min_feature_mm").value = e.min_feature_mm;
-  $("min_area_mm2").value = 1.0;
-  if (e.denoise != null) $("denoise").value = e.denoise;
-  $("text_mode").value = "auto";
-  ["brightness", "contrast", "sharpen"].forEach((k) => ($(k).value = 0));
-  showAdjustValues();
+  if (raster) {
+    $("num_colors").value = "";
+    if (e.background) $("background").value = e.background;
+    if (e.min_feature_mm != null) $("min_feature_mm").value = e.min_feature_mm;
+    $("min_area_mm2").value = 1.0;
+    if (e.denoise != null) $("denoise").value = e.denoise;
+    $("text_mode").value = "auto";
+    ["brightness", "contrast", "sharpen"].forEach((k) => ($(k).value = 0));
+    showAdjustValues();
+  }
   const tw = r.stitch && r.stitch.thread_weight;
   if (tw && $("stitchForm").elements.thread_weight) $("stitchForm").elements.thread_weight.value = String(tw);
-  const t = r.text || {};
-  const facts = [ // short: one line in the panel (Details has the explanations)
-    `${e.num_colors} colour${e.num_colors === 1 ? "" : "s"}`,
-    e.background === "auto" ? "background removed" : "background kept",
-    t.found ? `lettering ${t.letter_height_mm} mm` : "no small text",
-  ];
-  if (tw === 60) facts.push("60 wt thread");
+  const { facts, look } = smartFacts(r);
   // the picture needs a look (noisy, low resolution, a photo, no plain background): open Picture
-  const look = r.cleanup && r.cleanup !== "none" ? "the picture could be cleaner" : e.background === "none" ? "no plain background found" : "";
   if (look) {
-    facts.push(`Picture: ${look}`);
     const sec = document.querySelector('.ed-sec[data-sec="picture"]');
     if (sec) sec.open = true;
   }
   SmartLine.show(facts, r.notes || []);
   Presets.offer(r.preset); // a preset that suits the picture, offered with a button (never applied by itself)
 }
+
+/** What the analysis found, short: one line in the panel (Details has the explanations).
+ *  Colours, background and the picture's look come from the upload's analysis (what it
+ *  filled in); lettering from ``r`` (the latest measurement); 60 wt when the form has it. */
+function smartFacts(r) {
+  const raster = state.project?.kind === "raster";
+  const first = state.smart || r, e = first.extract || {}, t = r.text || {};
+  const facts = [`${e.num_colors} colour${e.num_colors === 1 ? "" : "s"}`];
+  if (raster) facts.push(e.background === "auto" ? "background removed" : "background kept");
+  facts.push(t.found ? `lettering ${t.letter_height_mm} mm` : "no small text");
+  if ($("stitchForm").elements.thread_weight?.value === "60") facts.push("60 wt thread");
+  const look = !raster ? "" : first.cleanup && first.cleanup !== "none" ? "the picture could be cleaner" : e.background === "none" ? "no plain background found" : "";
+  if (look) facts.push(`Picture: ${look}`);
+  return { facts, look };
+}
+
+// After a size change the analysis is asked again at the new width (built-in, no AI: /analysis),
+// so the line about lettering, its explanations and the suggested preset stay true. It never
+// changes a setting: the settings filled in after the upload stay as they are.
+const SmartRefresh = (() => {
+  const MIN_CHANGE = 0.05; // of the width measured at
+  let seq = 0, timer = 0;
+  function check() {
+    const w = +$("width_mm").value, at = state.smartWidth;
+    if (!state.project || !state.smart || !at || !(w > 0) || Math.abs(w - at) / at < MIN_CHANGE) return;
+    clearTimeout(timer);
+    timer = setTimeout(run, 400);
+  }
+  async function run() {
+    const pid = state.project?.id, w = +$("width_mm").value, my = ++seq;
+    if (!pid) return;
+    let r;
+    try {
+      r = await api(`/api/projects/${pid}/analysis`, json("POST", { width_mm: w }));
+    } catch (_) {
+      return; // advice only
+    }
+    if (my !== seq || state.project?.id !== pid || !state.smart) return;
+    state.smartWidth = w;
+    SmartLine.update(smartFacts(r).facts, r.notes || []);
+    Presets.reoffer(r.preset);
+  }
+  /** A new design: a measurement still on its way is for the previous one. */
+  function reset() { clearTimeout(timer); seq++; }
+  return { check, reset };
+})();
 
 // What the analysis found, as one line; Details opens the explanations, × hides it for this
 // design. Details start open only on a browser's first design.
@@ -391,9 +437,18 @@ const SmartLine = (() => {
       `<b aria-hidden="true">&#10024;</b><span class="smart-facts"><span class="visually-hidden">Smart settings applied: </span>${facts.map(esc).join(" · ")}</span>` +
       `<button type="button" class="link smart-more-btn" aria-expanded="${first}" aria-controls="smartMore">Details</button></div>` +
       `<div class="smart-more" id="smartMore" ${first ? "" : "hidden"}>` +
-      notes.slice(0, 3).map((n) => `<p class="small muted">${esc(n)}</p>`).join("") +
+      notes.slice(0, 3).map((n) => `<p class="small muted note">${esc(n)}</p>`).join("") +
       `<p class="small muted">These settings are filled in for you; change anything if the result is not what you want.</p></div>`;
     box.classList.remove("hidden");
+  }
+  /** New figures after a size change: only while the line is shown (× hides it for the
+   *  design); Details stay as open or closed as they were. */
+  function update(facts, notes) {
+    const box = $("smartInfo"), line = box.querySelector(".smart-facts"), more = $("smartMore");
+    if (box.classList.contains("hidden") || !line || !more) return;
+    line.innerHTML = `<span class="visually-hidden">Smart settings applied: </span>${facts.map(esc).join(" · ")}`;
+    more.querySelectorAll("p.note").forEach((p) => p.remove());
+    more.insertAdjacentHTML("afterbegin", notes.slice(0, 3).map((n) => `<p class="small muted note">${esc(n)}</p>`).join(""));
   }
   function init() {
     $("smartInfo").addEventListener("click", (ev) => {
@@ -405,7 +460,7 @@ const SmartLine = (() => {
       $("smartMore").hidden = !open;
     });
   }
-  return { show, init };
+  return { show, update, init };
 })();
 
 // The first steps, on a browser's first designs: numbered marks on Shapes (check the
@@ -701,7 +756,8 @@ async function upload(file, { placement = null, width = null, onProgress = null 
 function openProject(meta) {
   Jobs.reset();
   if (state.playing) togglePlay();
-  Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true, baseline: null, startStitch: null });
+  Object.assign(state, { project: meta, design: null, preview: null, smart: null, smartWidth: 0, viewMoved: false, autoPane: true, baseline: null, startStitch: null });
+  SmartRefresh.reset();
   $("placement").value = "";
   Shapes.reset();
   Render.reset();
@@ -914,11 +970,11 @@ $("layers").addEventListener("click", async (ev) => {
   await saveLayers();
   $("layers").querySelector(`[data-index="${L[j].index}"] [data-move="${mv}"]:not(:disabled)`)?.focus();
 });
-async function saveLayers() {
+async function saveLayers(label = "thread colours") {
   const layers = state.design.layers.map(({ index, hex, name, enabled, stitch_type, angle }) => ({ index, hex, name, enabled, stitch_type, angle }));
   const res = await work("Saving thread colours…", () => api(`/api/projects/${state.project.id}/layers`, json("PUT", { layers }))).catch(() => null);
   if (res) {
-    History.designChange("thread colours");
+    History.designChange(label);
     renderDesign(res);
     Jobs.stitch();
   }
@@ -1201,6 +1257,7 @@ const CHECKS = [
   ["motif_warp", "3D warp for motif fills"],
   ["photo_stitch", "Photo stitch: the whole picture as a photo texture"],
   ["triple_run", "Bold outlines (sew lines 3 times)"],
+  ["pull_by_width", "Compensation grows with satin width"],
 ];
 // Settings that only matter for some stitch styles (see stitch/outlines.py, fills.py,
 // decorative.py, guided.py): shown under "Style settings" when the design uses one of
@@ -1220,7 +1277,7 @@ const isStyleParam = (k) => k in STYLE_PARAMS;
 const ADVANCED_GROUPS = [
   ["adv_foundation", "Foundation", ["fill_underlay", "satin_underlay", "underlay_spacing_mm"]],
   ["adv_length", "Stitch length & texture", ["fill_stitch_length_mm", "running_stitch_length_mm", "fill_pattern"]],
-  ["adv_satin", "Satin width & compensation", ["satin_max_width_mm", "push_compensation_mm"]],
+  ["adv_satin", "Satin width & compensation", ["satin_max_width_mm", "push_compensation_mm", "pull_by_width"]],
   ["adv_order", "Sewing order & thread cuts", ["optimize_order", "trim_threshold_mm", "tie_stitches", "min_object_area_mm2"]],
   ["adv_effects", "Special effects", ["knockdown", "trapunto", "triple_run", "photo_stitch"]],
 ];
@@ -1598,6 +1655,7 @@ const Jobs = (() => {
             if (state.project?.id !== pid) continue;
             History.extracted(used, had, step);
             renderDesign(res);
+            SmartRefresh.check(); // after a size change: the lettering advice at the new size
             error = "";
             if (autoOn() || !state.preview) wantStitch = true;
             else stale = true;
@@ -1973,7 +2031,7 @@ function renderStats() {
 
 // Checks: a count in the heading; with warnings the group moves above Design info
 function renderChecks() {
-  const n = $("warnings2").children.length + $("warnings3").children.length;
+  const n = $("warnings2").children.length + [...$("warnings3").children].filter((c) => !c.classList.contains("check-all")).length;
   $("checkCount").textContent = n ? `· ${n}` : "";
   $("checkCount").hidden = !n;
   $("rightPanel").querySelector(".ed-scroll").classList.toggle("checks-first", n > 0);
@@ -1993,14 +2051,47 @@ function goToSize() {
 }
 
 // Checks: what may go wrong and the way to fix it. The server sends each check with a code
-// (its help is HELP["check_" + code]), its actions and, from the built-in review, a setting
-// change that solves it (service._stitch_checks); the hoop check is made here, the hoop is
-// chosen in the browser. A fix never applies by itself: each button is one undo step. ×
-// hides a check for this design (until another design is opened).
+// (its help is HELP["check_" + code]), its actions and the fixes that solve it
+// (service._stitch_checks): a setting change, a design width, colours to merge or a new colour
+// order; the hoop check is made here, the hoop is chosen in the browser. A fix never applies by
+// itself: each button is one undo step, and "Fix all" applies every setting change of the
+// important checks as one step. × hides a check for this design (until another is opened).
 const Checks = (() => {
   const LABELS = { show: "Show me", size: "Change the size", select: "Select them", fit: "Fit to the hoop" };
+  const ALL_SEVERITIES = ["high", "medium"]; // "Fix all": the important checks only
+  const HOOP_ROOM_MM = 6; // a size fix leaves this much room in the hoop (as bestHoop)
   let list = [], hidden = new Set(), cursor = null, lastStats = null; // cursor: {code, i} of "Show me"
   const keyOf = (c) => c.code || c.text;
+  /** A size fix as a button: the server's width, at most what the chosen hoop takes (either
+   *  way round); null when that is about the size now. {width, label} */
+  function resizeOf(c) {
+    const want = c.resize?.width_mm;
+    if (!(want > 0) || !state.design) return null;
+    const now = +$("width_mm").value || state.design.width_mm, a = state.design.width_mm / state.design.height_mm;
+    let w = want, hoop = "";
+    const hp = chosenHoop();
+    if (hp && w > now && a > 0) {
+      const W = hp.width - HOOP_ROOM_MM, H = hp.height - HOOP_ROOM_MM;
+      const room = Math.floor(Math.max(Math.min(W, H * a), Math.min(H, W * a)));
+      if (w > room) { w = room; hoop = hp.name; }
+    }
+    w = clampWidth(w);
+    if (Math.abs(w - now) <= now * 0.02 || (want > now && w < now)) return null;
+    return { width: w, label: `Make it ${w} mm wide${hoop ? ` (the most the ${hoop} hoop takes)` : ""}` };
+  }
+  /** The setting changes "Fix all" applies: every important check's change, the first one
+   *  winning where two change the same setting. {change, n} */
+  function allFixes() {
+    const change = {};
+    let n = 0;
+    list.filter((c) => c.change && c.fix && ALL_SEVERITIES.includes(c.severity)).forEach((c) => {
+      const own = Object.entries(c.change).filter(([k]) => !(k in change) && $("stitchForm").elements[k]);
+      if (!own.length) return;
+      own.forEach(([k, v]) => (change[k] = v));
+      n++;
+    });
+    return { change, n };
+  }
   function build(s) {
     const p = state.preview;
     if (!p) return [];
@@ -2021,7 +2112,13 @@ const Checks = (() => {
   function html(c, i) {
     const acts = (c.actions || []).map((a) => `<button type="button" class="link" data-check-act="${a}">${LABELS[a] || a}</button>`);
     if (c.hoop != null) acts.unshift(`<button type="button" class="link" data-check-act="hoop">Use the ${esc(state.config.hoops[c.hoop].name)} hoop</button>`);
-    if (c.change && c.fix) acts.unshift(`<button type="button" class="small check-fix" data-check-act="fix">${esc(c.fix)}</button>`);
+    const fixes = [];
+    if (c.change && c.fix) fixes.push(["fix", c.fix]);
+    const rs = resizeOf(c);
+    if (rs) fixes.push(["resize", rs.label]);
+    if (c.merge?.pairs?.length) fixes.push(["merge", c.merge.label]);
+    if (c.order?.layers?.length) fixes.push(["order", c.order.label]);
+    acts.unshift(...fixes.map(([act, label]) => `<button type="button" class="small check-fix" data-check-act="${act}">${esc(label)}</button>`));
     let nav = "";
     if (cursor?.code === c.code) {
       const n = spotsOf(c).length;
@@ -2042,7 +2139,10 @@ const Checks = (() => {
       const c = list.find((x) => x.code === cursor.code), n = spotsOf(c).length;
       if (!c || !n) { cursor = null; state.riskFocus = null; } else cursor.i = Math.min(cursor.i, n - 1);
     }
-    $("warnings3").innerHTML = list.map(html).join("");
+    const all = allFixes();
+    $("warnings3").innerHTML = (all.n >= 2
+      ? `<div class="check-all"><button type="button" class="small" data-check-all>Fix all (${all.n})</button> ${Tip.icon("check_fix_all")}</div>` : "") +
+      list.map(html).join("");
     renderChecks();
   }
   function focusSpot() {
@@ -2062,17 +2162,62 @@ const Checks = (() => {
     render();
     announce(`Spot ${cursor.i + 1} of ${spots.length}: ${(RISKS[r.type] || ["", "problem spot"])[1]}`);
   }
-  function applyFix(c) {
+  function applyFix(c) { applyChange(c.change, c.fix); }
+  function applyChange(change, label) {
     const f = $("stitchForm");
-    const keys = Object.keys(c.change || {}).filter((k) => f.elements[k]);
+    const keys = Object.keys(change || {}).filter((k) => f.elements[k]);
     if (!keys.length) return;
-    keys.forEach((k) => { const v = c.change[k]; setValue(f.elements[k], typeof v === "boolean" ? v : String(v)); });
+    keys.forEach((k) => { const v = change[k]; setValue(f.elements[k], typeof v === "boolean" ? v : String(v)); });
     showFabricNote(f.elements.fabric?.value);
     updateStyleParams();
     markModified();
-    History.stitchChange(c.fix); // one undo step
-    toast(`${c.fix} – updating the stitches.`, true);
+    History.stitchChange(label); // one undo step
+    toast(`${label} – updating the stitches.`, true);
     if (state.design) Jobs.stitch();
+  }
+  function fixAll() {
+    const { change, n } = allFixes();
+    if (n) applyChange(change, `Fix all (${n} fixes)`);
+  }
+  /** The design prepared again at another width (one undo step, with its label). */
+  function applyResize(c) {
+    const rs = resizeOf(c);
+    if (!rs || !state.project) return;
+    $("width_mm").value = rs.width;
+    if ($("placement").value) $("placement").value = "custom";
+    markModified();
+    toast(`${rs.label} – preparing the design again.`, true);
+    Jobs.extract({ delay: 0, step: { label: rs.label } });
+  }
+  /** Merge and order fixes name colours of the stitches on screen: changes still on their way
+   *  are finished first, then the check must still be there. */
+  async function current(c, field) {
+    if (!Jobs.pending()) return c;
+    await Jobs.flush();
+    const now = list.find((x) => x.code === c.code);
+    return now?.[field] ? now : null;
+  }
+  async function applyMerge(c) {
+    c = await current(c, "merge");
+    const pairs = c?.merge?.pairs || [];
+    if (!pairs.length || !state.project) return;
+    const label = c.merge.label;
+    const res = await work(`${label}…`, () => api(`/api/projects/${state.project.id}/layers/merge-many`, json("POST", { pairs })))
+      .catch((e) => { toast(e.message); return null; });
+    if (!res) return;
+    pairs.forEach((p) => openThreads.delete(p.source));
+    History.designChange(`merge ${pairs.length} colour${pairs.length === 1 ? "" : "s"} (same thread)`);
+    renderDesign(res);
+    Jobs.stitch();
+    toast(`${pairs.length === 1 ? "1 colour" : `${pairs.length} colours`} merged into the colour with the same thread. Use Undo to separate them again.`, true);
+  }
+  async function applyOrder(c) {
+    c = await current(c, "order");
+    const want = c?.order?.layers || [], L = state.design?.layers || [];
+    if (!want.length || want.length !== L.length || !want.every((i) => L.some((l) => l.index === i))) return;
+    state.design.layers = want.map((i) => L.find((l) => l.index === i));
+    await saveLayers("sewing order");
+    toast(`${c.order.label} – updating the stitches.`, true);
   }
   function run(act, c) {
     if (act === "hide") {
@@ -2083,6 +2228,9 @@ const Checks = (() => {
       return;
     }
     if (act === "fix") return applyFix(c);
+    if (act === "resize") return applyResize(c);
+    if (act === "merge") return applyMerge(c).catch((e) => toast(e.message));
+    if (act === "order") return applyOrder(c).catch((e) => toast(e.message));
     if (act === "size") return goToSize();
     if (act === "select") {
       Shapes.select(c.ids || []);
@@ -2111,6 +2259,7 @@ const Checks = (() => {
   }
   function init() {
     $("warnings3").addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-check-all]")) return fixAll();
       const b = ev.target.closest("[data-check-act]");
       const c = b && list[+b.closest(".check")?.dataset.i];
       if (c) run(b.dataset.checkAct, c);

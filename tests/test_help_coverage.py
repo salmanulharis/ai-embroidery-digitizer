@@ -76,6 +76,8 @@ def test_every_foundation_and_texture_choice_explains_itself():
 def test_every_check_has_help():
     codes = set(re.findall(r'code="([a-z_]+)"', BUILTIN)) | set(service._CHECK_ACTIONS) | {"hoop"}
     codes |= set(re.findall(r'codes\.append\(\("([a-z_]+)"', SERVICE))
-    assert len(codes) > 20
+    codes |= set(re.findall(r'"code": "([a-z_]+)"', SERVICE))  # checks made in service.py (same thread, colour order)
+    assert {"same_thread", "colour_order"} <= codes and len(codes) > 20
+    codes.add("fix_all")  # the Fix all button's help
     missing = sorted(c for c in codes if f"check_{c}" not in HELP_KEYS)
     assert not missing, missing

@@ -115,5 +115,7 @@ def test_review_never_suggests_deleting_small_marks():
     params = StitchParams(min_object_area_mm2=1.0)
     plan = plan_stitches(design, params)
     review = review_plan(plan, design, params)
-    assert "min_object_area_mm2" not in review["changes"]
+    # the only change ever offered keeps the marks: "Skip shapes smaller than" goes down, below every mark
+    smallest = min(o.geometry.area for o in shapes)
+    assert review["changes"].get("min_object_area_mm2", 0) < smallest < params.min_object_area_mm2
     assert any("not stitched" in i["title"] for i in review["issues"])

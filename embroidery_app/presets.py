@@ -130,6 +130,7 @@ KEYS: dict[str, Key] = {
     "fill_underlay": _enum("fabric", FILL_UNDERLAYS),
     "satin_underlay": _enum("fabric", SATIN_UNDERLAYS),
     "knockdown": _BOOL_F,
+    "pull_by_width": _BOOL_F,
     # picture (raster designs)
     "background": _enum("image", BACKGROUNDS),
     "text_mode": _enum("image", ("auto", "sharp", "standard", "simple")),
@@ -366,6 +367,11 @@ def builtins_for(user_id: int) -> list[dict]:
 # Thresholds for suggesting a preset after the upload analysis (ai/builtin.py analyze_image).
 SMALL_LETTERS_MM = 6.0  # "Small text & logos" is meant for lettering under ~6 mm
 LARGE_DESIGN_MM = 200.0  # "Large design": jacket backs over ~200 mm
+# Tone (analyze_image "measurements", CIELAB): a faded picture spreads its lightness over
+# little of the scale (background included); pastel artwork is light with a little colour.
+FADED_LIGHTNESS_RANGE = 45.0
+PASTEL_MIN_LIGHTNESS = 72.0
+PASTEL_CHROMA = (8.0, 35.0)
 
 
 def suggest(analysis: dict, width_mm: float, user_id: int) -> dict | None:
@@ -383,6 +389,13 @@ def suggest(analysis: dict, width_mm: float, user_id: int) -> dict | None:
         candidates.append(("large", f"the design is {width_mm:g} mm wide"))
     if analysis.get("cleanup") == "enhance" or (analysis.get("extract") or {}).get("denoise", 0) >= 3:
         candidates.append(("clean_logo", "the picture is grainy or low-resolution"))
+    tone = analysis.get("measurements") or {}
+    if analysis.get("design_type") != "photo":
+        spread, light, chroma = tone.get("lightness_range"), tone.get("lightness"), tone.get("chroma")
+        if spread is not None and spread < FADED_LIGHTNESS_RANGE:
+            candidates.append(("high_contrast", "the picture looks faded"))
+        if light is not None and chroma is not None and light >= PASTEL_MIN_LIGHTNESS and PASTEL_CHROMA[0] <= chroma <= PASTEL_CHROMA[1]:
+            candidates.append(("soft_colours", "its colours are soft pastels"))
     if not candidates:
         return None
     usable = {b["id"]: b for b in builtins_for(user_id) if not b["locked"]}
