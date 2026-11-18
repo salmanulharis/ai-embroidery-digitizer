@@ -55,6 +55,7 @@
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></symbol>
     <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 20V11M11 20V5M17 20v-7M3 20h18"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16.5 6.5l2.5 2.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></symbol>
   </defs>
 </svg>
@@ -172,6 +173,7 @@
           <label><span class="lbl" id="presetLbl">Preset <i data-help="presets"></i>
             <span class="badge hidden" id="presetModified">Changed <i data-help="preset_modified"></i></span></span>
             <select id="presetPick" aria-describedby="presetHint"></select></label>
+          <button type="button" class="ghost ib find-btn" id="btnFindSetting" aria-expanded="false" aria-controls="findRow" title="Find a setting (/)" aria-label="Find a setting"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
           <div class="pop-wrap">
             <button type="button" class="ghost ib" id="btnPresetMenu" aria-haspopup="true" aria-expanded="false" aria-controls="presetMenu" title="Save and manage presets" aria-label="Preset actions">⋯</button>
             <div class="pop-menu pop-right" id="presetMenu" hidden>
@@ -184,6 +186,13 @@
         <p class="small preset-suggest" id="presetSuggest" hidden></p>
         <p class="small muted preset-hint" id="presetHint" aria-live="polite"></p>
       </div>
+      <div class="find-row" id="findRow" role="search" hidden>
+        <div class="find-field">
+          <input type="search" id="findSetting" placeholder="Find a setting, e.g. underlay" aria-label="Find a setting" aria-describedby="findNote" autocomplete="off" spellcheck="false">
+          <button type="button" class="ghost ib" id="btnFindClose" aria-label="Close the search" title="Close (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+        </div>
+        <p class="small muted find-note" id="findNote" aria-live="polite"></p>
+      </div>
       <div class="ed-scroll">
         <p class="muted small ed-file" id="fileInfo"></p>
         <div id="smartInfo" class="smart hidden" aria-live="polite"></div>
@@ -195,7 +204,7 @@
         </div>
 
         <details class="ed-sec" data-sec="size" open>
-          <summary>Size &amp; colours</summary>
+          <summary>Size &amp; colours <i data-help="sec_size"></i></summary>
           <div class="ed-body">
             <label><span class="lbl">Used for <i data-help="placement"></i></span><select id="placement"></select></label>
             <label><span class="lbl">Hoop size <i data-help="hoop"></i></span><select id="hoop"></select></label>
@@ -210,10 +219,10 @@
         </details>
 
         <details class="ed-sec" data-sec="picture" id="rasterOpts">
-          <summary>Picture</summary>
+          <summary>Picture <i data-help="sec_picture"></i></summary>
           <div class="ed-body">
             <label><span class="lbl">Background <i data-help="background"></i></span>
-              <select id="background">
+              <select id="background" data-opt-help="background">
                 <option value="auto">Remove plain background (recommended)</option>
                 <option value="color">Remove background colour everywhere (also inside letters)</option>
                 <option value="none">Keep everything</option>
@@ -222,7 +231,7 @@
             </label>
             <div id="textOpts">
               <label><span class="lbl">Text &amp; fine details <i data-help="text_mode"></i></span>
-                <select id="text_mode">
+                <select id="text_mode" data-opt-help="text_mode">
                   <option value="auto">Automatic (recommended)</option>
                   <option value="sharp">Keep small text &amp; fine details sharp</option>
                   <option value="standard">Standard</option>
@@ -230,7 +239,7 @@
                 </select>
               </label>
             </div>
-            <details class="group" id="adjustBox">
+            <details class="group" id="adjustBox" data-sec="adjust">
               <summary>Picture adjustments</summary>
               <label><span class="lbl">Brightness <output id="brightnessOut">0</output> <i data-help="brightness"></i></span><input type="range" id="brightness" min="-100" max="100" step="5" value="0"></label>
               <label><span class="lbl">Contrast <output id="contrastOut">0</output> <i data-help="contrast"></i></span><input type="range" id="contrast" min="-100" max="100" step="5" value="0"></label>
@@ -238,23 +247,44 @@
               <label><span class="lbl">Clean up picture grain <output id="denoiseOut">Medium</output> <i data-help="denoise"></i></span><input type="range" id="denoise" min="0" max="3" value="2" aria-valuetext="Medium"></label>
               <button type="button" class="ghost small" id="btnResetAdjust">Reset adjustments</button>
             </details>
-            <details class="group">
+            <details class="group" data-sec="detail">
               <summary>Advanced detail settings</summary>
               <label><span class="lbl">Smallest detail to keep (mm) <i data-help="min_feature_mm"></i></span><input type="number" id="min_feature_mm" min="0.1" max="3" step="0.1" value="0.3" inputmode="decimal"></label>
               <label><span class="lbl">Remove specks smaller than (mm²) <i data-help="min_area_mm2"></i></span><input type="number" id="min_area_mm2" min="0.2" max="20" step="0.1" value="1.0" inputmode="decimal"></label>
+            </details>
+            <details class="group" id="aiBox" data-sec="assistant">
+              <summary>Smart assistant &amp; AI clean-up <i data-help="sec_assistant"></i></summary>
+              <div class="ai-box">
+                <p class="small muted" id="aiUsing"></p>
+                <div class="row"><button type="button" id="btnAiSuggest">Suggest best settings</button><i data-help="aiSuggest"></i></div>
+                <div id="aiSuggestResult" class="ai-result" aria-live="polite"></div>
+                <div class="ai-clean">
+                  <label><span class="lbl">Picture clean-up <i data-help="aiClean"></i></span>
+                    <select id="aiCleanMode">
+                      <option value="redraw">Redraw as clean artwork</option>
+                      <option value="remove_background">Remove background only</option>
+                      <option value="enhance">Sharpen &amp; enhance</option>
+                    </select></label>
+                  <div class="row">
+                    <button type="button" id="btnAiClean">Clean up with AI</button>
+                    <button type="button" id="btnAiRevert" class="ghost hidden">Use my original</button>
+                  </div>
+                  <p class="small muted" id="aiCleanNote"></p>
+                </div>
+              </div>
             </details>
           </div>
         </details>
 
         <details class="ed-sec hidden" data-sec="artwork" id="vectorOpts" open>
-          <summary>Artwork</summary>
+          <summary>Artwork <i data-help="sec_artwork"></i></summary>
           <div class="ed-body">
             <label class="check"><input type="checkbox" id="knockout" checked> Skip hidden parts of overlapping shapes <i data-help="knockout"></i></label>
           </div>
         </details>
 
         <details class="ed-sec" data-sec="material">
-          <summary>Fabric &amp; thread</summary>
+          <summary>Fabric, thread &amp; machine <i data-help="sec_material"></i></summary>
           <div class="ed-body">
             <!-- part of the stitch settings: the fields belong to #stitchForm (form attribute) -->
             <div class="params" id="materialFields"></div>
@@ -262,34 +292,13 @@
         </details>
 
         <details class="ed-sec" data-sec="stitches" open>
-          <summary>Stitches</summary>
+          <summary>Stitches <i data-help="sec_stitches"></i></summary>
           <div class="ed-body">
             <p class="muted small ed-note">The defaults suit most designs on regular fabric.</p>
             <form id="stitchForm" class="params"></form>
           </div>
         </details>
 
-        <details class="ed-sec hidden" data-sec="assistant" id="aiBox">
-          <summary>Smart assistant</summary>
-          <div class="ed-body ai">
-            <p class="small muted" id="aiUsing"></p>
-            <div class="row"><button type="button" id="btnAiSuggest">Suggest best settings</button><i data-help="aiSuggest"></i></div>
-            <div id="aiSuggestResult" class="ai-result" aria-live="polite"></div>
-            <div class="ai-clean">
-              <label><span class="lbl">Picture clean-up <i data-help="aiClean"></i></span>
-                <select id="aiCleanMode">
-                  <option value="redraw">Redraw as clean artwork</option>
-                  <option value="remove_background">Remove background only</option>
-                  <option value="enhance">Sharpen &amp; enhance</option>
-                </select></label>
-              <div class="row">
-                <button type="button" id="btnAiClean">Clean up with AI</button>
-                <button type="button" id="btnAiRevert" class="ghost hidden">Use my original</button>
-              </div>
-              <p class="small muted" id="aiCleanNote"></p>
-            </div>
-          </div>
-        </details>
       </div>
     </aside>
 
@@ -318,7 +327,7 @@
             <label class="check"><input type="checkbox" id="showGrid"> Grid &amp; rulers <i data-help="grid"></i></label>
             <label class="check shapes-only"><input type="checkbox" id="showDirections"> Stitch directions <i data-help="show_directions"></i></label>
             <label class="check stitch-only"><input type="checkbox" id="showWeave"> Woven fabric texture <i data-help="weave"></i></label>
-            <label class="check stitch-only ed-fabric"><input type="checkbox" id="showFabric"> Dark fabric</label>
+            <label class="check stitch-only ed-fabric"><input type="checkbox" id="showFabric"> Dark fabric <i data-help="dark_fabric"></i></label>
           </div>
         </div>
         <div class="vb-grp ed-zoom">
@@ -408,7 +417,7 @@
           </div>
         </section>
         <section class="ed-group" id="infoGroup" aria-labelledby="infoTitle">
-          <h3 id="infoTitle">Design info</h3>
+          <h3 id="infoTitle">Design info <i data-help="info_group"></i></h3>
           <p class="small muted" id="statsEmpty">Figures appear when the stitches are ready.</p>
           <div id="stats" class="stats"></div>
           <p class="small muted stats-note" id="statsNote" hidden></p>
@@ -423,7 +432,7 @@
           </details>
         </section>
         <section class="ed-group" id="checkGroup" aria-labelledby="checkTitle">
-          <h3 id="checkTitle">Checks <span class="grp-count warn" id="checkCount" hidden></span></h3>
+          <h3 id="checkTitle">Checks <span class="grp-count warn" id="checkCount" hidden></span> <i data-help="checks_group"></i></h3>
           <p class="empty-state" id="checksOk" hidden><span class="es-icon" aria-hidden="true">&#10003;</span> No problems found.</p>
           <div id="warnings2" class="warnings"></div>
           <div id="warnings3" class="warnings"></div>

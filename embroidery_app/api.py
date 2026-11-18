@@ -36,7 +36,7 @@ from .export import FORMATS
 from .fabrics import FABRICS
 from .ingest.raster import RasterOptions
 from .ingest.vector import VectorOptions
-from .models import STITCH_STYLES, STITCH_TERMS, StitchParams
+from .models import STITCH_STYLE_GROUPS, STITCH_STYLES, STITCH_TERMS, StitchParams
 from .stitch import decorative
 from .stitch.safety import DENSITY_CELL_MM, DENSITY_LIMIT
 
@@ -218,6 +218,7 @@ def get_config():
         "fabrics": [f.to_dict() for f in FABRICS],
         "stitch_styles": [list(s) for s in STITCH_STYLES],
         "stitch_terms": STITCH_TERMS,  # trade names, shown next to the labels
+        "stitch_style_groups": [[label, list(keys)] for label, keys in STITCH_STYLE_GROUPS],  # menu headings
         "motifs": [[k, m["label"]] for k, m in decorative.motifs().items()],
         "ai": ai_catalog(),
         "ai_clean_modes": list(CLEAN_MODES),

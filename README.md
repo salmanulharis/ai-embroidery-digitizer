@@ -36,8 +36,8 @@ See [AI assistant](#ai-assistant).
 
 ## The editor
 
-After the upload one editor opens: settings on the left (Size & colours, Picture or Artwork, Fabric & thread,
-Stitches, Smart assistant), the preview in the middle, and Selection, Threads, Design info and Checks on the right.
+After the upload one editor opens: settings on the left (Size & colours, Picture or Artwork, Fabric, thread &
+machine, Stitches), the preview in the middle, and Selection, Threads, Design info and Checks on the right.
 The header holds undo/redo, **Shapes / Stitches** and **Export**. A bar above the preview holds the preview style
 and the optimised / unoptimised versions (Stitches), the **Show** menu (original picture, hoop, grid, directions,
 woven texture, dark fabric) and zoom (100% = actual size, approximate); nothing floats over the design. The bottom
@@ -58,6 +58,14 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   other formats away; the worksheet is added when the file has no thread colours (DST, EXP, U01); the Download
   button stays in view and says what you get. Checks lead to the problem (*Show me*, *Change the size*). It brings
   the stitches up to date first, so a download always matches the screen.
+* **Checks that fix things**: each time the stitches are made, the machine check, the size and the built-in stitch
+  review (the important findings: dense stitching, foundation off, many thread cuts, thin lettering, fabric needs…)
+  appear in *Checks*, each with its way to a fix: a one-click setting change (one undo step, never applied by
+  itself), *Show me* (the Check view zoomed to the problem spots, ‹ › steps through them), *Change the size*, *Fit
+  to the hoop* / *Use the … hoop*, or *Select them* for the shapes concerned. × hides a check for this design.
+  The server sends them as `checks` (code, severity, text, actions, change); `warnings` stays as plain text.
+* **Find a setting** (🔍 next to the preset, or `/`): filters the settings panel to the settings whose name or help
+  matches (also trade words: *underlay*, *tatami*, *pull comp*), opening their sections only for the search.
 * **First steps**: on a browser's first designs, numbers mark the way – 1 Shapes, 2 Stitches, 3 Export – and go
   away as each is done (Help and shortcuts switches them on or off). The analysis is a short summary with
   *Details*; a suggested preset sits under the preset picker with one *Apply*.
@@ -77,10 +85,19 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   result and the thread order. With warnings, *Checks* (with a count) comes before Design info.
 * **Shape menu**: right-click a shape (long-press on touch, Menu key / Shift+F10) for style, direction, thickness,
   select the colour, don't stitch, reset; a small **toolbar** next to the selection has the most used ones.
+* **Stitch styles in groups** (every style list: Selection, Threads, shape menu, toolbar): Basic, Decorative
+  outlines, Borders, Shaped fills, Textured fills, Raised & appliqué, Follow a line you draw
+  (`models.STITCH_STYLE_GROUPS`). A line under the style, foundation, fill texture, background and text drop-downs
+  says what the chosen option does. The Selection panel lists only the settings that apply to the shapes chosen;
+  thickness, extra width, bold outline and foundation are under *Fine-tune*, open by itself when a shape has its own
+  value there.
 * **Density** view: needle points per mm², blue up to the machine check's limit, red above it.
-* **Thread brand** (Fabric & thread): with thread charts in `THREAD_CHARTS_DIR`, the nearest thread of that brand
-  for every colour, in the Thread order list, the worksheet and VP3 files. No chart is bundled (see Licences).
-* **Machine speed** (Advanced stitch settings) for the time estimate; the worksheet also estimates the bobbin thread.
+* **Thread brand** (Fabric, thread & machine): with thread charts in `THREAD_CHARTS_DIR`, the nearest thread of that
+  brand for every colour, in the Thread order list, the worksheet and VP3 files. No chart is bundled (see Licences).
+* **Machine speed** (Fabric, thread & machine) for the time estimate; the worksheet also estimates the bobbin thread.
+* **Your defaults** (My account): your machine, usual placement, usual fabric and thread brand (`prefs.py`). A new
+  design starts with the fabric (a Cap front placement starts on Cap fabric), the thread brand and a usual speed for
+  your machine; these count as its starting values, so they are not marked as changed.
 * **Theme** (account menu: System / Light / Dark) and a **woven** fabric texture under the stitches.
 * **Merge similar colours** (Threads ⋯ menu): pairs of threads that look alike (CIEDE2000), each merged into the
   colour that covers more; all in one step, one Undo separates them.
@@ -92,7 +109,12 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
 * **Undo / redo** cover everything in the order it happened: shape edits, threads, merging, Size / Colours /
   Picture settings (undoing one puts back the design and the setting) and the stitch settings.
 * **Changed settings** are marked against what the design started with (the stitch defaults and the picture
-  settings found after the upload): ↺ resets one setting, "Reset" a section, "Reset all" everything.
+  settings found after the upload): ↺ resets one setting, "Reset" a section, "Reset all" everything. A dot on a
+  section or a group inside it (also closed) shows something in it was changed.
+* **Advanced stitch settings** in small groups: Foundation, Stitch length & texture, Satin width & compensation,
+  Sewing order & thread cuts, Special effects (`ADVANCED_GROUPS` in app.js; a setting no group names is listed
+  under *Other settings*). Every section and group remembers whether it is open. The smart assistant (suggest
+  settings, AI clean-up) is a group in *Picture*.
 * **Presets** (top of the settings panel): choosing one fills in a set of settings at once; the ⋯ menu has *Apply
   again* (after you changed settings), *Save as preset…* and *Manage presets…*.
   Built-in presets (Standard, Small text & logos, Lightweight, Clean logo, High contrast; Premium: Fine detail, Dense

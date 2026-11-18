@@ -146,8 +146,8 @@ const HELP = {
   },
   aiReview: {
     t: "Check my stitches",
-    what: "Checks the generated stitches for problems such as stitching that is too dense, thin shapes that may look broken, too many thread cuts or missing foundation stitches – and suggests setting changes you can apply with one click.",
-    why: "Catches problems before you sew on real fabric. Works without AI; with an AI service it also looks at the preview picture like a digitizer would.",
+    what: "A full report on the stitches: everything the built-in review finds, also the smaller points the Checks list leaves out, with all suggested setting changes to apply at once.",
+    why: "The important findings already appear in Checks by themselves, each with its own fix. With an AI service this also looks at the preview picture like a digitizer would.",
   },
   quota: {
     t: "Design downloads",
@@ -232,7 +232,7 @@ const HELP = {
   shape_style: {
     t: "Stitch style for the selected shapes",
     what: "How the selected shapes are sewn. “Same as colour” follows the colour list below; “Don't stitch” leaves the shape out so the fabric shows.",
-    why: "Fill suits large areas, Satin gives a smooth shine on narrow shapes, Outline sews just the edge. The advanced fills (offset, spiral, contour, radial, shaded, stipple, maze, cross stitch) and decorative fills (motif, pattern, jagged) fill the shape with another texture; raised satin pads a narrow shape; appliqué sews a fabric piece on (the machine stops so you can lay it). The decorative outlines (double run, backstitch, stemstitch, sculpture run) and borders (zigzag, E-stitch) are sewn along a line, or around the edge of a filled shape instead of filling it.",
+    why: "The styles are grouped in the list: Basic, Decorative outlines, Borders, Shaped fills, Textured fills, Raised & appliqué, and styles that follow a line you draw. The line under the list says what the chosen style does; pointing at a choice shows it too.",
     eg: "Remove a stray speck with “Don't stitch”. Use an E-stitch border around an appliqué piece, or stemstitch for a hand-embroidered look.",
   },
   shape_direction: {
@@ -649,7 +649,7 @@ const HELP = {
     eg: "Screens and printed cards differ: check each match against the real thread card. The charts are added by the administrator.",
   },
   stats_thread: { t: "Thread used", what: "Top thread for the whole design, with 10 % for tie-ins and waste. The bobbin uses roughly a third of that; the worksheet lists both.", why: "Check you have enough thread on each cone before a long run." },
-  machine_spm: { t: "Machine speed", what: "The average speed your machine sews this kind of design at, in stitches per minute - including the slowdowns for satin and small details, so lower than its top speed. Used only for the time estimate; the stitches stay the same.", why: "Commercial multi-needle machines often average 700-1000, home machines 400-700.", eg: "A WONYO machine set to 1000 that averages about 800 on logos: enter 800." },
+  machine_spm: { t: "Machine speed", what: "The average speed your machine sews this kind of design at, in stitches per minute - including the slowdowns for satin and small details, so lower than its top speed. Used only for the time estimate; the stitches stay the same.", why: "Commercial multi-needle machines often average 700-1000, home machines 400-700. With your machine chosen (Export or My account), a new design starts with a usual speed for it.", eg: "A WONYO machine set to 1000 that averages about 800 on logos: enter 800." },
   sequence: {
     t: "Thread order",
     what: "The order in which the machine sews the colours.",
@@ -659,12 +659,18 @@ const HELP = {
     t: "What is it for?",
     what: "Where the design will be sewn. It sets the size (the longest side of the design), the smallest hoop that fits, and lets the smart analysis judge small lettering at that size – before the design is prepared, so it is right the first time.",
     why: "The size changes everything: whether a shape is satin or fill, how small text comes out, the stitch count. Your last choice is remembered, so next time Enter is enough.",
-    eg: "Left chest ≈ 90 mm, cap front ≈ 55 mm, jacket back ≈ 280 mm. Every value stays editable in Size & colours; Custom size keeps the width you type.",
+    eg: "Left chest ≈ 90 mm, cap front ≈ 55 mm (with the cap hoop and the Cap fabric settings), jacket back ≈ 280 mm. Every value stays editable in Size & colours; Custom size keeps the width you type.",
   },
   account_defaults: {
     t: "Your defaults",
-    what: "Your machine and what your designs are usually for. Export ticks your machine's file first; after you choose a file, the usual placement is pre-selected.",
-    why: "Asked once, remembered for your account (also on another computer).",
+    what: "Your machine, what your designs are usually for, your usual fabric and thread brand. Export ticks your machine's file first; after you choose a file, the usual placement is pre-selected; every new design starts with your fabric, thread brand and your machine's speed for the time estimate.",
+    why: "Asked once, remembered for your account (also on another computer). Each design can still change all of them.",
+  },
+  account_fabric: {
+    t: "Usual fabric",
+    what: "The fabric most of your designs are sewn on. Every new design starts with its settings (foundation, compensation, density), as if you had chosen it under Fabric, thread & machine.",
+    why: "One choice less for every design. A Cap front placement still starts on Cap fabric.",
+    eg: "A shop that mostly sews polo shirts: Polo piqué.",
   },
   file_menu: {
     t: "File",
@@ -688,7 +694,308 @@ const HELP = {
     why: "DST (★) works with WONYO and almost all commercial machines and opens in Wilcom, which rebuilds editable objects from the stitches. “Continue in Wilcom” adds the artwork as EPS for fully editable objects (Wilcom's own .EMB format cannot be written by other software).",
     eg: "Choose your machine once: its file is ticked for you, and the worksheet is added when the file has no thread colours (DST, EXP, U01). One file downloads as it is; several come together in one .zip.",
   },
+
+  // ---------------------------------------------------------------- sections and groups of the settings
+  sec_size: {
+    t: "Size & colours",
+    what: "How big the design is sewn, the hoop it goes in, and how many thread colours it uses.",
+    why: "Decide the size first: it changes what can be sewn (small lettering, satin or fill) and the number of stitches.",
+  },
+  sec_picture: {
+    t: "Picture",
+    what: "How your picture is turned into shapes: the background, small text and fine details, brightness and grain, and the smart assistant.",
+    why: "Clean shapes give clean stitches. Change these when shapes are missing, ragged or too busy in the Shapes view.",
+  },
+  sec_artwork: {
+    t: "Artwork",
+    what: "How the shapes of an artwork file (SVG, AI, PDF) are read.",
+    why: "Artwork already has exact shapes, so it needs fewer settings than a picture.",
+  },
+  sec_material: {
+    t: "Fabric, thread & machine",
+    what: "What you sew on, with which thread, and how fast your machine sews.",
+    why: "The fabric sets foundation and compensation for you; the thread brand gives thread numbers on the worksheet; the speed only changes the time estimate.",
+  },
+  sec_stitches: {
+    t: "Stitches",
+    what: "The main stitch settings for the whole design: how dense fills and satin are, how much they are widened, the fill direction and the switches that matter most.",
+    why: "The defaults suit most designs on regular fabric. Single shapes and colours can have their own settings in the Design panel.",
+  },
+  sec_advanced: {
+    t: "Advanced stitch settings",
+    what: "Settings a digitizer fine-tunes, in small groups: foundation, stitch length and texture, satin width and compensation, sewing order and thread cuts, special effects.",
+    why: "Most designs never need them. A dot on a group shows something in it was changed.",
+  },
+  adv_foundation: {
+    t: "Foundation",
+    what: "The stitches sewn first, under fills and satin, to hold the fabric (digitizers call it underlay).",
+    why: "The right foundation keeps edges crisp and stops stitches sinking into soft or stretchy fabric.",
+  },
+  adv_length: {
+    t: "Stitch length & texture",
+    what: "How long single stitches are in fills and outlines, and the pattern the needle points make in a fill.",
+    why: "Shorter stitches follow curves and small shapes better; longer ones sew faster and look smoother on large areas.",
+  },
+  adv_satin: {
+    t: "Satin width & compensation",
+    what: "The widest shape still sewn as satin, and how much the ends of stitches are shortened (push compensation).",
+    why: "Very wide satin snags; push compensation stops shapes growing longer than drawn.",
+  },
+  adv_order: {
+    t: "Sewing order & thread cuts",
+    what: "In which order shapes are sewn, when the thread is cut, lock stitches at cuts, and which tiny shapes are left out.",
+    why: "Fewer, shorter jumps and cuts make sewing faster and the back of the embroidery cleaner.",
+  },
+  adv_effects: {
+    t: "Special effects",
+    what: "Knockdown, trapunto, bold outlines and photo stitch: techniques for particular fabrics or looks.",
+    why: "Off by default: each changes the look of the whole design.",
+  },
+  sec_assistant: {
+    t: "Smart assistant & AI clean-up",
+    what: "Suggests picture settings from an analysis of your picture, and can clean up the picture with an AI service.",
+    why: "The built-in analysis already ran when you uploaded the picture; ask again after changing the size, or set up an AI service for advice from an AI model.",
+  },
+  shape_fine: {
+    t: "Fine-tune",
+    what: "Thickness, extra width, bold outline and foundation of the selected shapes. Only the settings that apply to them are listed.",
+    why: "“Same as design” follows the settings panel; change a value here only for these shapes. The group opens by itself when a selected shape has its own value.",
+  },
+  info_group: {
+    t: "Design info",
+    what: "The figures of the stitches on screen: stitches, size, colours and sewing time. More details has thread cuts, thread used, stitch types and the thread order.",
+    why: "They follow Optimised / Unoptimised in the view bar.",
+  },
+  checks_group: {
+    t: "Checks",
+    what: "Anything that may go wrong when sewing, found each time the stitches are made: the machine check, the size and the built-in stitch review.",
+    why: "Each check has a way to the problem: Show me, a setting to change with one click, or the shapes it is about. A fix is one undo step; × hides a check for this design.",
+  },
+  dark_fabric: {
+    t: "Dark fabric",
+    what: "Shows the stitches on a dark background instead of a light one.",
+    why: "Light threads, and how much fabric shows between stitches, are easier to judge on the colour you will sew on.",
+  },
+
+  // ---------------------------------------------------------------- checks (codes from service._stitch_checks and ai/builtin.review_plan)
+  check_hoop: {
+    t: "Larger than the hoop",
+    what: "The design does not fit the hoop chosen under Size, not even turned 90°.",
+    why: "The machine refuses a design larger than its hoop. Fit to the hoop makes the design 90 % of the hoop; a bigger hoop keeps the size.",
+  },
+  check_oversize: {
+    t: "Larger than most hoops",
+    what: "The design is wider or taller than 400 mm.",
+    why: "Few machines have a hoop that big: check your largest hoop, or make the design smaller.",
+  },
+  check_stitch_count: {
+    t: "Very high stitch count",
+    what: "More than 100,000 stitches.",
+    why: "Such designs take hours, get stiff and pucker the fabric. A smaller design or a thinner fill needs fewer stitches.",
+  },
+  check_thread_break: {
+    t: "Spots where the thread may break",
+    what: "Places with very short stitches, one needle hole hit many times, or too many stitches in a small area.",
+    why: "These are where thread breaks and needle holes happen. Show me steps through the spots in the Machine check view; the fix is the built-in review's suggestion.",
+  },
+  check_thin_lettering: {
+    t: "Lettering thinner than the machine can sew",
+    what: "Strokes in small lettering narrower than a sewable satin column, already widened as far as the gaps between letters allow.",
+    why: "Fine 60 wt thread sews narrower columns cleanly; a larger design gives crisper letters.",
+  },
+  check_dense_tiny: {
+    t: "Dense stitching on tiny shapes",
+    what: "Very small or narrow shapes have their own thickness set to dense.",
+    why: "Dense stitches on a tiny shape pile up thread and break it. Select them and set Thickness to Normal or Same as design.",
+  },
+  check_density_high: {
+    t: "Very dense stitching",
+    what: "More stitches per cm² than the fabric takes comfortably.",
+    why: "Dense embroidery is stiff and puckers the fabric; a slightly larger fill gap fixes it.",
+  },
+  check_coverage_thin: {
+    t: "Thin coverage",
+    what: "Fill rows far apart.",
+    why: "The fabric shows through, mostly on contrasting colours; a smaller fill gap covers it.",
+  },
+  check_underlay_off: {
+    t: "Foundation stitches are off",
+    what: "Large fills are sewn without foundation stitches.",
+    why: "Without a foundation, fills sink into the fabric and look patchy.",
+  },
+  check_many_trims: {
+    t: "Many thread cuts",
+    what: "The thread is cut very often, even for short moves.",
+    why: "Each cut costs about 10 seconds. Cutting only moves longer than 3 mm saves time; short moves are hidden under the stitches.",
+  },
+  check_skipped_marks: {
+    t: "Small marks are not stitched",
+    what: "Shapes smaller than “Skip shapes smaller than” (Advanced › Sewing order & thread cuts) are left out.",
+    why: "They are often dots and punctuation. Select them to see them; lower that setting or make the design larger to keep them.",
+  },
+  check_tiny_shapes: {
+    t: "Many very small shapes",
+    what: "Many shapes under 2 mm².",
+    why: "They sew as tiny knots. For lettering, a larger design is cleaner.",
+  },
+  check_wide_satin: {
+    t: "Very wide satin allowed",
+    what: "Satin up to more than 10 mm wide.",
+    why: "Long satin stitches snag on clothing; 10 mm or less is safer.",
+  },
+  check_optimize_off: {
+    t: "Smart stitch reduction is off",
+    what: "Stacked and very short stitches are not removed.",
+    why: "Turning it on removes them without changing the design.",
+  },
+  check_order_off: {
+    t: "Smart sewing order is off",
+    what: "Shapes of each colour are sewn in their original order.",
+    why: "Smart order gives shorter jumps and fewer thread cuts.",
+  },
+  check_fabric_knockdown: {
+    t: "No knockdown on pile fabric",
+    what: "Towels and fleece without a knockdown (an open fill sewn first, in the fabric's colour).",
+    why: "The loops swallow small text and outlines; a knockdown keeps them on top.",
+  },
+  check_fabric_pull: {
+    t: "Low shrink compensation for this fabric",
+    what: "Less shrink compensation than the chosen fabric needs.",
+    why: "Soft and stretchy fabric pulls stitches in more: columns and fills end up narrower than drawn.",
+  },
+  check_cap_height: {
+    t: "Design too tall for a cap",
+    what: "Taller than about 57 mm, the usual front panel of a structured cap.",
+    why: "Make it smaller under Size, or choose another placement.",
+  },
+  check_cap_satin: {
+    t: "Wide satin on a cap",
+    what: "Satin wider than 7 mm on a cap.",
+    why: "Caps get rubbed: narrower satin holds up better.",
+  },
+  check_guide_missing: {
+    t: "Guide line missing",
+    what: "Shapes set to a style that follows a drawn line have none yet, so they are sewn the usual way.",
+    why: "Select them and use “Draw guide line” in the Selection panel.",
+  },
+  check_applique_stops: {
+    t: "The machine stops for appliqué",
+    what: "The machine stops after each placement line.",
+    why: "Lay the fabric piece over the line, then continue. The worksheet lists the stops.",
+  },
+  check_many_colours: {
+    t: "Many thread colours",
+    what: "More than 10 thread colours.",
+    why: "Every colour is a thread change; merge similar shades in the Threads list.",
+  },
+  check_long_time: {
+    t: "Long sewing time",
+    what: "More than an hour on the machine.",
+    why: "A smaller design or a lighter fill sews faster.",
+  },
 };
+
+/* ---------------------------------------------------------------- one line per choice of a drop-down
+   Shown under the drop-down (it follows the choice) and as each option's tooltip. A select gets
+   it with data-opt-help="<table>"; choices without a line show none. */
+const OPTION_HELP = {
+  background: {
+    auto: "Removes the plain colour around the design; the same colour inside it (in letters) stays for you to decide.",
+    color: "Removes that colour everywhere, also inside letters and shapes.",
+    none: "Sews the whole picture, background included.",
+    ai: "An AI service cuts the subject out of a photo (needs the add-on).",
+  },
+  text_mode: {
+    auto: "Measures the picture: lettering and fine lines are kept sharp when it finds them.",
+    sharp: "Keeps thin strokes, holes and punctuation of small text.",
+    standard: "Smooths ragged edges, keeps most details.",
+    simple: "Smooths away small details: for photos and busy pictures.",
+  },
+  fill_underlay: {
+    edge_tatami: "A run just inside the outline plus an open grid: right for most fabric.",
+    edge: "Only the run inside the outline: small or light fills.",
+    double_tatami: "Two crossing grids: fleece, towels, stretchy knits.",
+    none: "No foundation: only for very light designs on firm fabric.",
+  },
+  satin_underlay: {
+    edge: "A run inside both edges: most fabric.",
+    center: "One run down the middle: narrow columns, small lettering.",
+    zigzag: "A zigzag across the column lifts the satin.",
+    edge_zigzag: "Edge runs plus a zigzag: T-shirts and polos.",
+    double_zigzag: "Two zigzags: fleece, or a raised look.",
+    auto: "Chosen by each column's width: centre run, edge run, or edge run + zigzag.",
+    none: "No foundation: only for firm fabric.",
+  },
+  fill_pattern: {
+    standard: "Needle points spread like bricks: no visible lines.",
+    brick: "Rows shifted by half a stitch.",
+    diagonal: "Needle points line up into diagonal twill lines: a woven look.",
+    random: "No pattern at all: a smooth, even surface.",
+  },
+  stitch_style: {
+    inherit: "Sewn like the rest of its colour (the thread's settings).",
+    skip: "Not sewn: the fabric shows there.",
+    auto: "Chosen for each shape: satin for narrow parts, fill for large areas, outlines for lines.",
+    fill: "Rows of stitches across the shape: large areas (tatami).",
+    satin: "Stitches from edge to edge with a shine: narrow shapes up to the widest satin setting.",
+    lettering: "Satin that follows each stroke of small letters.",
+    running: "Only the edge, as a line of stitches.",
+    double_run: "The edge sewn there and back: a stronger line.",
+    backstitch: "A hand-sewn backstitch line.",
+    stemstitch: "Overlapping stitches that look like a rope.",
+    sculpture_run: "Short, raised stitches that look like beads.",
+    hand_stitch: "Gaps between stitches like sewing by hand.",
+    motif_run: "A chain of small motifs along the edge.",
+    zigzag: "An open zigzag along the edge: appliqué and borders.",
+    estitch: "A blanket stitch along the edge: appliqué.",
+    offset_fill: "Rings that follow the outline inwards.",
+    spiral_fill: "One continuous spiral: no jumps inside the shape.",
+    contour_fill: "Rows that bend with a curved column.",
+    radial_fill: "Rays from the centre: suns, flowers.",
+    shaded_fill: "Dense to light in one colour: shading.",
+    blend_fill: "Fades into another colour or into the fabric.",
+    stipple_fill: "A light meandering line: quilting look, few stitches.",
+    maze_fill: "A meander with right angles.",
+    cross_stitch: "Little crosses: a hand cross-stitch look.",
+    motif_fill: "Rows of small motifs.",
+    paired_motif_fill: "Rows of motifs that interlock.",
+    pattern_fill: "An embossed pattern pressed into the fill.",
+    jagged_fill: "Rough edges: fur, grass, hair.",
+    raised_satin: "Padded satin for a 3D look, up to 7 mm wide.",
+    applique: "A fabric piece sewn on: placement line, stop, tack-down and cover.",
+    guided_satin: "Satin that turns along a line you draw.",
+    florentine_fill: "Fill rows that bend with a line you draw.",
+    carved_fill: "A line you draw pressed into the fill.",
+    flexi_split: "Satin split by a pattern that follows the column.",
+    motif_column: "Motifs as wide as the shape, along it.",
+  },
+};
+const OptionHelp = (() => {
+  let n = 0;
+  const text = (table, value) => OPTION_HELP[table]?.[value] || "";
+  /** Every select[data-opt-help] inside ``root``: options get tooltips, a line under it follows the choice. */
+  function bind(root) {
+    const sels = root.matches?.("select[data-opt-help]") ? [root] : [...(root.querySelectorAll?.("select[data-opt-help]") || [])];
+    sels.forEach((sel) => {
+      if (sel.dataset.optBound) return;
+      sel.dataset.optBound = "1";
+      const table = sel.dataset.optHelp;
+      [...sel.options].forEach((o) => { const t = text(table, o.value); if (t) o.title = t; });
+      const line = document.createElement("span");
+      line.className = "opt-help small muted";
+      line.id = `opt-help-${++n}`;
+      sel.after(line);
+      sel.setAttribute("aria-describedby", [sel.getAttribute("aria-describedby"), line.id].filter(Boolean).join(" "));
+      const sync = () => (line.textContent = text(table, sel.value));
+      sel.addEventListener("change", sync);
+      sel._optSync = sync; // for code that sets the value without a change event
+      sync();
+    });
+  }
+  /** After code changed select values (presets, undo, reset): the lines follow. */
+  const refresh = (root = document) => root.querySelectorAll("select[data-opt-help]").forEach((s) => s._optSync?.());
+  return { text, bind, refresh };
+})();
 
 /* ---------------------------------------------------------------- tooltip engine */
 const Tip = (() => {
@@ -743,7 +1050,7 @@ const Tip = (() => {
       label.htmlFor = field.id;
       if (field.hasAttribute("aria-label") || field.hasAttribute("aria-labelledby")) return;
       const text = label.cloneNode(true);
-      text.querySelectorAll(".help, output, input, select, textarea, .hint, a, .reset-one, .sec-reset").forEach((n) => n.remove());
+      text.querySelectorAll(".help, output, input, select, textarea, .hint, a, .reset-one, .sec-reset, .opt-help").forEach((n) => n.remove());
       const name = text.textContent.replace(/\s+/g, " ").trim();
       if (name) field.setAttribute("aria-label", name);
     });
@@ -759,9 +1066,13 @@ const Tip = (() => {
       i.replaceWith(...wrap.childNodes);
     });
     labelFields(document);
+    OptionHelp.bind(document); // after labelFields: the line under a drop-down is not part of its name
     // forms built later (stitch settings, shape panel, AI settings) get the same treatment
-    new MutationObserver((changes) => changes.forEach((c) => c.addedNodes.forEach((n) => n.nodeType === 1 && labelFields(n))))
-      .observe(document.body, { childList: true, subtree: true });
+    new MutationObserver((changes) => changes.forEach((c) => c.addedNodes.forEach((n) => {
+      if (n.nodeType !== 1) return;
+      labelFields(n);
+      OptionHelp.bind(n);
+    }))).observe(document.body, { childList: true, subtree: true });
     document.addEventListener("mouseover", (ev) => { const b = ev.target.closest(".help"); if (b) show(b); });
     document.addEventListener("mouseout", (ev) => { if (ev.target.closest(".help") && current && !current.matches(":focus")) hide(); });
     document.addEventListener("focusin", (ev) => { const b = ev.target.closest(".help"); if (b) show(b); });

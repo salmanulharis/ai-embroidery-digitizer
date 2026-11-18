@@ -200,7 +200,7 @@ try {
 
   // ------------------------------------------------ machine speed
   const t0 = await ev(`state.preview.stats.est_minutes`);
-  check("speed control in the advanced settings (300-1500)", await ev(`(() => { const e = $("stitchForm").elements.machine_spm; return !!e && e.min === "300" && e.max === "1500" && e.value === "750"; })()`));
+  check("speed control with the fabric, thread and machine (300-1500)", await ev(`(() => { const e = $("stitchForm").elements.machine_spm; return !!e && e.min === "300" && e.max === "1500" && e.value === "750"; })()`));
   await ev(change(`${f}.machine_spm`, 1500));
   await sleep(300);
   await waitFor(`${idle} && state.preview.stats.machine_spm === 1500`, 60000);

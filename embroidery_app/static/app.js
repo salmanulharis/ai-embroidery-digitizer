@@ -251,7 +251,16 @@ async function init() {
     const key = $("placement").value;
     if (key) Prefs.set("placement", key);
     const a = state.design ? state.design.width_mm / state.design.height_mm : aspect();
-    if (applyPlacement(key, a) && state.project) Jobs.extract();
+    const before = stitchValues();
+    const fabric = placementFabric(key);
+    if (fabric) { setFabric(fabric); markModified(); }
+    const after = stitchValues();
+    const sized = applyPlacement(key, a);
+    if (!state.project) return;
+    // the fabric of the placement (a cap) goes with the size: one undo step
+    const step = changedKeys(before, after).length ? { label: `placement ${placementOf(key)?.label || ""}`.trim(), stitch: { before, after } } : null;
+    if (sized) Jobs.extract(step ? { step } : {});
+    else if (step) { History.stitchChange(step.label); Jobs.stitch(); }
   };
   // a width typed by hand is a custom size
   $("width_mm").addEventListener("change", () => { if ($("placement").value) $("placement").value = "custom"; });
@@ -466,6 +475,38 @@ function bestHoop(w, h, cap) {
     .sort((a, b) => a.width * a.height - b.width * b.height);
   return fits.length ? String(fits[0].i) : "";
 }
+const fabricLabel = (id) => ((state.config.fabrics || []).find((f) => f.id === id)?.label || id).replace(/ \(.*\)$/, "").toLowerCase();
+/** The fabric a placement starts with (prefs.PLACEMENTS "fabric"), when the server has it. */
+function placementFabric(key) {
+  const id = placementOf(key)?.fabric;
+  return id && (state.config.fabrics || []).some((f) => f.id === id) ? id : null;
+}
+/** Choose a fabric in the form as the Fabric field does (its settings come with it). */
+function setFabric(id) {
+  const sel = $("stitchForm").elements.fabric;
+  if (!sel || ![...sel.options].some((o) => o.value === id)) return false;
+  sel.value = id;
+  applyFabric(id);
+  return true;
+}
+/** A new design starts with the account's usual fabric (a placement's fabric wins), thread brand
+ *  and its machine's speed (prefs.py, My account). These become part of its starting values, so
+ *  they are not marked as changed. */
+function applyStartValues(placement) {
+  const f = $("stitchForm"), keys = new Set();
+  const fabric = placementFabric(placement) || Prefs.get("fabric");
+  if (fabric && setFabric(fabric)) {
+    keys.add("fabric");
+    Object.keys((state.config.fabrics || []).find((x) => x.id === fabric)?.settings || {}).forEach((k) => keys.add(k));
+  }
+  const chart = Prefs.get("thread_chart"), cs = f.elements.thread_chart;
+  if (chart && cs && [...cs.options].some((o) => o.value === chart)) { cs.value = chart; keys.add("thread_chart"); }
+  const spm = (state.config.machines || []).find((m) => m.key === Prefs.get("machine"))?.spm;
+  if (spm && f.elements.machine_spm) { f.elements.machine_spm.value = spm; keys.add("machine_spm"); }
+  const now = stitchValues();
+  state.startStitch = Object.fromEntries([...keys].filter((k) => k in now).map((k) => [k, now[k]]));
+  updateStyleParams();
+}
 /** Size and hoop for a placement; ``a`` = width / height of the design. False: nothing set. */
 function applyPlacement(key, a) {
   const p = placementOf(key);
@@ -494,7 +535,7 @@ const PlaceStep = (() => {
     const p = placementOf(chosen());
     $("placeCustomRow").classList.toggle("hidden", !p || p.size_mm != null);
     $("placeNote").textContent = !p ? "" : p.size_mm == null ? "The design is prepared at this width; change it any time in Size & colours."
-      : `The longest side of the design will be about ${p.size_mm} mm, in the smallest hoop that fits. You can change both later.`;
+      : `The longest side of the design will be about ${p.size_mm} mm, in the smallest hoop that fits${p.fabric ? `, with the settings for ${fabricLabel(p.fabric)}` : ""}. You can change all of it later.`;
   }
   function show(f) {
     file = f;
@@ -650,6 +691,7 @@ async function upload(file, { placement = null, width = null, onProgress = null 
     showPage("editor");
     await busy("Analysing your picture…", analyse).catch(() => {});
   }
+  applyStartValues(placement); // your usual fabric, thread brand and machine speed (My account)
   setBaseline(); // what this design starts with: marks and resets compare with it
   History.reset();
   await Jobs.extract({ delay: 0 }); // the stitches follow by themselves
@@ -659,13 +701,13 @@ async function upload(file, { placement = null, width = null, onProgress = null 
 function openProject(meta) {
   Jobs.reset();
   if (state.playing) togglePlay();
-  Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true, baseline: null });
+  Object.assign(state, { project: meta, design: null, preview: null, smart: null, viewMoved: false, autoPane: true, baseline: null, startStitch: null });
   $("placement").value = "";
   Shapes.reset();
   Render.reset();
   History.reset();
   Presets.reset();
-  document.querySelectorAll("#leftPanel label.mod, #leftPanel .ed-sec.mod").forEach((n) => n.classList.remove("mod"));
+  document.querySelectorAll("#leftPanel label.mod, #leftPanel details.mod").forEach((n) => n.classList.remove("mod"));
   modState.settings = modState.shapes = 0;
   renderModSummary();
   const raster = meta.kind === "raster";
@@ -678,6 +720,7 @@ function openProject(meta) {
   $("svgBox").innerHTML = "";
   ["stats", "statsExtra", "sequence", "warnings2", "warnings3"].forEach((id) => ($(id).innerHTML = ""));
   $("simNote").hidden = true;
+  Checks.reset();
   renderChecks();
   $("optimizeInfo").className = "optinfo hidden";
   $("sequenceTitle").classList.add("hidden");
@@ -748,6 +791,23 @@ const styleLabel = (v, label) => {
   const term = state.config?.stitch_terms?.[v];
   return term && !label.toLowerCase().startsWith(term.toLowerCase()) ? `${label} — ${term}` : label;
 };
+/** The styles in their menu groups (models.STITCH_STYLE_GROUPS): [[group, [[value, label], …]], …].
+ *  A style no group names (an older or newer server) is listed under "Other". */
+function styleGroups() {
+  const styles = stitchStyles(), byKey = new Map(styles), seen = new Set(), out = [];
+  (state.config?.stitch_style_groups || []).forEach(([group, keys]) => {
+    const items = keys.filter((k) => byKey.has(k) && !seen.has(k)).map((k) => (seen.add(k), [k, styleLabel(k, byKey.get(k))]));
+    if (items.length) out.push([group, items]);
+  });
+  const rest = styles.filter(([k]) => !seen.has(k)).map(([k, l]) => [k, styleLabel(k, l)]);
+  if (rest.length) out.push([out.length ? "Other" : "", rest]);
+  return out;
+}
+/** <option>s of every style in <optgroup>s; ``opt(value, label)`` writes one option. */
+const styleOptgroups = (opt) => styleGroups().map(([group, items]) => {
+  const opts = items.map(([v, l]) => opt(v, l)).join("");
+  return group ? `<optgroup label="${esc(group)}">${opts}</optgroup>` : opts;
+}).join("");
 
 // ------------------------------------------------------------------ threads (thread colours, sewn top to bottom)
 // One compact row per colour: sew on/off, thread colour, name, shape count. The arrow opens
@@ -776,7 +836,7 @@ function renderLayers() {
         <button type="button" class="ghost thr-toggle" data-expand aria-expanded="${open}" aria-controls="thr-more-${l.index}" aria-label="More settings for ${n}">›</button>
       </div>
       <div class="thr-more" id="thr-more-${l.index}" ${open ? "" : "hidden"}>
-        <label><span class="lbl">Stitch style ${Tip.icon("layers_stitch")}</span><select data-k="stitch_type" aria-label="Stitch style for ${n}">${stitchStyles().map(([v, label]) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${styleLabel(v, label)}</option>`).join("")}</select></label>
+        <label><span class="lbl">Stitch style ${Tip.icon("layers_stitch")}</span><select data-k="stitch_type" data-opt-help="stitch_style" aria-label="Stitch style for ${n}">${styleOptgroups((v, label) => `<option value="${v}" ${v === l.stitch_type ? "selected" : ""}>${label}</option>`)}</select></label>
         <label><span class="lbl">Direction in degrees (empty = automatic) ${Tip.icon("layers_angle")}</span><input type="number" data-k="angle" placeholder="auto" min="0" max="180" value="${l.angle ?? ""}" aria-label="Stitch direction in degrees for ${n}"></label>
         <div class="row small"><span class="muted">${l.area_mm2} mm² ${Tip.icon("layers_area")}</span>
           <span class="muted">${l.objects} shape${l.objects === 1 ? "" : "s"}${l.customised ? ` (${l.customised} own)` : ""}</span>
@@ -1155,6 +1215,17 @@ const STYLE_PARAMS = {
   jagged_mm: ["jagged_fill"], photo_style: ["@photo"], photo_row_mm: ["@photo"],
 };
 const isStyleParam = (k) => k in STYLE_PARAMS;
+// Advanced stitch settings, grouped by what they change: [section key (remembered open state,
+// help entry), title, settings]. Settings not named here are listed under "Other settings".
+const ADVANCED_GROUPS = [
+  ["adv_foundation", "Foundation", ["fill_underlay", "satin_underlay", "underlay_spacing_mm"]],
+  ["adv_length", "Stitch length & texture", ["fill_stitch_length_mm", "running_stitch_length_mm", "fill_pattern"]],
+  ["adv_satin", "Satin width & compensation", ["satin_max_width_mm", "push_compensation_mm"]],
+  ["adv_order", "Sewing order & thread cuts", ["optimize_order", "trim_threshold_mm", "tie_stitches", "min_object_area_mm2"]],
+  ["adv_effects", "Special effects", ["knockdown", "trapunto", "triple_run", "photo_stitch"]],
+];
+// settings that change only the figures (time estimate): with the fabric, thread and machine
+const MATERIAL_PARAMS = ["machine_spm"];
 let defaultStitch = null; // the stitch settings as the form was built (= the app's defaults)
 
 function buildStitchForm() {
@@ -1179,10 +1250,10 @@ function buildStitchForm() {
       charts.map((c) => `<option value="${esc(c.id)}" ${c.id === d.thread_chart ? "selected" : ""}>${esc(c.name)} (${c.count} colours)</option>`).join("") +
       `</select></label>`
     : "";
-  const field = ([k, label, min, max, step]) =>
-    `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"></label>`;
+  const field = ([k, label, min, max, step], outside = false) =>
+    `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><input type="number" name="${k}" min="${min}" max="${max}" step="${step}" value="${d[k]}" inputmode="decimal"${outside ? ' form="stitchForm"' : ""}></label>`;
   const select = ([k, kind, label]) =>
-    `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}">` +
+    `<label${styled(k)}><span class="lbl">${label} ${Tip.icon(k)}</span><select name="${k}"${OPTION_HELP[k] ? ` data-opt-help="${k}"` : ""}>` +
     UNDERLAY_LABELS[kind].map(([v, l]) => `<option value="${v}" ${v === d[k] ? "selected" : ""}>${l}</option>`).join("") +
     `</select></label>`;
   // Fabric & thread: a section of their own (what you sew on, with what)
@@ -1191,7 +1262,21 @@ function buildStitchForm() {
     `<label class="full"><span class="lbl">Thread ${Tip.icon("thread_weight")}</span><select name="thread_weight" form="stitchForm">` +
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
     `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
-    chartField;
+    chartField +
+    PARAMS.filter((p) => MATERIAL_PARAMS.includes(p[0])).map((p) => field(p, true)).join("");
+  // Advanced: small groups by what they change (ADVANCED_GROUPS); a setting no group names
+  // goes to "Other settings", so a new one is never left out
+  const advanced = new Map([
+    ...UNDERLAY_FIELDS.filter(([k]) => !isStyleParam(k)).map((f) => [f[0], select(f)]),
+    ...PARAMS.filter((p) => p[5] && !isStyleParam(p[0]) && !MATERIAL_PARAMS.includes(p[0])).map((p) => [p[0], field(p)]),
+    ...CHECKS.slice(4).filter(([k]) => !isStyleParam(k)).map((c) => [c[0], checkbox(c)]),
+  ]);
+  const groups = ADVANCED_GROUPS.map(([sec, title, keys]) => [sec, title, keys.filter((k) => advanced.has(k))]);
+  const named = new Set(groups.flatMap(([, , keys]) => keys));
+  groups.push(["adv_other", "Other settings", [...advanced.keys()].filter((k) => !named.has(k))]);
+  const advancedHtml = groups.filter(([, , keys]) => keys.length).map(([sec, title, keys]) =>
+    `<details class="group sub full" data-sec="${sec}"><summary>${title} ${Tip.icon(sec)}</summary><div class="params">` +
+    keys.map((k) => advanced.get(k)).join("") + `</div></details>`).join("");
   // Stitches: the four main numbers, then the switches
   $("stitchForm").innerHTML =
     PARAMS.filter((p) => !p[5]).map(field).join("") +
@@ -1202,11 +1287,9 @@ function buildStitchForm() {
     PARAMS.filter((p) => isStyleParam(p[0])).map(field).join("") +
     CHECKS.filter(([k]) => isStyleParam(k)).map(checkbox).join("") +
     `</div>` +
-    `<details class="group full"><summary>Advanced stitch settings</summary><div class="params">` +
-    UNDERLAY_FIELDS.filter(([k]) => !isStyleParam(k)).map(select).join("") +
-    PARAMS.filter((p) => p[5] && !isStyleParam(p[0])).map(field).join("") +
-    CHECKS.slice(4).filter(([k]) => !isStyleParam(k)).map(checkbox).join("") +
-    `<label class="check"><input type="checkbox" id="styleShowAll"> Show the settings of every stitch style</label>` +
+    `<details class="group full" data-sec="advanced"><summary>Advanced stitch settings ${Tip.icon("sec_advanced")}</summary><div class="params">` +
+    advancedHtml +
+    `<label class="check full"><input type="checkbox" id="styleShowAll"> Show the settings of every stitch style</label>` +
     `</div></details>`;
   const sel = $("stitchForm").elements.fabric;
   if (sel) {
@@ -1298,7 +1381,7 @@ const changedKeys = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.ke
 /** The settings a fresh design starts from (after the upload and its smart analysis). */
 function setBaseline(saved = null) {
   const tw = state.smart?.stitch?.thread_weight;
-  state.baseline = saved || { extract: extractValues(), stitch: { ...defaultStitch, ...(tw ? { thread_weight: String(tw) } : {}) } };
+  state.baseline = saved || { extract: extractValues(), stitch: { ...defaultStitch, ...(state.startStitch || {}), ...(tw ? { thread_weight: String(tw) } : {}) } };
   markModified();
 }
 
@@ -1344,7 +1427,9 @@ function markModified() {
     mark(el, !el.closest(".hidden") && String(valueOf(el)) !== String(b.extract[id]));
   });
   [...$("stitchForm").elements].forEach((e) => { if (e.name && e.name in b.stitch) mark(e, String(valueOf(e)) !== String(b.stitch[e.name])); });
-  document.querySelectorAll(".ed-sec[data-sec]").forEach((s) => s.classList.toggle("mod", !!s.querySelector("label.mod")));
+  // sections and the groups inside them: a dot when something in them was changed (also closed)
+  $("leftPanel").querySelectorAll("details[data-sec]").forEach((s) => s.classList.toggle("mod", !!s.querySelector("label.mod")));
+  OptionHelp.refresh($("leftPanel")); // values set by code (presets, undo, reset): the choice lines follow
   modState.settings = n;
   $("modCount").textContent = `${n} setting${n === 1 ? "" : "s"} changed`;
   renderModSummary();
@@ -1878,11 +1963,7 @@ function renderStats() {
       `<button type="button" class="link" data-similar aria-haspopup="dialog">Merge similar colours…</button>`;
   }
   renderKinds();
-  const warnings = [...state.preview.warnings];
-  const hf = hoopFit(s.width_mm, s.height_mm);
-  if (hf && !hf.fits && !hf.turned) warnings.push(`The design (${s.width_mm} × ${s.height_mm} mm) is larger than the ${hf.hoop.name} hoop. Choose a smaller width or a bigger hoop.`);
-  $("warnings3").innerHTML = warnings.map((w) => `<div>${esc(w)}</div>`).join("");
-  renderChecks();
+  Checks.render(s); // the server's checks + the hoop, each with its way to a fix
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span>` +
     (c.thread ? `<span class="seq-thread"><i style="background:${c.thread.hex}" aria-hidden="true"></i>${esc(c.thread.brand)} <b>${esc(c.thread.number)}</b> ${esc(c.thread.name)} <span class="muted">· ${threadCloseness(c.thread.delta_e)}</span></span>` : "") +
@@ -1898,6 +1979,147 @@ function renderChecks() {
   $("rightPanel").querySelector(".ed-scroll").classList.toggle("checks-first", n > 0);
   $("checksOk").hidden = n > 0 || !state.preview;
 }
+
+// The way to a check's problem, shared by the Checks group and the Export dialog.
+function showCheckView() {
+  setPane("stitches", { user: true });
+  document.querySelector('#viewMode [data-mode="check"]')?.click();
+}
+function goToSize() {
+  const sec = document.querySelector('.ed-sec[data-sec="size"]');
+  if (sec) sec.open = true;
+  if (matchMedia("(max-width: 899px)").matches) openSheet("left");
+  requestAnimationFrame(() => { $("width_mm").focus(); $("width_mm").select?.(); });
+}
+
+// Checks: what may go wrong and the way to fix it. The server sends each check with a code
+// (its help is HELP["check_" + code]), its actions and, from the built-in review, a setting
+// change that solves it (service._stitch_checks); the hoop check is made here, the hoop is
+// chosen in the browser. A fix never applies by itself: each button is one undo step. ×
+// hides a check for this design (until another design is opened).
+const Checks = (() => {
+  const LABELS = { show: "Show me", size: "Change the size", select: "Select them", fit: "Fit to the hoop" };
+  let list = [], hidden = new Set(), cursor = null, lastStats = null; // cursor: {code, i} of "Show me"
+  const keyOf = (c) => c.code || c.text;
+  function build(s) {
+    const p = state.preview;
+    if (!p) return [];
+    // an older server sends plain warnings only: shown as before, without actions
+    const out = (p.checks || (p.warnings || []).map((text) => ({ code: "", severity: "medium", text, actions: [] }))).map((c) => ({ ...c }));
+    const hf = s && hoopFit(s.width_mm, s.height_mm);
+    if (hf && !hf.fits && !hf.turned) {
+      const better = bestHoop(s.width_mm, s.height_mm, false);
+      out.unshift({
+        code: "hoop", severity: "high", actions: ["size", "fit"],
+        text: `The design (${s.width_mm} × ${s.height_mm} mm) is larger than the ${hf.hoop.name} hoop. Choose a smaller width or a bigger hoop.`,
+        hoop: better !== "" && better !== $("hoop").value ? better : null,
+      });
+    }
+    return out;
+  }
+  const spotsOf = (c) => (state.preview?.risks || []).filter((r) => (c?.spots || []).includes(r.type));
+  function html(c, i) {
+    const acts = (c.actions || []).map((a) => `<button type="button" class="link" data-check-act="${a}">${LABELS[a] || a}</button>`);
+    if (c.hoop != null) acts.unshift(`<button type="button" class="link" data-check-act="hoop">Use the ${esc(state.config.hoops[c.hoop].name)} hoop</button>`);
+    if (c.change && c.fix) acts.unshift(`<button type="button" class="small check-fix" data-check-act="fix">${esc(c.fix)}</button>`);
+    let nav = "";
+    if (cursor?.code === c.code) {
+      const n = spotsOf(c).length;
+      nav = `<span class="check-nav" role="group" aria-label="Problem spots"><button type="button" class="ghost ib" data-check-act="prev" aria-label="Previous spot">‹</button>` +
+        `<span class="small">Spot ${cursor.i + 1} of ${n}</span><button type="button" class="ghost ib" data-check-act="next" aria-label="Next spot">›</button></span>`;
+    }
+    const help = c.code && HELP[`check_${c.code}`] ? ` ${Tip.icon(`check_${c.code}`)}` : "";
+    return `<div class="check sev-${esc(c.severity || "medium")}" data-i="${i}">` +
+      `<button type="button" class="ghost ib check-x" data-check-act="hide" aria-label="Hide this check for this design" title="Hide for this design">×</button>` +
+      `<p>${c.title ? `<b>${esc(c.title)}</b> ` : ""}${esc(c.text)}${help}</p>` +
+      (acts.length || nav ? `<p class="check-acts">${acts.join(" ")}${nav}</p>` : "") + `</div>`;
+  }
+  /** Fills the Checks group; ``s`` = the figures shown (optimised or original). */
+  function render(s = lastStats) {
+    lastStats = s;
+    list = build(s).filter((c) => !hidden.has(keyOf(c)));
+    if (cursor) {
+      const c = list.find((x) => x.code === cursor.code), n = spotsOf(c).length;
+      if (!c || !n) { cursor = null; state.riskFocus = null; } else cursor.i = Math.min(cursor.i, n - 1);
+    }
+    $("warnings3").innerHTML = list.map(html).join("");
+    renderChecks();
+  }
+  function focusSpot() {
+    const c = list.find((x) => x.code === cursor?.code), spots = spotsOf(c);
+    if (!spots.length) return;
+    const r = spots[cursor.i];
+    state.riskFocus = r;
+    const cv = $("canvas"), w = cv.clientWidth, h = cv.clientHeight;
+    if (w && h) {
+      const scale = Math.max(state.view.scale, 1.2); // at least 12 px per mm: the spot is visible
+      state.view = { scale, x: w / 2 - r.x * 10 * scale, y: h / 2 - r.y * 10 * scale };
+      state.viewMoved = true;
+      draw();
+      updateZoomLabel();
+      viewMoved();
+    }
+    render();
+    announce(`Spot ${cursor.i + 1} of ${spots.length}: ${(RISKS[r.type] || ["", "problem spot"])[1]}`);
+  }
+  function applyFix(c) {
+    const f = $("stitchForm");
+    const keys = Object.keys(c.change || {}).filter((k) => f.elements[k]);
+    if (!keys.length) return;
+    keys.forEach((k) => { const v = c.change[k]; setValue(f.elements[k], typeof v === "boolean" ? v : String(v)); });
+    showFabricNote(f.elements.fabric?.value);
+    updateStyleParams();
+    markModified();
+    History.stitchChange(c.fix); // one undo step
+    toast(`${c.fix} – updating the stitches.`, true);
+    if (state.design) Jobs.stitch();
+  }
+  function run(act, c) {
+    if (act === "hide") {
+      hidden.add(keyOf(c));
+      if (cursor?.code === c.code) { cursor = null; state.riskFocus = null; draw(); }
+      render();
+      announce("Check hidden for this design.");
+      return;
+    }
+    if (act === "fix") return applyFix(c);
+    if (act === "size") return goToSize();
+    if (act === "select") {
+      Shapes.select(c.ids || []);
+      return;
+    }
+    if (act === "hoop") { $("hoop").value = c.hoop; hoopChanged(); return; }
+    if (act === "fit") { $("hoop").dispatchEvent(new Event("change")); return; }
+    if (act === "show") {
+      if (sheetOpen("right")) closeSheets(false); // the preview has to be in view
+      cursor = { code: c.code, i: 0 };
+      if (state.pane !== "stitches" || state.mode !== "check") showCheckView();
+      requestAnimationFrame(() => {
+        if (!spotsOf(c).length) return render();
+        focusSpot();
+        $("warnings3").querySelector('[data-check-act="next"]')?.focus({ preventScroll: true });
+      });
+      return;
+    }
+    if (act === "prev" || act === "next") {
+      const n = spotsOf(c).length;
+      if (!n) return;
+      cursor.i = (cursor.i + (act === "next" ? 1 : -1) + n) % n;
+      focusSpot();
+      $("warnings3").querySelector(`[data-check-act="${act}"]`)?.focus();
+    }
+  }
+  function init() {
+    $("warnings3").addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-check-act]");
+      const c = b && list[+b.closest(".check")?.dataset.i];
+      if (c) run(b.dataset.checkAct, c);
+    });
+  }
+  /** A new design: hidden checks and the spot cursor start again. */
+  function reset() { hidden = new Set(); cursor = null; lastStats = null; list = []; state.riskFocus = null; }
+  return { init, render, reset, list: () => list };
+})();
 
 // ------------------------------------------------------------------ the editor: panes, sheets, bottom bar
 const paneButtons = () => document.querySelectorAll(".ed-views [data-pane]");
@@ -1952,17 +2174,97 @@ function updateSelCount(n) {
 }
 
 // Remember which settings sections are open (per browser, a convenience only).
+// Sections and the groups inside them (Advanced stitch settings, Picture adjustments, …): each
+// with a data-sec key. A search opens them for a moment only (SettingFind), that is not kept.
 function bindSections() {
   let open = {};
   try { open = JSON.parse(localStorage.getItem("edSections") || "{}"); } catch (_) {}
-  document.querySelectorAll(".ed-sec[data-sec]").forEach((d) => {
-    if (d.dataset.sec in open) d.open = !!open[d.dataset.sec];
-    d.addEventListener("toggle", () => {
-      open[d.dataset.sec] = d.open;
-      try { localStorage.setItem("edSections", JSON.stringify(open)); } catch (_) {}
-    });
-  });
+  $("leftPanel").querySelectorAll("details[data-sec]").forEach((d) => { if (d.dataset.sec in open) d.open = !!open[d.dataset.sec]; });
+  $("leftPanel").addEventListener("toggle", (ev) => { // toggle does not bubble: listened to on the way down
+    const d = ev.target;
+    if (!d.matches?.("details[data-sec]") || SettingFind.active()) return;
+    open[d.dataset.sec] = d.open;
+    try { localStorage.setItem("edSections", JSON.stringify(open)); } catch (_) {}
+  }, true);
 }
+
+// Find a setting: filters the settings panel to the settings whose name or help matches every
+// word typed (also trade words: "underlay" finds the foundation settings). Sections with a match
+// open for the search and close again after it; settings that are hidden (another kind of file,
+// styles the design does not use) stay hidden. "/" opens it.
+const SettingFind = (() => {
+  // a word typed -> words in the app's own labels that mean the same
+  const ALIASES = {
+    underlay: ["foundation"], tatami: ["fill"], density: ["thickness", "gap", "dense"], dense: ["thickness", "gap"],
+    spacing: ["gap", "thickness"], pull: ["shrink"], comp: ["compensation"], push: ["shorten"], trim: ["cut"], trims: ["cut"],
+    jump: ["cut", "move"], lock: ["tie"], tie: ["lock"], speed: ["stitches/min", "machine"], spm: ["speed"],
+    color: ["colour"], colors: ["colours"], angle: ["direction"], direction: ["angle"], size: ["width", "hoop"],
+    noise: ["grain", "specks"], denoise: ["grain"], run: ["outline"], running: ["outline"], outline: ["running"],
+    stabilizer: ["fabric"], backing: ["fabric"], weight: ["thread"], brand: ["thread"], ai: ["assistant"],
+  };
+  let on = false, opened = new Map(), timer = 0;
+  const scroll = () => $("leftPanel").querySelector(".ed-scroll");
+  const textOf = (row) => {
+    const keys = [...row.querySelectorAll(".help[data-help-key]")].map((b) => HELP[b.dataset.helpKey]).filter(Boolean);
+    return [row.textContent, ...keys.map((h) => `${h.t} ${h.what}`)].join(" ").toLowerCase();
+  };
+  const matches = (text, word) => text.includes(word) || (ALIASES[word] || []).some((a) => text.includes(a));
+  function clear() {
+    scroll().classList.remove("finding");
+    scroll().querySelectorAll(".find-hit, .find-has").forEach((el) => el.classList.remove("find-hit", "find-has"));
+    opened.forEach((was, d) => (d.open = was));
+    opened = new Map();
+    $("findNote").textContent = "";
+  }
+  function run() {
+    const words = $("findSetting").value.toLowerCase().split(/\s+/).filter(Boolean);
+    clear();
+    if (!words.length) return;
+    const root = scroll();
+    // the rows a search can find: settings that are shown at all (not in a hidden part)
+    const rows = [...root.querySelectorAll("label")].filter((l) => l.querySelector("input, select") && !l.closest(".hidden, [hidden]"));
+    const hits = rows.filter((l) => { const t = textOf(l); return words.every((w) => matches(t, w)); });
+    hits.forEach((l) => {
+      l.classList.add("find-hit");
+      for (let d = l.parentElement.closest("details, .style-params"); d && root.contains(d); d = d.parentElement.closest("details, .style-params")) {
+        d.classList.add("find-has");
+        if (d.tagName === "DETAILS" && !opened.has(d)) { opened.set(d, d.open); d.open = true; }
+      }
+    });
+    root.classList.add("finding");
+    $("findNote").textContent = hits.length ? `${hits.length} setting${hits.length === 1 ? "" : "s"} found` : `No setting matches “${$("findSetting").value.trim()}”.`;
+  }
+  function show() {
+    if (matchMedia("(max-width: 899px)").matches && !sheetOpen("left")) openSheet("left");
+    $("findRow").hidden = false;
+    $("btnFindSetting").setAttribute("aria-expanded", "true");
+    on = true;
+    $("findSetting").focus();
+    $("findSetting").select();
+  }
+  function hide(restoreFocus = true) {
+    clear();
+    $("findSetting").value = "";
+    $("findRow").hidden = true;
+    $("btnFindSetting").setAttribute("aria-expanded", "false");
+    on = false;
+    if (restoreFocus) $("btnFindSetting").focus();
+  }
+  function init() {
+    $("btnFindSetting").onclick = () => (on ? hide() : show());
+    $("btnFindClose").onclick = () => hide();
+    $("findSetting").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 120); });
+    $("findSetting").addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); hide(); }
+      else if (ev.key === "Enter") { // to the first setting found
+        ev.preventDefault();
+        clearTimeout(timer); run();
+        scroll().querySelector("label.find-hit")?.querySelector("input, select")?.focus();
+      }
+    });
+  }
+  return { init, show, hide, active: () => on };
+})();
 
 function bindEditor() {
   bindSections();
@@ -1995,6 +2297,8 @@ function bindEditor() {
   bindThreadMenu();
   bindPhoneBits();
   SmartLine.init();
+  Checks.init();
+  SettingFind.init();
   Guide.init();
   try { $("statsMore").open = localStorage.getItem("statsMore") === "1"; } catch (_) {}
   $("statsMore").addEventListener("toggle", () => { try { localStorage.setItem("statsMore", $("statsMore").open ? "1" : "0"); } catch (_) {} });
@@ -2146,7 +2450,8 @@ const SHORTCUTS = [
   ["Editing a shape (Selection → Edit shape)", [["V", "Move and select"], ["B", "Paint area on"], ["E", "Erase area"],
     ["L / Shift+L", "Lasso: add / cut away"], ["G", "Draw a guide line on the selected shape"], ["Esc", "Cancel or finish"]]],
   ["Design", [["Ctrl+Z / Ctrl+Y", "Undo / redo"], ["Enter", "Update the preview (when Auto-update is off)"],
-    ["Ctrl+E", "Export"], ["Menu key / Shift+F10", "Menu for the selected shapes (also right-click or long-press a shape)"], ["?", "This list"]]],
+    ["Ctrl+E", "Export"], ["Menu key / Shift+F10", "Menu for the selected shapes (also right-click or long-press a shape)"],
+    ["/", "Find a setting"], ["?", "This list"]]],
 ];
 function openShortcuts() {
   // "Ctrl+Z / Ctrl+Y" -> keys joined by +, alternatives by /; "Space + drag" -> key + word
@@ -2189,9 +2494,10 @@ function bindShortcuts() {
       "[": () => Workspace.toggle("left"), "]": () => Workspace.toggle("right"),
       Enter: () => press($("btnUpdate")),
       "?": () => (openShortcuts(), true),
+      "/": () => (SettingFind.show(), true),
     }[lower];
     if (!done) return;
-    if (ev.shiftKey && !["?", "+", "_", "l"].includes(lower)) return;
+    if (ev.shiftKey && !["?", "+", "_", "l", "/"].includes(lower)) return;
     if (done() !== false) ev.preventDefault();
   });
 }
@@ -2395,7 +2701,7 @@ const Export = (() => {
       facts.push(["Stitches", s.stitches.toLocaleString()], ["Colours · changes", `${s.colors} · ${s.color_changes}`],
         ["Thread cuts", String(s.trims)], ["Sewing time (est.)", `${s.est_minutes} min`]);
       // the same checks as the Checks panel, each with a way to the problem where there is one
-      $("warnings3").querySelectorAll("div").forEach((d) => checks.push([d.textContent, checkAction(d.textContent)]));
+      Checks.list().forEach((c) => checks.push([c.title ? `${c.title}: ${c.text}` : c.text, checkAction(c)]));
       const nc = [...pick].find((k) => NO_COLOURS.has(k));
       if (nc && !pick.has("txt")) checks.push([`${nc.toUpperCase()} files carry no thread colours: add the worksheet to know which colour goes on which needle.`, "sheet"]);
     }
@@ -2479,19 +2785,12 @@ const Export = (() => {
 
   // ------------------------------------------------ checks that lead to the problem
   const ACTIONS = { check: "Show me", size: "Change the size", sheet: "Add the worksheet" };
-  const checkAction = (text) => (/^Machine check/i.test(text) ? "check" : /larger than the .* hoop/i.test(text) ? "size" : "");
+  const checkAction = (c) => (c.actions?.includes("show") ? "check" : c.actions?.includes("size") ? "size" : "");
   function runAction(act) {
     if (act === "sheet") { sheetDeclined = false; pick.delete(WILCOM); pick.add("txt"); render(); return; }
     $("exportDialog").close();
-    if (act === "check") {
-      setPane("stitches", { user: true });
-      document.querySelector('#viewMode [data-mode="check"]')?.click();
-    } else if (act === "size") {
-      const sec = document.querySelector('.ed-sec[data-sec="size"]');
-      if (sec) sec.open = true;
-      if (matchMedia("(max-width: 899px)").matches) openSheet("left");
-      requestAnimationFrame(() => { $("width_mm").focus(); $("width_mm").select?.(); });
-    }
+    if (act === "check") showCheckView();
+    else if (act === "size") goToSize();
   }
 
   function init() {
@@ -3070,6 +3369,15 @@ function drawRisks(ctx, X, Y, risks) {
     ctx.strokeStyle = col;
     ctx.beginPath(); ctx.arc(X(r.x * 10), Y(r.y * 10), 9, 0, 7); ctx.stroke();
   });
+  const f = state.riskFocus; // the spot "Show me" in Checks points at
+  if (f && risks.includes(f)) {
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = (RISKS[f.type] || ["#e03131"])[0];
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.arc(X(f.x * 10), Y(f.y * 10), 18, 0, 7); ctx.stroke();
+    ctx.restore();
+  }
 }
 function riskLegend(risks) {
   if (!risks.length) return `<span style="background:#2f9e44"></span>No problem spots found – safe to sew`;

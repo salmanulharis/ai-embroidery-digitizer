@@ -112,9 +112,13 @@ const Account = (() => {
     $("accPrefs").innerHTML = `<h3>Your defaults</h3>
       <label><span class="lbl">Your machine <i data-help="export_machine"></i></span><select id="accMachine">${opts(state.config.machines || [], Prefs.get("machine"), "Not chosen (DST)")}</select></label>
       <label><span class="lbl">Designs are usually for <i data-help="placement"></i></span><select id="accPlacement">${opts(state.config.placements || [], Prefs.get("placement"), "Ask each time")}</select></label>
-      <p class="small muted">Used by Export and after you choose a file. Saved for your account.</p>`;
+      <label><span class="lbl">Usual fabric <i data-help="account_fabric"></i></span><select id="accFabric">${opts((state.config.fabrics || []).map((f) => ({ key: f.id, label: f.label })), Prefs.get("fabric"), "No usual fabric (General)")}</select></label>
+      ${(state.config.thread_charts || []).length ? `<label><span class="lbl">Thread brand <i data-help="thread_chart"></i></span><select id="accChart">${opts(state.config.thread_charts.map((c) => ({ key: c.id, label: c.name })), Prefs.get("thread_chart"), "None – colours only")}</select></label>` : ""}
+      <p class="small muted">Used by Export, after you choose a file and for every new design. Saved for your account.</p>`;
     $("accMachine").onchange = () => Prefs.set("machine", $("accMachine").value || null).then(() => toast("Saved.", true));
     $("accPlacement").onchange = () => Prefs.set("placement", $("accPlacement").value || null).then(() => toast("Saved.", true));
+    $("accFabric").onchange = () => Prefs.set("fabric", $("accFabric").value || null).then(() => toast("Saved. New designs start with it.", true));
+    if ($("accChart")) $("accChart").onchange = () => Prefs.set("thread_chart", $("accChart").value || null).then(() => toast("Saved. New designs start with it.", true));
     const ai = data.ai;
     const aiLine = (label, x) => x
       ? `<li><b>${esc(label)}:</b> ${esc(x.label)} · ${esc(x.model)} ${x.ready ? `<span class="status good">✓ ${x.own_key ? "your key" : "app access"}</span>` : `<span class="status bad">✗ not set up</span>`}</li>`

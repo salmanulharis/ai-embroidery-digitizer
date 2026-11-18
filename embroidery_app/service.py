@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import math
 import re
 import shutil
@@ -27,6 +28,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from .ai import tasks as ai_tasks
+from .ai.builtin import review_plan
 from .config import settings
 from .export import FORMATS, design_to_eps, design_to_svg, export_embroidery, plan_preview_json, render_png, worksheet
 from .ingest import detect_kind
@@ -55,6 +57,7 @@ from .stitch.optimize import MAX_COVERAGE_LOSS_PCT, coverage_loss_pct
 PROJECTS = settings.data_dir / "projects"
 PROJECTS.mkdir(parents=True, exist_ok=True)
 _ID_RE = re.compile(r"^[a-f0-9]{12}$")
+log = logging.getLogger("embroidery")
 _plan_cache: dict[str, dict[str, StitchPlan]] = {}  # pid -> {params key: plan}; holds original + optimised
 _lock = threading.Lock()
 # One stitch / export at a time per project: the editor updates its preview automatically, so
@@ -948,10 +951,70 @@ def _stitch(pid: str, params: dict) -> dict:
     if any(r["type"] == "thin" for r in preview.get("risks", [])):
         warnings.append("Machine check: some lettering is thinner than the machine can sew cleanly - see the Machine check view "
                         "(fine 60 wt thread or a larger design helps).")
-    if _dense_on_tiny_shapes(load_design(pid)):
+    dense_tiny = _dense_tiny_ids(design)
+    if dense_tiny:
         warnings.append("Some very small shapes are set to dense stitching - this can pile up thread and cause thread breaks.")
     preview["warnings"] = warnings
+    preview["checks"] = _stitch_checks(plan, design, p, stats, preview.get("risks", []), warnings, dense_tiny)
     return preview
+
+
+# The editor's Checks: the warnings above, each with a code (for its help text and actions)
+# and what the editor can do about it, plus the built-in review's important findings with a
+# one-click setting change. "warnings" stays as plain text for older readers.
+#   actions: "show" = Machine check view at the spots of ``spots`` (risk types), "size" = the
+#   design size, "select" = select ``ids``; "change" + "fix" = a setting change and its label.
+REVIEW_IN_CHECKS = ("high", "medium")  # low findings stay in "Check my stitches"
+_CHECK_ACTIONS = {
+    "stitch_count": ["size"], "oversize": ["size"], "cap_height": ["size"],
+    "thread_break": ["show"], "thin_lettering": ["show"],
+    "dense_tiny": ["select"], "skipped_marks": ["select"], "guide_missing": ["select"],
+}
+_CHECK_SPOTS = {"thread_break": ["short", "stack", "dense"], "thin_lettering": ["thin"]}
+
+
+def _stitch_checks(plan: StitchPlan, design: Design, params: StitchParams, stats: dict, risks: list,
+                   warnings: list[str], dense_tiny: list[str]) -> list[dict]:
+    codes = []  # the code of each warning, in the same order
+    if stats["stitches"] > 100_000:
+        codes.append(("stitch_count", "high"))
+    if stats["width_mm"] > 400 or stats["height_mm"] > 400:
+        codes.append(("oversize", "high"))
+    if any(r["type"] in ("short", "stack", "dense") for r in risks):
+        codes.append(("thread_break", "high"))
+    if any(r["type"] == "thin" for r in risks):
+        codes.append(("thin_lettering", "medium"))
+    if dense_tiny:
+        codes.append(("dense_tiny", "medium"))
+    checks = [{"code": c, "severity": sev, "text": w} for (c, sev), w in zip(codes, warnings)]
+    if dense_tiny and checks:
+        checks[-1]["ids"] = dense_tiny
+    by_code = {c["code"]: c for c in checks}
+    try:
+        review = review_plan(plan, design, params)
+    except Exception:  # the review is advice: the stitches are shown without it
+        log.exception("built-in review failed")
+        review = {"issues": []}
+    for issue in review["issues"]:
+        code = issue.get("code") or ""
+        if issue["severity"] not in REVIEW_IN_CHECKS and not (code in by_code and issue.get("change")):
+            continue
+        own = by_code.get(code)
+        if own is None:  # a finding of its own
+            own = {"code": code, "severity": issue["severity"], "title": issue["title"], "text": issue["detail"]}
+            if issue.get("ids"):
+                own["ids"] = issue["ids"]
+            checks.append(own)
+            if code:
+                by_code[code] = own
+        if issue.get("change"):  # the same problem found twice: its fixes go together
+            own["change"] = {**own.get("change", {}), **issue["change"]}
+            own["fix"] = issue["fix"] if "fix" not in own else f"{own['fix']} · {issue['fix']}"
+    for c in checks:
+        c["actions"] = [a for a in _CHECK_ACTIONS.get(c["code"], []) if a != "select" or c.get("ids")]
+        if c["code"] in _CHECK_SPOTS:
+            c["spots"] = _CHECK_SPOTS[c["code"]]
+    return checks
 
 
 def _original_ref(design: Design, params: StitchParams) -> str:
@@ -969,20 +1032,26 @@ def original_ops(pid: str, ref: str) -> dict:
         return {"ops": plan_preview_json(get_plan(pid, replace(params, optimize=False)))["ops"]}
 
 
-def _dense_on_tiny_shapes(design: Design) -> bool:
-    """Dense (< 0.35 mm) per-shape thickness on shapes under ~3 mm² or ~1.5 mm wide."""
+def _dense_tiny_ids(design: Design) -> list[str]:
+    """Shapes with dense (< 0.35 mm) own thickness that are under ~3 mm² or ~1.5 mm wide."""
     enabled = {l.index for l in design.layers if l.enabled}
+    out = []
     for o in design.objects:
         if o.spacing_mm is None or o.spacing_mm >= 0.35 or not o.enabled or o.layer not in enabled:
             continue
         if o.kind == "line":
             if o.stroke_width_mm < 1.5:
-                return True
+                out.append(o.id)
             continue
         area, perimeter = o.geometry.area, o.geometry.length
         if area < 3 or 2 * area / max(perimeter, 1e-6) < 1.5:
-            return True
-    return False
+            out.append(o.id)
+    return out
+
+
+def _dense_on_tiny_shapes(design: Design) -> bool:
+    """Dense (< 0.35 mm) per-shape thickness on shapes under ~3 mm² or ~1.5 mm wide."""
+    return bool(_dense_tiny_ids(design))
 
 
 def saved_stitch_params(pid: str) -> StitchParams:

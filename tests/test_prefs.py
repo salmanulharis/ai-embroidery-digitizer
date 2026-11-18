@@ -74,3 +74,39 @@ def test_the_analysis_measures_the_design_proportions():
     img[100:300, 50:350, :3] = (200, 40, 40)  # a 300 x 200 px red block on white
     a = analyze_image(img, 90)["measurements"]["design_aspect"]
     assert abs(a - 1.5) < 0.05, a
+
+
+# ------------------------------------------------------------------ usual fabric, thread brand, machine speed
+
+def test_every_machine_has_a_speed_the_editor_accepts():
+    from embroidery_app.models import STITCH_RANGES
+
+    lo, hi = STITCH_RANGES["machine_spm"]
+    for k, m in prefs.MACHINES.items():
+        assert lo <= m["spm"] <= hi and m["spm"] % 50 == 0, k
+
+
+def test_a_cap_starts_on_cap_fabric():
+    from embroidery_app.fabrics import FABRIC_IDS
+
+    assert prefs.PLACEMENTS["cap"]["fabric"] == "cap"
+    assert all(p.get("fabric") in (None, *FABRIC_IDS) for p in prefs.PLACEMENTS.values())
+
+
+def test_fabric_preference_is_a_known_fabric():
+    assert prefs.clean({"fabric": "towel"}) == {"fabric": "towel"}
+    with pytest.raises(ValueError):
+        prefs.clean({"fabric": "silk-velvet"})
+    with pytest.raises(ValueError):
+        prefs.clean({"fabric": 3})
+
+
+def test_thread_brand_preference_follows_the_charts_on_the_server(real_login, tmp_path, monkeypatch):  # noqa: F811
+    (tmp_path / "Test Rayon.gpl").write_text("GIMP Palette\nName: Test Rayon\n#\n0 0 0 Black 1000\n", encoding="utf-8")
+    monkeypatch.setenv("THREAD_CHARTS_DIR", str(tmp_path))
+    _, one = new_user(admin())
+    assert one.put("/api/me/prefs", json={"thread_chart": "test-rayon", "fabric": "pique"}).json() == {
+        "thread_chart": "test-rayon", "fabric": "pique"}
+    assert one.put("/api/me/prefs", json={"thread_chart": "no-such-brand"}).status_code == 400
+    (tmp_path / "Test Rayon.gpl").unlink()  # the chart is taken off the server: the choice is forgotten
+    assert one.get("/api/me/prefs").json() == {"fabric": "pique"}

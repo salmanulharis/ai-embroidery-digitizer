@@ -151,11 +151,27 @@ figure { margin: 0; min-width: 0; } figcaption { font-size: var(--text-sm); colo
 .checker svg { width: 100%; height: 100%; }
 .tableWrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .warnings div { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: var(--radius-sm); margin: 8px 0; font-size: var(--text-md); }
+/* Checks with actions (app.js Checks): the text, then the fix and the ways to the problem */
+.warnings .check { position: relative; padding-right: 32px; }
+.warnings .check p { margin: 0; }
+.warnings .check .check-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 6px; }
+.warnings .check button.link { color: inherit; font-weight: 600; }
+.warnings .check .check-fix { min-height: 28px; padding: 2px 10px; font-size: var(--text-sm); }
+.warnings .check .check-x { position: absolute; top: 4px; right: 4px; min-height: 24px; width: 24px; padding: 0; color: inherit; opacity: .7; }
+.warnings .check .check-x:hover, .warnings .check .check-x:focus-visible { opacity: 1; }
+.warnings .check .check-nav { display: inline-flex; align-items: center; gap: 2px; }
+.warnings .check .check-nav .ib { min-height: 28px; width: 28px; color: inherit; }
+.warnings .check.sev-low, .warnings .check.sev-medium { background: var(--raised); color: var(--text); border: 1px solid var(--line); }
 
 /* ------------------------------------------------------------------ step 3 */
 .params { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .params label.check, .params .full { grid-column: 1 / -1; }
 .params details.group { margin-top: 4px; }
+/* groups inside "Advanced stitch settings": rows with a line between them, not boxes in a box */
+.params details.group.sub { margin: 0; padding: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+.params details.group.sub:first-child { border-top: 0; }
+.params details.group.sub > summary { font-weight: 500; padding: 8px 0; }
+.params details.group.sub[open] { padding-bottom: 6px; }
 @media (max-width: 420px) { .params { grid-template-columns: 1fr; } }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; background: var(--raised); max-width: 100%; overflow-x: auto; }
 .seg button { border: none; border-radius: 0; background: transparent; white-space: nowrap; min-height: 34px; }
@@ -267,6 +283,12 @@ dialog#aiDialog::backdrop { background: rgba(10,14,22,.5); backdrop-filter: blur
 .sp-thickgrid .sp-bold { grid-column: 1 / -1; max-width: 260px; }
 .sp-bold select:disabled { opacity: .5; }
 @media (max-width: 700px) { .sp-thickgrid { grid-template-columns: 1fr; } }
+.sp-dir[hidden] { display: none; }
+/* "Fine-tune" in the selection panel: thickness, extra width, bold outline, foundation */
+.sp-fine { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--line); }
+.sp-fine > summary { cursor: pointer; padding: 4px 0; font-size: var(--text-md); font-weight: 600; }
+.sp-fine > summary .muted { font-weight: 400; }
+.sp-fine .sp-thickgrid { margin-top: 4px; padding-top: 0; border-top: 0; }
 .sp-list { margin-top: 8px; }
 .sp-list summary { cursor: pointer; color: var(--muted); padding: 3px 0; } /* 24px+ tap target, keeps the disclosure marker */
 .sp-list select { width: 100%; margin-top: 6px; min-height: 34px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
@@ -779,6 +801,26 @@ label.mod .reset-one { display: inline-flex !important; }
 .ed-sec.mod > summary::after { content: ""; order: 1; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .ed-sec.mod > summary .sec-reset { order: 2; }
 .ed-sec > summary { position: relative; }
+/* the line under a drop-down that says what the chosen option does (help.js OptionHelp) */
+.opt-help { display: block; margin-top: 4px; line-height: 1.35; }
+.opt-help:empty { display: none; }
+/* groups inside a section: the same dot when something in them was changed (closed too) */
+details.group.mod > summary::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+
+/* Find a setting (app.js SettingFind): a field under the preset bar, open only while used */
+.preset-pick > .find-btn { flex: 0 0 auto; min-height: var(--tap); width: 40px; }
+.preset-pick > .find-btn[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
+.find-row { flex: 0 0 auto; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--raised); }
+.find-row[hidden] { display: none; }
+.find-field { display: flex; align-items: center; gap: 4px; }
+.find-field input { flex: 1 1 auto; min-width: 0; background: var(--card); }
+.find-note { margin: 4px 0 0; }
+.find-note:empty { display: none; }
+/* while searching: only the settings found, in their (opened) sections */
+.ed-scroll.finding :is(#fileInfo, #smartInfo, #modSummary, .ed-note, .ed-body > .row, .ed-body > p, .ai-box > p, .ai-box > .row, .ai-result, .ai-clean > .row, .ai-clean > p, #btnResetAdjust) { display: none !important; }
+.ed-scroll.finding label:not(.find-hit) { display: none !important; }
+.ed-scroll.finding :is(details, .style-params):not(.find-has) { display: none !important; }
+.ed-scroll.finding label.find-hit { box-shadow: inset 3px 0 0 var(--accent); padding-left: 8px; }
 .ed-mods { display: grid; gap: 2px; margin: 0 0 10px; padding: 6px 10px; border-radius: var(--radius-sm);
   background: var(--accent-soft); color: var(--text); font-size: var(--text-md); }
 .ed-mods .mods-line { display: flex; align-items: center; gap: 6px; margin: 0; }
@@ -819,6 +861,7 @@ label.mod .reset-one { display: inline-flex !important; }
 .ctx-label { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-more { color: var(--muted); }
 .ctx-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+.ctx-head { padding: 8px 10px 2px 28px; font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 
 /* floating toolbar next to the selection */
 .selbar { z-index: 5; gap: 4px; padding: 4px 6px; flex-wrap: nowrap; max-width: calc(100% - 16px); }
@@ -992,8 +1035,8 @@ body.page-editor:not(.view-account):not(.view-admin) .hdr-actions { flex: 1 1 0;
 /* "?" help buttons: shown when you point at a setting or reach them with Tab, unless "Always
    show" is on (Help and shortcuts); touch screens always show them */
 @media (hover: hover) and (pointer: fine) {
-  body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) :is(label, .stats > div, .thr-more .row, .sp-empty) .help { opacity: 0; transition: opacity .12s; }
-  body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) :is(label, .stats > div, .thr-more .row, .sp-empty):is(:hover, :focus-within) .help,
+  body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) :is(label, .stats > div, .thr-more .row, .sp-empty, .check) .help { opacity: 0; transition: opacity .12s; }
+  body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) :is(label, .stats > div, .thr-more .row, .sp-empty, .check):is(:hover, :focus-within) .help,
   body:not(.help-always) :is(.ed-side, .show-pop, .ed-bar) .help:focus-visible { opacity: 1; }
 }
 

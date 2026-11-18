@@ -255,20 +255,20 @@ def _review_fabric(plan: StitchPlan, design: Design, params: StitchParams, stats
     if preset.get("knockdown") and not params.knockdown:
         add("medium", "No knockdown on pile fabric",
             f"On {fabric.label.lower()} the loops swallow small text and outlines. A knockdown (an open fill sewn "
-            "first, in the fabric's colour) keeps them on top.", knockdown=True)
+            "first, in the fabric's colour) keeps them on top.", knockdown=True, code="fabric_knockdown", fix="Add a knockdown")
     want_pull = preset.get("pull_compensation_mm", 0.0)
     if params.pull_compensation_mm < want_pull - 0.05:
         add("medium", "Low shrink compensation for this fabric",
             f"{fabric.label} pulls stitches in more than firm cotton: {want_pull:.2f} mm shrink compensation keeps "
-            "columns and fills full width.", pull_compensation_mm=want_pull)
+            "columns and fills full width.", pull_compensation_mm=want_pull, code="fabric_pull", fix="Use {pull_compensation_mm} mm")
     if fabric.id == "cap":
         if stats["height_mm"] > CAP_MAX_HEIGHT_MM:
             add("medium", "Design too tall for a cap",
                 f"The design is {stats['height_mm']:.0f} mm tall; most caps take about {CAP_MAX_HEIGHT_MM:.0f} mm on "
-                "the front panel. Make it smaller in the Size settings.")
+                "the front panel. Make it smaller in the Size settings.", code="cap_height")
         if params.satin_max_width_mm > 7.0:
             add("low", "Wide satin on a cap", "Caps get rubbed: satin up to 7 mm wide holds up better.",
-                satin_max_width_mm=7.0)
+                satin_max_width_mm=7.0, code="cap_satin", fix="Limit satin to {satin_max_width_mm:g} mm")
 
 
 def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
@@ -281,30 +281,41 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
     shapes = [o for o in design.objects if o.layer in enabled and o.enabled]
     area_mm2 = sum(o.geometry.area for o in shapes if o.kind == "area")
 
-    def add(severity, title, detail, **change):
-        issues.append({"severity": severity, "title": title, "detail": detail})
+    def add(severity, title, detail, code="", fix="", ids=None, **change):
+        # code: what the issue is (the editor's Checks merge issues by it and show its help);
+        # change + fix: the setting change that solves this issue and a button label for it;
+        # ids: the shapes it is about (the editor can select them)
+        issue = {"severity": severity, "title": title, "detail": detail, "code": code}
+        own = {}
         for k, v in change.items():
             v = clamp_change(k, v)
             if v is not None and v != getattr(params, k, None):
                 changes[k] = v
+                own[k] = v
+        if own:
+            issue["change"] = own
+            issue["fix"] = fix.format(**own) if fix else "Apply the suggested setting"
+        if ids:
+            issue["ids"] = list(ids)
+        issues.append(issue)
 
     density = stats["stitches"] / (area_mm2 / 100) if area_mm2 > 50 else 0
     if density > 140:
         add("high", "Very dense stitching",
             f"About {density:.0f} stitches per cm² - the embroidery may be stiff and pucker the fabric.",
-            fill_spacing_mm=params.fill_spacing_mm + 0.05)
+            fill_spacing_mm=params.fill_spacing_mm + 0.05, code="density_high", fix="Thinner fill ({fill_spacing_mm} mm gap)")
     elif 0 < density < 35 and params.fill_spacing_mm >= 0.5:
         add("medium", "Thin coverage", "Fill rows are far apart - fabric may show through on contrasting colours.",
-            fill_spacing_mm=params.fill_spacing_mm - 0.05)
+            fill_spacing_mm=params.fill_spacing_mm - 0.05, code="coverage_thin", fix="Denser fill ({fill_spacing_mm} mm gap)")
 
     if not params.underlay and area_mm2 > 200:
         add("high", "Foundation stitches are off",
-            "Large filled areas without foundation stitches can sink into the fabric and look patchy.", underlay=True)
+            "Large filled areas without foundation stitches can sink into the fabric and look patchy.", underlay=True, code="underlay_off", fix="Turn on foundation stitches")
 
     if stats["trims"] > 15 and stats["trims"] > stats["stitches"] / 400 and params.trim_threshold_mm < 3:
         add("medium", "Many thread cuts",
             f"{stats['trims']} thread cuts add about {stats['trims'] * 10 // 60} min of sewing time.",
-            trim_threshold_mm=3.0)
+            trim_threshold_mm=3.0, code="many_trims", fix="Cut only moves over {trim_threshold_mm:g} mm")
 
     # Tiny shapes are often dots and punctuation of lettering (meaningful - e.g. Arabic
     # dots), so never suggest deleting them; suggest a larger design instead.
@@ -314,11 +325,11 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
         add("medium", "Small marks are not stitched",
             f"{len(skipped)} shape(s) such as dots or punctuation are smaller than "
             f"“Skip shapes smaller than” ({params.min_object_area_mm2:g} mm²) and are left out. "
-            "Lower that setting or make the design larger to keep them.")
+            "Lower that setting or make the design larger to keep them.", code="skipped_marks", ids=[o.id for o in skipped])
     if len(tiny) > 5:
         add("low", "Many very small shapes",
             f"{len(tiny)} shapes are smaller than 2 mm² - they sew as tiny knots. For lettering, "
-            "a larger design width gives cleaner results.")
+            "a larger design width gives cleaner results.", code="tiny_shapes")
 
     # Machine check (stitch/safety.py): where the thread may break or a detail may not show.
     # Small lettering is never "fixed" with extra width - that closes the gaps between
@@ -330,34 +341,34 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
                 f"{risk['thin']} spot(s) in small lettering are thinner than a 40 wt thread column and could not be "
                 "widened without closing gaps between letters. Fine 60 wt thread (with a 65/9 or 70/10 needle) sews "
                 "narrower columns cleanly - or make the design larger. See the Machine check view.",
-                thread_weight=60)
+                thread_weight=60, code="thin_lettering", fix="Use fine 60 wt thread")
         else:
             add("medium", "Lettering thinner than the machine can sew",
                 f"{risk['thin']} spot(s) in small lettering are thinner than even fine thread can sew as satin; they are "
-                "sewn as a triple run or slightly narrow. Make the design larger for crisp letters. See the Machine check view.")
+                "sewn as a triple run or slightly narrow. Make the design larger for crisp letters. See the Machine check view.", code="thin_lettering", fix="Use fine 60 wt thread")
     if risk.get("stack") or risk.get("short"):
         n = risk.get("stack", 0) + risk.get("short", 0)
         add("high", "Spots where the thread may break",
             f"{n} spot(s) have very short stitches or hit one needle hole many times. Turning on smart stitch "
             "reduction or a slightly lighter thickness helps; see the Machine check view.",
-            **({"optimize": True} if not params.optimize else {"satin_spacing_mm": params.satin_spacing_mm + 0.05}))
+            **({"optimize": True} if not params.optimize else {"satin_spacing_mm": params.satin_spacing_mm + 0.05}), code="thread_break", fix=("Turn on smart stitch reduction" if not params.optimize else "Lighter satin ({satin_spacing_mm} mm gap)"))
     if risk.get("dense"):
         add("medium", "Very dense spots",
             f"{risk['dense']} small area(s) get more stitches than the fabric can take (hard spots, needle holes). "
-            "A slightly thinner fill helps.", fill_spacing_mm=params.fill_spacing_mm + 0.05)
+            "A slightly thinner fill helps.", fill_spacing_mm=params.fill_spacing_mm + 0.05, code="thread_break", fix="Thinner fill ({fill_spacing_mm} mm gap)")
 
     if params.satin_max_width_mm > 10:
         add("low", "Very wide satin allowed",
             "Satin wider than 10 mm is split into shorter stitches but still snags easily on clothing; "
-            "10 mm or less is safer.", satin_max_width_mm=10.0)
+            "10 mm or less is safer.", satin_max_width_mm=10.0, code="wide_satin", fix="Limit satin to {satin_max_width_mm:g} mm")
 
     if not params.optimize:
         add("low", "Smart stitch reduction is off", "Turning it on removes stacked stitches without changing the design.",
-            optimize=True)
+            optimize=True, code="optimize_off", fix="Turn it on")
     if not params.optimize_order and stats["trims"] > 10:
         add("low", "Smart sewing order is off",
             "Turning it on sews the shapes of each colour in an order with shorter jumps, so fewer thread cuts.",
-            optimize_order=True)
+            optimize_order=True, code="order_off", fix="Turn it on")
 
     # Fabric (step 3): settings the chosen fabric needs (see fabrics.py)
     _review_fabric(plan, design, params, stats, add)
@@ -368,19 +379,19 @@ def review_plan(plan: StitchPlan, design: Design, params: StitchParams) -> dict:
     if unguided:
         add("medium", "Guide line missing",
             f"{len(unguided)} shape(s) are set to guided satin or Florentine fill but have no guide line yet, so they "
-            "are sewn the usual way. Select them and use “Draw guide line”.")
+            "are sewn the usual way. Select them and use “Draw guide line”.", code="guide_missing", ids=[o.id for o in unguided])
     if stats.get("stops"):
         add("low", "The machine stops for applique",
             f"The machine stops {stats['stops']} time(s) after the placement line: lay the fabric piece over it, "
-            "then continue. The worksheet lists the stops.")
+            "then continue. The worksheet lists the stops.", code="applique_stops")
 
     if stats["colors"] > 10:
         add("low", "Many thread colours",
-            f"{stats['colors']} colours means many thread changes - consider merging similar shades in the Threads list.")
+            f"{stats['colors']} colours means many thread changes - consider merging similar shades in the Threads list.", code="many_colours")
     if stats["stitches"] > 100_000:
-        add("high", "Very high stitch count", "Consider a smaller design or a thinner fill.")
+        add("high", "Very high stitch count", "Consider a smaller design or a thinner fill.", code="stitch_count")
     if stats["est_minutes"] > 60:
-        add("low", "Long sewing time", f"About {stats['est_minutes']:.0f} minutes on the machine.")
+        add("low", "Long sewing time", f"About {stats['est_minutes']:.0f} minutes on the machine.", code="long_time")
 
     severities = {i["severity"] for i in issues}
     overall = "needs_work" if "high" in severities else "ok" if "medium" in severities else "good"

@@ -38,7 +38,8 @@ const ShapeTools = (() => {
     const names = st.layers.map((i) => t.layerOf({ layer: i })?.name).filter(Boolean);
     const radio = (label, checked, run) => ({ label, checked: !!checked, radio: true, run });
     return [
-      { label: "Stitch style", sub: t.styleOptions().map(([v, l]) => radio(l, v === st.style, () => act.style(v))) },
+      { label: "Stitch style", sub: t.styleMenu().flatMap(([group, items]) =>
+        [...(group ? [{ heading: group }] : []), ...items.map(([v, l]) => radio(l, v === st.style, () => act.style(v)))]) },
       { label: "Direction", disabled: !st.dirApplies, sub: [
         radio("Same as colour", st.angle === "inherit", () => act.angle("inherit")),
         ...t.presets.map(([a, glyph, name]) => radio(`${glyph}  ${name} (${a}°)`, st.angle === a, () => act.angle(a))),
@@ -63,7 +64,9 @@ const ShapeTools = (() => {
     m.setAttribute("role", "menu");
     m.setAttribute("aria-label", label);
     m.tabIndex = -1;
+    // "-" = a line; {heading} = a group name (not an item: the arrow keys pass over it)
     m.innerHTML = items.map((it, i) => (it === "-" ? '<div role="separator" class="ctx-sep"></div>'
+      : it.heading ? `<div class="ctx-head" role="presentation">${esc(it.heading)}</div>`
       : `<button type="button" role="${it.radio ? "menuitemradio" : "menuitem"}" data-i="${i}" tabindex="-1"
           ${it.radio ? `aria-checked="${it.checked}"` : ""} ${it.sub ? 'aria-haspopup="menu" aria-expanded="false"' : ""} ${it.disabled ? 'aria-disabled="true"' : ""}>
           <span class="ctx-check" aria-hidden="true">${it.radio && it.checked ? "✓" : ""}</span><span class="ctx-label">${esc(it.label)}</span>${it.sub ? '<span class="ctx-more" aria-hidden="true">›</span>' : ""}</button>`)).join("");
@@ -235,7 +238,7 @@ const ShapeTools = (() => {
     bar.innerHTML = `
       <label class="sb-style"><span class="visually-hidden">Stitch style</span><select data-sb="style" tabindex="-1" aria-label="Stitch style of the selection">
         ${st.style ? "" : '<option value="" selected disabled>– different –</option>'}
-        ${t.styleOptions().map(([v, l]) => `<option value="${v}" ${v === st.style ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+        ${t.styleMenuOptions((v, l) => `<option value="${v}" ${v === st.style ? "selected" : ""}>${esc(l)}</option>`)}</select></label>
       ${st.dirApplies ? `<span class="sb-grp" role="group" aria-label="Direction">${t.presets.map(([a, glyph, name]) =>
         btn(`angle:${a}`, glyph, `aria-pressed="${st.angle === a}" title="${name} (${a}°)" aria-label="Direction: ${name}, ${a} degrees"`)).join("")}</span>` : ""}
       ${st.thickApplies ? `<span class="sb-grp" role="group" aria-label="Thickness">${t.thickness.map(([k, mm, l]) =>

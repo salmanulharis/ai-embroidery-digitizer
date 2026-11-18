@@ -198,7 +198,7 @@ try {
   await pane("stitches"); await sleep(300);
 
   // ------------------------------------------------ left panel: sections, Fabric & thread, compact numbers
-  check("sections: Size & colours, Picture, Fabric & thread, Stitches", await ev(`[...document.querySelectorAll("#leftPanel .ed-sec:not(.hidden) > summary")].map((s) => s.firstChild.textContent.trim()).slice(0, 4).join("|") === "Size & colours|Picture|Fabric & thread|Stitches"`),
+  check("sections: Size & colours, Picture, Fabric, thread & machine, Stitches", await ev(`[...document.querySelectorAll("#leftPanel .ed-sec:not(.hidden) > summary")].map((s) => s.firstChild.textContent.trim()).slice(0, 4).join("|") === "Size & colours|Picture|Fabric, thread & machine|Stitches"`),
     await ev(`[...document.querySelectorAll("#leftPanel .ed-sec:not(.hidden) > summary")].map((s) => s.firstChild.textContent.trim()).join("|")`));
   check("fabric and thread are stitch settings in their own section", await ev(`["fabric", "thread_weight"].every((k) => $("stitchForm").elements[k]?.closest("#materialFields"))`));
   const undo0 = await ev(`$("btnUndo").title`);

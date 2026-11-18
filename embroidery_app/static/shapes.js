@@ -13,6 +13,7 @@ const Shapes = (() => {
   let vb = null; // step-2 viewBox {x, y, w, h}
   let vbKey = "";
   let drawMode = false;
+  let fineOpen = false; // "Fine-tune" in the selection panel: kept open across updates once opened
   let guideMode = false; // drawing a guide line for the selected shapes
   let paths3 = []; // step-3 hit-test shapes [{id, order, kind, width, path}]
   let down = null; // pointer state for step-2 preview
@@ -30,6 +31,13 @@ const Shapes = (() => {
 
   // stitch styles come from the server (models.STITCH_STYLES), shared with the colour table
   const styleOptions = () => [["inherit", "Same as colour"], ...stitchStyles().map(([v, l]) => [v, styleLabel(v, l)]), ["skip", "Don't stitch"]];
+  // the same choices in their menu groups (app.js styleGroups): [[group or "", [[value, label], …]], …]
+  const styleMenu = () => [["", [["inherit", "Same as colour"]]], ...styleGroups(), ["", [["skip", "Don't stitch"]]]];
+  /** <option>s of styleMenu() in <optgroup>s; ``opt(value, label)`` writes one option. */
+  const styleMenuOptions = (opt) => styleMenu().map(([group, items]) => {
+    const opts = items.map(([v, l]) => opt(v, l)).join("");
+    return group ? `<optgroup label="${esc(group)}">${opts}</optgroup>` : opts;
+  }).join("");
   const styleName = (v) => (stitchStyles().find(([k]) => k === v)?.[1] || v).replace(/ \(.*\)$/, "");
   const METHOD_LABEL = {
     fill: "fill", satin: "satin", satin_band: "satin that follows the shape", satin_line: "satin that follows the line",
@@ -240,7 +248,7 @@ const Shapes = (() => {
     const colourStyles = new Set(chosen.map((o) => layerOf(o)?.stitch_type || "auto"));
     const inheritLabel = colourStyles.size === 1 ? `Same as colour (${styleName([...colourStyles][0])})` : "Same as each shape's colour";
     const styleOpts = (style ? "" : `<option value="" selected disabled>– different styles –</option>`) +
-      styleOptions().map(([v, label]) => `<option value="${v}" ${v === style ? "selected" : ""}>${v === "inherit" ? inheritLabel : label}</option>`).join("");
+      styleMenuOptions((v, label) => `<option value="${v}" ${v === style ? "selected" : ""}>${v === "inherit" ? inheritLabel : label}</option>`);
 
     // direction
     const dirApplies = chosen.some((o) => o.direction_applies && o.enabled !== false);
@@ -273,9 +281,9 @@ const Shapes = (() => {
     const ownUnder = same(chosen.map((o) => o.underlay_style ?? "inherit"));
     const effUnders = new Set(live.map((o) => o.effective_underlay));
     const effUnder = effUnders.size === 1 ? underList.find(([v]) => v === [...effUnders][0]) : null;
-    const underHtml = `
+    const underHtml = !underKind ? "" : `
       <label class="sp-bold"><span class="lbl">Foundation ${Tip.icon("shape_underlay")}</span>
-        <select data-action="underlay" ${underKind ? "" : "disabled"} aria-label="Foundation stitches for the selected shapes">
+        <select data-action="underlay" data-opt-help="${underKind === "fill" ? "fill_underlay" : "satin_underlay"}" aria-label="Foundation stitches for the selected shapes">
           ${ownUnder === undefined || (ownUnder !== "inherit" && !underList.some(([v]) => v === ownUnder)) ? `<option value="" selected disabled>– different –</option>` : ""}
           <option value="inherit" ${ownUnder === "inherit" ? "selected" : ""}>Same as design${effUnder && ownUnder === "inherit" ? ` (${effUnder[1]})` : ""}</option>
           ${underList.map(([v, l]) => `<option value="${v}" ${ownUnder === v ? "selected" : ""}>${l}</option>`).join("")}
@@ -285,8 +293,9 @@ const Shapes = (() => {
       const o = chosen[0];
       thickNow = `Now: ${o.effective_spacing_mm} mm gap (${thicknessName(o.effective_spacing_mm)}) · ${o.spacing_mm != null ? "own setting" : "design setting"}`;
     }
-    const thicknessHtml = `
-      <fieldset class="sp-dir" ${thickApplies ? "" : "disabled"}>
+    // only what applies to the selection (hidden, not greyed out)
+    const thicknessHtml = (thickApplies ? `
+      <fieldset class="sp-dir">
         <legend class="lbl">Thickness ${Tip.icon("shape_thickness")}</legend>
         <div class="sp-presets" role="group" aria-label="Thickness">
           <button type="button" data-action="thick" data-value="inherit" class="${ownSpacing === "inherit" ? "on" : ""}">Same as design</button>
@@ -295,22 +304,24 @@ const Shapes = (() => {
         <span class="sp-anglebox">Custom <input type="number" min="0.25" max="1" step="0.01" data-action="spacing" value="${spacingShown}" aria-label="Thickness: gap in millimetres" class="sp-angle"> mm gap</span>
         ${thickNow ? `<p class="small muted sp-now">${thickNow}</p>` : ""}
       </fieldset>
-      <fieldset class="sp-dir" ${thickApplies ? "" : "disabled"}>
+      <fieldset class="sp-dir">
         <legend class="lbl">Extra width ${Tip.icon("shape_width")}</legend>
         <div class="row sp-dirrow">
           <label class="check"><input type="radio" name="pullmode${step}" data-action="pull-inherit" ${ownPull === "inherit" ? "checked" : ""}> Same as design</label>
           <label class="check"><input type="radio" name="pullmode${step}" data-action="pull-custom" ${ownPull !== "inherit" && ownPull !== undefined ? "checked" : ""}> Custom:</label>
           <span class="sp-anglebox"><input type="number" min="0" max="0.8" step="0.05" data-action="pull" value="${pullShown}" aria-label="Extra width in millimetres" class="sp-angle"> mm</span>
         </div>
-      </fieldset>
+      </fieldset>` : "") + (boldApplies ? `
       <label class="sp-bold"><span class="lbl">Bold outline ${Tip.icon("shape_bold")}</span>
-        <select data-action="bold" ${boldApplies ? "" : "disabled"} aria-label="Bold outline for the selected shapes">
+        <select data-action="bold" aria-label="Bold outline for the selected shapes">
           ${ownBold === undefined ? `<option value="" selected disabled>– different –</option>` : ""}
           <option value="inherit" ${ownBold === "inherit" ? "selected" : ""}>Same as design</option>
           <option value="off" ${ownBold === "off" ? "selected" : ""}>Single line</option>
           <option value="on" ${ownBold === "on" ? "selected" : ""}>Bold (sewn 3 times)</option>
-        </select></label>
-      ${underHtml}`;
+        </select></label>` : "") + underHtml;
+    // the fine-tune group opens by itself when a selected shape has its own value in it
+    const ownFine = chosen.some((o) => o.spacing_mm != null || o.pull_mm != null || o.bold != null || o.underlay_style != null);
+    const fineParts = [...(thickApplies ? ["thickness", "width"] : []), ...(boldApplies ? ["bold outline"] : []), ...(underKind ? ["foundation"] : [])];
     const thickNote = !thickApplies && boldApplies
       ? `<p class="small muted">Thickness and extra width apply to fill and satin; outlines use “Bold outline” instead.</p>`
       : "";
@@ -352,8 +363,8 @@ const Shapes = (() => {
       ${colourHtml(perLayer)}
       <div class="sp-grid">
         <label><span class="lbl">Stitch style ${Tip.icon("shape_style")}</span>
-          <select data-action="style" aria-label="Stitch style for the selected shapes">${styleOpts}</select></label>
-        <fieldset class="sp-dir" ${dirApplies ? "" : "disabled"}>
+          <select data-action="style" data-opt-help="stitch_style" aria-label="Stitch style for the selected shapes">${styleOpts}</select></label>
+        <fieldset class="sp-dir" ${dirApplies ? "" : "hidden"}>
           <legend class="lbl">Direction ${Tip.icon("shape_direction")}</legend>
           <div class="row sp-dirrow">
             <label class="check"><input type="radio" name="dirmode${step}" data-action="dir-inherit" ${allInherit ? "checked" : ""}> Same as colour</label>
@@ -370,8 +381,11 @@ const Shapes = (() => {
       ${followNote}
       ${guideHtml}
       ${blendHtml}
-      <div class="sp-grid sp-thickgrid">${thicknessHtml}</div>
-      ${thickNote}
+      ${thicknessHtml ? `<details class="sp-fine" data-fine ${fineOpen || ownFine ? "open" : ""}>
+        <summary>Fine-tune <span class="small muted">${esc(fineParts.join(", "))}</span> ${Tip.icon("shape_fine")}</summary>
+        <div class="sp-grid sp-thickgrid">${thicknessHtml}</div>
+        ${thickNote}
+      </details>` : ""}
       <div class="row">
         ${chosen.some(isCustom) ? `<button type="button" class="ghost small" data-action="reset-sel">Reset selected to colour settings</button>` : ""}
         ${resetAll}
@@ -1039,6 +1053,11 @@ const Shapes = (() => {
     p2.innerHTML = `<div class="sp-dyn"></div>`;
     p2.addEventListener("click", onPanelEvent);
     p2.addEventListener("change", onPanelEvent);
+    // remember "Fine-tune" opened or closed by the user (not when it opens by itself)
+    p2.addEventListener("click", (ev) => {
+      const sum = ev.target.closest("[data-fine] > summary");
+      if (sum && !ev.target.closest(".help")) fineOpen = !sum.parentElement.open;
+    });
     $("showDirections").addEventListener("change", decorate);
     // the reference shows in both views: under the shapes and under the stitches
     $("showRef").addEventListener("change", () => { edit.refAuto = false; syncRefControls(); decorate(); draw(); });
@@ -1113,7 +1132,7 @@ const Shapes = (() => {
   }
   const tools = {
     selected: chosenObjects, state: selectionState, hitAt, selectionRect, select,
-    styleOptions, presets: PRESETS, thickness: THICKNESS, layerOf,
+    styleOptions, styleMenu, styleMenuOptions, presets: PRESETS, thickness: THICKNESS, layerOf,
     has: (id) => sel.has(id),
     count: () => sel.size,
     update: (body, label) => update({ ids: [...sel], ...body }, label).catch(() => {}),

@@ -150,6 +150,20 @@ def style_label(style: str) -> str:
     if not term or label.lower().startswith(term.lower()):
         return label
     return f"{label} — {term}"
+
+
+# The style menus' groups (the editor's style pickers show them as headings): every style in
+# STITCH_STYLES is in exactly one group (tests/test_style_groups.py).
+STITCH_STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Basic", ("auto", "fill", "satin", "lettering", "running")),
+    ("Decorative outlines", ("double_run", "backstitch", "stemstitch", "sculpture_run", "hand_stitch", "motif_run")),
+    ("Borders", ("zigzag", "estitch")),
+    ("Shaped fills", ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill", "blend_fill")),
+    ("Textured fills", ("stipple_fill", "maze_fill", "cross_stitch", "motif_fill", "paired_motif_fill",
+                        "pattern_fill", "jagged_fill")),
+    ("Raised & appliqué", ("raised_satin", "applique")),
+    ("Follow a line you draw", ("guided_satin", "florentine_fill", "carved_fill", "flexi_split", "motif_column")),
+)
 OUTLINE_STYLES = ("double_run", "backstitch", "stemstitch", "sculpture_run", "zigzag", "estitch")
 FILL_STYLE_NAMES = ("offset_fill", "spiral_fill", "contour_fill", "radial_fill", "shaded_fill",
                     "stipple_fill", "maze_fill", "cross_stitch")
