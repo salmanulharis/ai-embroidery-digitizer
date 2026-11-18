@@ -119,6 +119,7 @@ KEYS: dict[str, Key] = {
     "optimize_order": _BOOL_S,
     "trapunto": _BOOL_S,
     "running_curves": _BOOL_S,
+    "travel_under": _BOOL_S,
     "motif_warp": _BOOL_S,
     "photo_stitch": _BOOL_S,
     # fabric & thread

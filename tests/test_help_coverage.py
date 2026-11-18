@@ -79,5 +79,9 @@ def test_every_check_has_help():
     codes |= set(re.findall(r'"code": "([a-z_]+)"', SERVICE))  # checks made in service.py (same thread, colour order)
     assert {"same_thread", "colour_order"} <= codes and len(codes) > 20
     codes.add("fix_all")  # the Fix all button's help
+    # checks made in the browser (app.js Checks.build)
+    browser = set(re.findall(r'code: "([a-z_]+)"', APP_JS[APP_JS.index("const Checks = "):]))
+    assert {"hoop", "hoop_turn", "needles"} <= browser
+    codes |= browser
     missing = sorted(c for c in codes if f"check_{c}" not in HELP_KEYS)
     assert not missing, missing

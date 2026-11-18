@@ -28,7 +28,7 @@ from shapely.ops import unary_union
 
 from ..colors import color_name, merge_palette, rgb_to_lab
 from ..geometry import clean_polygonal, iter_lines, iter_polygons
-from ..models import ColorLayer, Design, DesignObject, bounded
+from ..models import ColorLayer, Design, DesignObject, bounded, quarter_turns
 
 
 # Allowed range of every numeric artwork setting; VectorOptions clamps to it.
@@ -48,9 +48,11 @@ class VectorOptions:
     underlap_mm: float = 0.3
     drop_canvas_background: bool = True
     min_area_mm2: float = 0.5
+    rotate: int = 0  # the design turned clockwise: 0, 90, 180 or 270 degrees (Size: Turn 90°)
 
     def __post_init__(self) -> None:
         """Clamp to VECTOR_RANGES (valid values stay exactly as they are)."""
+        self.rotate = quarter_turns(self.rotate)
         defaults = type(self).__dataclass_fields__
         if self.num_colors in (None, "", 0):
             self.num_colors = None  # keep the artwork's colours
@@ -378,6 +380,10 @@ def svg_to_design(svg_text: str, opts: VectorOptions) -> Design:
     shapes, warnings = _parse_svg(svg_text)
     if not shapes:
         raise ValueError("No fillable or stroked shapes found in the vector file.")
+
+    if opts.rotate:  # turned clockwise (y points down, so a positive angle turns clockwise on screen)
+        for s in shapes:
+            s.geom = affinity.rotate(s.geom, opts.rotate, origin=(0, 0))
 
     # Normalise: fit overall bounds to requested width (mm), origin at top-left.
     bounds = unary_union([s.geom.buffer(s.stroke_width / 2) if s.kind == "line" else s.geom for s in shapes]).bounds

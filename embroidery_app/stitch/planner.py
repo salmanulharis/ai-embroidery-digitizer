@@ -599,6 +599,14 @@ def plan_stitches(design: Design, params: StitchParams) -> StitchPlan:
 # --------------------------------------------------------------------------- assembly
 
 TIE_STEP_MM = 0.6  # lock stitch length: long enough to hold, never below the 0.5 mm minimum stitch
+# travel_under: a move hides under fills and satin of the colours sewn later when its path stays
+# this far inside them, apart from its ends (a move leaves one shape's edge and reaches the next
+# one's: TRAVEL_UNDER_END_MM at each end lie at those edges), and is at most this long (longer
+# moves keep the jump and the cut)
+TRAVEL_UNDER_INSET_MM = 0.5
+TRAVEL_UNDER_END_MM = 1.5  # entries lie up to the compensation inside the next shape
+TRAVEL_UNDER_MAX_MM = 25.0
+COVERING_KINDS = frozenset({"fill", "satin"})  # top stitching dense enough to hide a run under it
 STROKE_TRAVEL_MM = 4.0  # max hidden run between strokes of one letter instead of a cut
 
 
@@ -646,6 +654,33 @@ def _tie(points: list[Pt], at_start: bool, length: float = TIE_STEP_MM, min_stit
     return [p1] if at_start else [p1, path[0]]
 
 
+def _hidden_under(cover: BaseGeometry, a: Pt, b: Pt, length: float) -> bool:
+    """Does the move a -> b lie inside ``cover`` apart from TRAVEL_UNDER_END_MM at each end?"""
+    if length <= 2 * TRAVEL_UNDER_END_MM:
+        return False  # all of it at the two shapes' edges: nothing to hide it under
+    t0, t1 = TRAVEL_UNDER_END_MM / length, 1 - TRAVEL_UNDER_END_MM / length
+    inner = LineString([(a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0), (a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1)])
+    return cover.contains(inner)
+
+
+def _covers_after(blocks: list[ColorBlock], geoms: dict[int, BaseGeometry]) -> list:
+    """For each colour: where fills and satin of the colours sewn after it lie (shrunk by
+    TRAVEL_UNDER_INSET_MM, prepared for quick tests), or None when nothing comes after."""
+    covering = [[geoms[r.object_id] for r in b.runs if r.kind in COVERING_KINDS and r.object_id in geoms] for b in blocks]
+    out: list = [None] * len(blocks)
+    after = None
+    for bi in range(len(blocks) - 1, -1, -1):
+        if after is not None and not after.is_empty:
+            shrunk = after.buffer(-TRAVEL_UNDER_INSET_MM)
+            if not shrunk.is_empty:
+                shapely.prepare(shrunk)
+                out[bi] = shrunk
+        if covering[bi]:
+            merged = shapely.union_all(covering[bi])
+            after = merged if after is None else shapely.union(after, merged)
+    return out
+
+
 def assemble(
     blocks: list[ColorBlock],
     geoms: dict[int, BaseGeometry],
@@ -666,7 +701,9 @@ def assemble(
             for p in _tie(last_run.points, at_start=False, min_stitch=min_stitch):
                 stitch(p, "tie")
 
+    covers = _covers_after(blocks, geoms) if params.travel_under else None
     for bi, block in enumerate(blocks):
+        under = covers[bi] if covers else None
         if bi > 0:
             end_segment()
             ops.append((TRIM, cur[0], cur[1], ""))  # type: ignore[index]
@@ -694,6 +731,9 @@ def assemble(
                     step = min(params.max_stitch_mm, 1.5 if stroke else 3.0)
                     for p in subdivide(cur, start, step):  # type: ignore[arg-type]
                         stitch(p, "travel")
+                elif under is not None and gap <= TRAVEL_UNDER_MAX_MM and _hidden_under(under, cur, start, gap):  # type: ignore[arg-type]
+                    for p in subdivide(cur, start, min(params.max_stitch_mm, 3.0)):  # type: ignore[arg-type]
+                        stitch(p, "travel")  # hidden under a fill sewn later: no jump, no cut
                 else:
                     needs_jump = True
                     if gap > params.trim_threshold_mm:

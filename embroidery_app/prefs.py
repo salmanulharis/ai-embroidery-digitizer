@@ -16,8 +16,18 @@ steps (docs/APP_UX_PLAN.md, batches A and B; docs/AUTOMATION_UX_PLAN.md, batch B
   the account's own presets; a deleted one is forgotten. The tier is checked in the editor,
   which never receives a locked preset's values.
 
-The machine also gives a new design its speed for the time estimate (``spm``) and the hoops it
-takes (``hoops``: names from ``HOOPS``), which the editor prefers when it picks a hoop.
+- ``hidden_checks``: check codes the account turned off ("Don't show them again"; important
+  checks can only be hidden per design). ``auto_fix``: apply the important checks' setting
+  fixes to a new design once, after its first stitches (off unless chosen).
+- ``needles``: how many needles the machine has (default: the machine's ``needles``); more
+  colours than needles is a check.
+- ``price_per_1000``, ``price_min``, ``currency``: a price estimate in Export and on the
+  worksheet (``quote``). Shown only to the account; never sent anywhere.
+- ``garment``: the usual garment colour (#rrggbb); a new design starts with it.
+
+The machine also gives a new design its speed for the time estimate (``spm``), the hoops it
+takes (``hoops``: names from ``HOOPS``), which the editor prefers when it picks a hoop, and its
+usual number of needles (``needles``: 1 = a single-needle home machine).
 
 Both tables live here and go to the browser in ``/api/config``. A preference is a key
 from these tables, never design data: nothing about a picture, a file name or a design is
@@ -62,15 +72,15 @@ _HOME_HOOPS = ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "160 x 260 mm (6 x 10 
 # maximum; machine_spm only changes the figures) and the usual hoop sizes of that kind of machine
 # (the common sizes of each range, to confirm against the machine's own list).
 MACHINES: dict[str, dict] = {
-    "tajima": {"label": "Tajima, WONYO, Dahao, SWF, Ricoma (most commercial)", "format": "dst", "spm": 850, "hoops": _COMMERCIAL_HOOPS},
-    "brother": {"label": "Brother / Babylock", "format": "pes", "spm": 650, "hoops": _HOME_HOOPS},
-    "janome": {"label": "Janome / Elna", "format": "jef", "spm": 650, "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "200 x 200 mm")},
-    "bernina": {"label": "Bernina", "format": "exp", "spm": 650, "hoops": _HOME_HOOPS},
-    "melco": {"label": "Melco", "format": "exp", "spm": 850, "hoops": _COMMERCIAL_HOOPS},
-    "barudan": {"label": "Barudan", "format": "u01", "spm": 850, "hoops": _COMMERCIAL_HOOPS},
+    "tajima": {"label": "Tajima, WONYO, Dahao, SWF, Ricoma (most commercial)", "format": "dst", "spm": 850, "hoops": _COMMERCIAL_HOOPS, "needles": 15},
+    "brother": {"label": "Brother / Babylock", "format": "pes", "spm": 650, "hoops": _HOME_HOOPS, "needles": 1},
+    "janome": {"label": "Janome / Elna", "format": "jef", "spm": 650, "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "200 x 200 mm"), "needles": 1},
+    "bernina": {"label": "Bernina", "format": "exp", "spm": 650, "hoops": _HOME_HOOPS, "needles": 1},
+    "melco": {"label": "Melco", "format": "exp", "spm": 850, "hoops": _COMMERCIAL_HOOPS, "needles": 16},
+    "barudan": {"label": "Barudan", "format": "u01", "spm": 850, "hoops": _COMMERCIAL_HOOPS, "needles": 15},
     "husqvarna": {"label": "Husqvarna Viking / Pfaff", "format": "vp3", "spm": 650,
-                  "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "200 x 200 mm", "360 x 200 mm")},
-    "singer": {"label": "Singer", "format": "xxx", "spm": 600, "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "160 x 260 mm (6 x 10 in)")},
+                  "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "200 x 200 mm", "360 x 200 mm"), "needles": 1},
+    "singer": {"label": "Singer", "format": "xxx", "spm": 600, "hoops": ("100 x 100 mm", "130 x 180 mm (5 x 7 in)", "160 x 260 mm (6 x 10 in)"), "needles": 1},
 }
 
 # key -> label, the longest side of the finished design in mm (None = keep the editor's
@@ -94,16 +104,50 @@ VALID = {
     "thread_chart": lambda v: isinstance(v, str) and v in threads.charts(),
     # "b:<built-in id>" or "u:<own preset id>"; whose preset it is is checked in save / get
     "preset": lambda v: (v[2:] in {b.id for b in BUILTINS}) if v.startswith("b:") else bool(_OWN_PRESET.fullmatch(v)),
+    "hidden_checks": lambda v: isinstance(v, list) and len(v) <= MAX_HIDDEN_CHECKS and all(
+        isinstance(c, str) and _CHECK_CODE.fullmatch(c) for c in v) and len(set(v)) == len(v),
+    "auto_fix": lambda v: isinstance(v, bool),
+    "needles": lambda v: _whole(v) and NEEDLES[0] <= v <= NEEDLES[1],
+    "price_per_1000": lambda v: _amount(v),
+    "price_min": lambda v: _amount(v),
+    "currency": lambda v: isinstance(v, str) and bool(_CURRENCY.fullmatch(v)),
+    "garment": lambda v: isinstance(v, str) and bool(_HEX.fullmatch(v)),
 }
 _OWN_PRESET = re.compile(r"u:[1-9][0-9]{0,11}")
+_CHECK_CODE = re.compile(r"[a-z][a-z_]{1,39}")
+_CURRENCY = re.compile(r"[^\s<>&\"'`]{1,4}")  # a symbol or a short code: $, €, ₹, AED
+_HEX = re.compile(r"#[0-9a-f]{6}")
+MAX_HIDDEN_CHECKS = 50
+NEEDLES = (1, 20)
+MAX_PRICE = 100_000.0
+
+
+def _whole(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _amount(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and 0 <= v <= MAX_PRICE
 KEYS = tuple(VALID)
+
+
+# preferences whose value is not text (every other one is a key or a code: a string)
+_NOT_TEXT = ("hidden_checks", "auto_fix", "needles", "price_per_1000", "price_min")
 
 
 def _valid(k: str, v) -> bool:
     try:
-        return isinstance(v, str) and VALID[k](v)
+        return (k in _NOT_TEXT or isinstance(v, str)) and bool(VALID[k](v))
     except Exception:  # a thread chart folder that cannot be read: nothing is offered
         return False
+
+
+def quote(user_id: int) -> dict | None:
+    """The account's price estimate settings for the worksheet, or None when no price is set."""
+    p = get(user_id)
+    if not p.get("price_per_1000"):
+        return None
+    return {"per_1000": float(p["price_per_1000"]), "minimum": float(p.get("price_min") or 0), "currency": p.get("currency") or ""}
 
 
 def catalog() -> dict:
@@ -180,6 +224,7 @@ def _check_tables() -> None:
     for k, m in MACHINES.items():
         assert m["format"] in FORMATS, k
         assert m["hoops"] and set(m["hoops"]) <= set(names), k
+        assert NEEDLES[0] <= m["needles"] <= NEEDLES[1], k
         assert spm_lo <= m["spm"] <= spm_hi and m["spm"] % 50 == 0, k  # the editor's speed field steps by 50
     for k, p in PLACEMENTS.items():
         assert p["size_mm"] is None or lo <= p["size_mm"] <= hi, k

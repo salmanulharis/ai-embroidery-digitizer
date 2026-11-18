@@ -45,7 +45,8 @@ Core data types live in `models.py`: `Design` → `ColorLayer`s + `DesignObject`
   `custom_presets` + `max_custom_presets`, counted in the write transaction; after a downgrade they stay usable, only
   create / duplicate are refused. Premium built-in values are never sent without the tier.
 - `prefs.py`: per-account preferences (the machine for Export, a new design's speed and the hoops listed first, the
-  usual placement for the start step, the usual fabric, thread brand and preset a new design starts with) as keys
+  usual placement for the start step, the usual fabric, thread brand, preset and garment colour a new design starts
+  with, the needles, a price estimate, checks turned off and automatic fixes) as keys
   validated by `VALID` (fixed tables `HOOPS` (append only: options are chosen by position), `MACHINES`, `PLACEMENTS`,
   sent in `/api/config`; fabric ids; thread charts on the server; own presets checked per account), stored in
   `user_prefs`; never design data.

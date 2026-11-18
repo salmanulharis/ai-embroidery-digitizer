@@ -395,11 +395,12 @@ def export(pid: str, fmt: str, formats: Optional[str] = None, user: dict = Depen
     files = (chosen or list(service.ZIP_DEFAULT)) if fmt == "zip" else [fmt]
     if fmt != "zip" and fmt not in STITCH_OUTPUT and fmt != "svg":
         raise ValueError(f"Unknown export format '{fmt}'")
+    quote = prefs.quote(user["id"])  # the account's price estimate on the worksheet (or None)
     if _check_export_features(user["id"], pid, files):
         with usage.generation(user["id"], pid, f"export:{fmt}"):
-            data, filename, mime = service.export(pid, fmt, chosen)
+            data, filename, mime = service.export(pid, fmt, chosen, quote)
     else:
-        data, filename, mime = service.export(pid, fmt, chosen)
+        data, filename, mime = service.export(pid, fmt, chosen, quote)
     return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{filename}"',
                                                     "Cache-Control": "no-store"})
 

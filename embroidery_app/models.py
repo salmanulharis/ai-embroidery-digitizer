@@ -243,6 +243,14 @@ STITCH_RANGES: dict[str, tuple[float, float]] = {
 RUNNING_REPEATS = (1, 3)  # how often outlines are sewn: once ... three times (bean / triple stitch)
 
 
+def quarter_turns(value) -> int:
+    """A design turn in degrees clockwise: 0, 90, 180 or 270 (anything else is the nearest of them)."""
+    try:
+        return int(round(float(value) / 90.0)) % 4 * 90
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def bounded(value, bounds: tuple[float, float], default):
     """``value`` when it is a finite number within ``bounds`` (unchanged, so valid settings
     give byte-identical stitches), else clamped to them; ``default`` for non-numbers."""
@@ -551,11 +559,15 @@ class StitchParams:
     push_compensation_mm: float = 0.0
     min_object_area_mm2: float = 0.05  # keeps dots/punctuation of lettering (enlarged to a sewable dot); specks are removed in step 2
     trim_threshold_mm: float = 2.0  # connectors longer than this are trimmed
+    # moves between shapes of a colour run as hidden stitches under fills sewn later instead of
+    # a jump and a cut (planner.assemble); off = every such move is a jump, as always
+    travel_under: bool = False
     sew_order: str = "standard"  # where sewing starts: SEW_ORDERS (the Cap fabric sets "cap")
     tie_stitches: bool = True
     max_stitch_mm: float = 7.0
     machine_spm: int = 750  # average speed incl. slowdowns (stitches/min): time estimate only, see StitchPlan.stats
     thread_chart: str = ""  # brand thread chart for the nearest thread per colour (threads.py); "" = none
+    garment_hex: str = ""  # the garment's colour (#rrggbb), "" = not set: preview and checks only (figures-only)
     optimize: bool = True  # smart stitch reduction (see stitch/optimize.py)
     optimize_order: bool = True  # 2-opt sewing order within each colour (fewer, shorter jumps)
     thread_weight: int = 40  # 40 = standard thread; 60 = fine thread for small lettering
@@ -589,6 +601,10 @@ class StitchParams:
             self.satin_underlay = "edge"
         if self.sew_order not in SEW_ORDERS:
             self.sew_order = "standard"
+        if not isinstance(self.garment_hex, str) or not re.fullmatch(r"#[0-9a-f]{6}", self.garment_hex.lower()):
+            self.garment_hex = ""
+        else:
+            self.garment_hex = self.garment_hex.lower()
         if not isinstance(self.thread_chart, str) or not re.fullmatch(r"[a-z0-9-]{0,48}", self.thread_chart):
             self.thread_chart = ""  # a chart id (file name); unknown ids are ignored where charts are used
 

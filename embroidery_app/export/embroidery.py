@@ -93,7 +93,20 @@ def export_embroidery(plan: StitchPlan, fmt: str, name: str = "design") -> bytes
         os.unlink(path)
 
 
-def worksheet(plan: StitchPlan, name: str) -> str:
+def quote_text(stitches: int, quote: dict | None) -> str:
+    """The price estimate line (prefs.quote): per 1,000 stitches, never below the minimum."""
+    if not quote or not quote.get("per_1000"):
+        return ""
+    cur = quote.get("currency") or ""
+    rate, minimum = float(quote["per_1000"]), float(quote.get("minimum") or 0)
+    amount = max(stitches / 1000 * rate, minimum)
+    money = lambda x: f"{cur} {x:,.2f}".strip()  # noqa: E731
+    text = f"Price estimate: {money(amount)} ({stitches:,} stitches at {money(rate)} per 1,000"
+    return text + (f", minimum {money(minimum)})" if minimum else ")")
+
+
+def worksheet(plan: StitchPlan, name: str, quote: dict | None = None) -> str:
+    """``quote``: the account's price settings (prefs.quote); None = no price line."""
     s = plan.stats()
     lines = [
         f"Design: {name}",
@@ -102,6 +115,7 @@ def worksheet(plan: StitchPlan, name: str) -> str:
         + (f"   Stops: {s['stops']} (applique: lay the fabric piece, then continue)" if s.get("stops") else ""),
         f"Estimated run time: {s['est_minutes']} min at {s['machine_spm']} stitches/min   "
         f"Thread: top ~{s['thread_m']} m, bobbin ~{s['bobbin_m']} m",
+        *([quote_text(s["stitches"], quote)] if quote_text(s["stitches"], quote) else []),
         "",
         "Colour sequence (assign needles on the machine; DST files carry no colours):",
     ]

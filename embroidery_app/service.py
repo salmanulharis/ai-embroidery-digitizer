@@ -313,7 +313,10 @@ def extract(pid: str, options: dict) -> dict:
     if not design.objects:
         raise ValueError("Nothing to stitch was found. Try fewer colours, another Background option or a larger design width.")
     if (d / "design.json").exists():
-        _carry_shape_settings(load_design(pid), design)
+        # a turn since the last preparation (Size: Turn 90°): the old shapes are turned the same
+        # way before they are matched, so each shape keeps its own settings
+        turned = (getattr(opts, "rotate", 0) - int((meta.get("extract_options") or {}).get("rotate") or 0)) % 360
+        _carry_shape_settings(load_design(pid), design, turned=turned)
     _save_design(pid, design)
     _save_reference(pid, meta, design, reference)
     meta["extract_options"] = asdict(opts)
@@ -369,17 +372,19 @@ def reference_file(pid: str, kind: str) -> tuple[bytes, str]:
     raise NotFound()
 
 
-def _carry_shape_settings(old: Design, new: Design, min_overlap: float = 0.5) -> None:
+def _carry_shape_settings(old: Design, new: Design, min_overlap: float = 0.5, turned: int = 0) -> None:
     """Re-extracting rebuilds every shape. Give each new shape the settings of the
     old customised shape covering the same place (overlap >= ``min_overlap`` of the
-    union), compared at the same scale so a changed design width still matches."""
+    union), compared at the same scale so a changed design width still matches.
+    ``turned``: degrees clockwise the design was turned since (0, 90, 180, 270): old shapes,
+    their own directions and guide lines are turned the same way first."""
     from shapely import STRtree
     from shapely import affinity
 
     customised = [o for o in old.objects if o.customised]
     if not customised:
         return
-    k = new.width_mm / old.width_mm if old.width_mm else 1.0
+    to_new = _turn_map(old, new, turned)
 
     def footprint(o):
         return o.geometry if o.kind == "area" else o.geometry.buffer(max(o.stroke_width_mm, 0.5) / 2)
@@ -389,7 +394,7 @@ def _carry_shape_settings(old: Design, new: Design, min_overlap: float = 0.5) ->
     best: dict[int, tuple[float, tuple]] = {}  # new object index -> (overlap, settings)
     kept = 0
     for o in customised:
-        g = affinity.scale(footprint(o), k, k, origin=(0, 0))
+        g = to_new(footprint(o))  # the old shape where it lies in the new design
         match = None
         for j in tree.query(g, predicate="intersects"):
             if new.objects[j].kind != o.kind:
@@ -403,7 +408,7 @@ def _carry_shape_settings(old: Design, new: Design, min_overlap: float = 0.5) ->
         kept += 1
         iou, j = match
         if j not in best or iou > best[j][0]:
-            best[j] = (iou, o.settings())
+            best[j] = (iou, _turned_settings(o, to_new, turned))
     for j, (_, settings) in best.items():
         new.objects[j].apply_settings(settings)
     lost = len(customised) - kept
@@ -411,6 +416,38 @@ def _carry_shape_settings(old: Design, new: Design, min_overlap: float = 0.5) ->
     if lost:
         msg += f" {lost} shape(s) changed too much to be recognised - please set them again."
     new.warnings.append(msg)
+
+
+def _turn_map(old: Design, new: Design, turned: int):
+    """Geometry in the old design -> the same place in the new one: turned ``turned`` degrees
+    clockwise (y down), moved back to the top-left corner and scaled to the new width."""
+    from shapely import affinity
+    from shapely.geometry import box
+
+    frame = affinity.rotate(box(0, 0, old.width_mm, old.height_mm), turned, origin=(0, 0)) if turned else None
+    minx, miny = (frame.bounds[0], frame.bounds[1]) if frame is not None else (0.0, 0.0)
+    old_w = (frame.bounds[2] - frame.bounds[0]) if frame is not None else old.width_mm
+    k = new.width_mm / old_w if old_w else 1.0
+
+    def to_new(g):
+        if turned:
+            g = affinity.translate(affinity.rotate(g, turned, origin=(0, 0)), -minx, -miny)
+        return affinity.scale(g, k, k, origin=(0, 0)) if k != 1.0 else g
+    return to_new
+
+
+def _turned_settings(o, to_new, turned: int) -> tuple:
+    """A shape's own settings in the new design: its direction turns with it, its guide line
+    follows the shape (turn and size)."""
+    from shapely.geometry import MultiPoint
+
+    settings = list(o.settings())
+    if turned and o.angle is not None:
+        settings[1] = (o.angle + turned) % 180
+    if o.guide:
+        moved = to_new(MultiPoint([tuple(p) for p in o.guide]))
+        settings[7] = [[round(p.x, 3), round(p.y, 3)] for p in moved.geoms]
+    return tuple(settings)
 
 
 def design_payload(design: Design, pid: str | None = None) -> dict:
@@ -853,7 +890,7 @@ def shape_outlines(design: Design) -> list[dict]:
 
 
 # settings that change only the figures, not the stitches: a cached plan is reused
-_FIGURES_ONLY = ("machine_spm", "thread_chart")
+_FIGURES_ONLY = ("machine_spm", "thread_chart", "garment_hex")
 
 
 def _plan_key(design: Design, params: StitchParams) -> str:
@@ -966,7 +1003,8 @@ def _stitch(pid: str, params: dict) -> dict:
 #   design size, "select" = select ``ids``; "change" + "fix" = a setting change and its label.
 #   Further one-click fixes, each a button of its own: "resize" = {width_mm} (a design width,
 #   offered within the chosen hoop), "merge" = {pairs, label} (colours to merge, as the
-#   Merge similar colours dialog does), "order" = {layers, label} (a new colour sequence).
+#   Merge similar colours dialog does), "order" = {layers, label} (a new colour sequence),
+#   "skip" = {layers, label} (colours to switch off: the garment's own colour).
 REVIEW_IN_CHECKS = ("high", "medium")  # low findings stay in "Check my stitches"
 _CHECK_ACTIONS = {
     "stitch_count": ["size"], "oversize": ["size"], "cap_height": ["size"],
@@ -1015,7 +1053,7 @@ def _stitch_checks(plan: StitchPlan, design: Design, params: StitchParams, stats
             own["fix"] = issue["fix"] if "fix" not in own else f"{own['fix']} · {issue['fix']}"
         if issue.get("resize") and "resize" not in own:
             own["resize"] = issue["resize"]
-    for extra in (_same_thread_check, _colour_order_check):
+    for extra in (_garment_check, _same_thread_check, _colour_order_check):
         try:
             found = extra(design, params, objects)
         except Exception:  # advice only: the stitches are shown without it
@@ -1065,6 +1103,34 @@ def _same_thread_check(design: Design, params: StitchParams, objects=None) -> di
     text = f"{'; '.join(names)} match the same thread, so they sew as one thread with {changes}."
     return {"code": "same_thread", "severity": "medium", "title": "Same thread twice", "text": text,
             "merge": {"pairs": pairs, "label": "Merge them" if n == 1 else f"Merge {n} colours"}}
+
+
+GARMENT_DE = 5.0  # CIEDE2000: a colour this close to the garment does not show on it
+
+
+def _garment_check(design: Design, params: StitchParams, objects=None) -> dict | None:
+    """Colours (almost) the same as the garment (StitchParams.garment_hex) are sewn where
+    nobody sees them: offer not to sew them. Never every colour (then nothing is left)."""
+    if not params.garment_hex:
+        return None
+    from .colors import ciede2000, rgb_to_lab  # noqa: PLC0415
+
+    import numpy as np  # noqa: PLC0415
+
+    layers = _sewn_layers(design)
+    if len(layers) < 2:
+        return None
+    garment = rgb_to_lab(np.array([int(params.garment_hex[i:i + 2], 16) for i in (1, 3, 5)], np.uint8))
+    same = [l for l in layers if float(ciede2000(rgb_to_lab(np.array(l.rgb, np.uint8)), garment)) < GARMENT_DE]
+    if not same or len(same) == len(layers):
+        return None
+    names = ", ".join(l.name for l in same)
+    area = sum(_colour_weight(design, l.index) for l in same)
+    text = (f"{names} {'is' if len(same) == 1 else 'are'} the colour of the garment: about {area:.0f} mm² of stitches "
+            "that will not show. Leave them out, unless they are there on purpose (e.g. to cover the fabric's texture).")
+    label = f"Don't sew {same[0].name}" if len(same) == 1 else f"Don't sew these {len(same)} colours"
+    return {"code": "garment", "severity": "medium", "title": "Same colour as the garment", "text": text,
+            "skip": {"layers": [l.index for l in same], "label": label}}
 
 
 # Methods that sew outlines and lettering (thin, on top) and fills (wide areas under them).
@@ -1178,8 +1244,9 @@ EXTRA_EXPORTS = ("svg", "png", "txt")  # besides the machine formats in FORMATS
 ZIP_DEFAULT = ("dst", "exp", "pes", "svg", "png", "txt")  # "zip" without a choice of formats
 
 
-def _export_file(pid: str, fmt: str, base: str, plan=None) -> tuple[bytes, str, str]:
-    """One downloadable file: (data, filename, mime type). ``plan`` is built when needed."""
+def _export_file(pid: str, fmt: str, base: str, plan=None, quote: dict | None = None) -> tuple[bytes, str, str]:
+    """One downloadable file: (data, filename, mime type). ``plan`` is built when needed;
+    ``quote``: the account's price settings for the worksheet (prefs.quote)."""
     if fmt == "svg":
         return design_to_svg(load_design(pid), only_enabled=True).encode(), f"{base}.svg", "image/svg+xml"
     plan = plan or get_plan(pid)
@@ -1188,7 +1255,7 @@ def _export_file(pid: str, fmt: str, base: str, plan=None) -> tuple[bytes, str, 
     if fmt == "png":
         return render_png(plan), f"{base}_preview.png", "image/png"
     if fmt == "txt":
-        return worksheet(plan, base).encode(), f"{base}_worksheet.txt", "text/plain"
+        return worksheet(plan, base, quote).encode(), f"{base}_worksheet.txt", "text/plain"
     raise ValueError(f"Unknown export format '{fmt}'")
 
 
@@ -1211,27 +1278,28 @@ def parse_formats(value: str | None) -> list[str] | None:
     return out
 
 
-def export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes, str, str]:
+def export(pid: str, fmt: str, formats: list[str] | None = None, quote: dict | None = None) -> tuple[bytes, str, str]:
     """A single file, or ``zip``: the chosen ``formats`` (default ``ZIP_DEFAULT``) in one archive.
-    Waits for a stitch run of the same project, so the file has the settings just stitched."""
+    Waits for a stitch run of the same project, so the file has the settings just stitched.
+    ``quote``: the account's price settings; the worksheet then has a price estimate."""
     with _project_lock(pid):
-        return _export(pid, fmt, formats)
+        return _export(pid, fmt, formats, quote)
 
 
-def _export(pid: str, fmt: str, formats: list[str] | None = None) -> tuple[bytes, str, str]:
+def _export(pid: str, fmt: str, formats: list[str] | None = None, quote: dict | None = None) -> tuple[bytes, str, str]:
     meta = _meta(pid)
     base = Path(meta["filename"]).stem or "design"
     fmt = fmt.lower()
     if fmt == WILCOM_PACKAGE:
-        return wilcom_package(pid, base), f"{base}_for_wilcom.zip", "application/zip"
+        return wilcom_package(pid, base, quote), f"{base}_for_wilcom.zip", "application/zip"
     if fmt != "zip":
-        return _export_file(pid, fmt, base)
+        return _export_file(pid, fmt, base, quote=quote)
     chosen = formats or list(ZIP_DEFAULT)
     plan = get_plan(pid) if any(f != "svg" for f in chosen) else None
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in chosen:
-            data, filename, _ = _export_file(pid, f, base, plan)
+            data, filename, _ = _export_file(pid, f, base, plan, quote)
             z.writestr(filename, data)
     return buf.getvalue(), f"{base}_embroidery.zip", "application/zip"
 
@@ -1280,7 +1348,7 @@ def _wilcom_readme(design: Design, plan: StitchPlan, base: str, colour_files: li
     return "\n".join(lines) + "\n"
 
 
-def wilcom_package(pid: str, base: str) -> bytes:
+def wilcom_package(pid: str, base: str, quote: dict | None = None) -> bytes:
     """A ZIP for continuing in Wilcom: DST + EPS / SVG artwork (all colours and one file per
     colour) + worksheet + a short how-to. Counts as stitch output (it contains the DST)."""
     design = load_design(pid)
@@ -1291,7 +1359,7 @@ def wilcom_package(pid: str, base: str) -> bytes:
         z.writestr(f"{base}.dst", export_embroidery(plan, "dst", base))
         z.writestr(f"{base}_artwork.eps", design_to_eps(design, title=base))
         z.writestr(f"{base}_artwork.svg", design_to_svg(design, only_enabled=True))
-        z.writestr(f"{base}_worksheet.txt", worksheet(plan, base))
+        z.writestr(f"{base}_worksheet.txt", worksheet(plan, base, quote))
         order = 0
         for layer in design.layers:
             if not layer.enabled or not any(o.layer == layer.index and o.enabled for o in design.objects):

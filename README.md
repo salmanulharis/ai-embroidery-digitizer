@@ -110,6 +110,18 @@ as sheets from the bottom bar. The layout plan and its findings are in `docs/EDI
   and end near the centre: less frame travel) or Cap (every colour from the bottom centre outwards; the Cap fabric
   chooses it). **Fill foundation Automatic by size** (edge run only on fills narrower than 6 mm) and **Shorter stitches
   on tight curves** for running outlines are further choices. All are off by default; the stitches are unchanged.
+* **Garment colour** (Fabric, thread & machine; a usual one in Your defaults): the preview shows the design on it, and
+  the check *Same colour as the garment* offers not to sew a colour that would not show. **Thread brand colours**
+  (preview options) shows the stitches in the chosen brand's thread colours.
+* **Turn 90°** (Size): turns the design clockwise, keeping its size; every shape keeps its own settings (directions and
+  guide lines turn with it), and it survives any later Size / Colours / Picture change. The hoop check offers it when
+  the design fits only turned. Stored as the preparation setting `rotate` (0 / 90 / 180 / 270).
+* **Hide moves under later fills** (Advanced › Sewing order & thread cuts, off by default): a move between shapes of a
+  colour is sewn as hidden stitches under a fill or satin of a colour sewn later, instead of a jump and a thread cut.
+* **Your defaults** also hold the needles of your machine (more colours than needles is a check), a price per 1,000
+  stitches with a minimum and currency (an estimate in Export and on the worksheet), and *Apply the important fixes to
+  new designs* (off by default). A hidden check can be turned off for the account (*Don't show it again*; never the
+  important ones) and shown again from My account.
 * **Fine thread**: choosing 60 wt from the smart analysis or the thin-lettering fix also sets 0.35 mm satin spacing;
   the check *Fine thread with standard spacing* offers it otherwise. Without an AI service, *Check my stitches* lists
   only what the Checks do not already show, without the full-screen wait.

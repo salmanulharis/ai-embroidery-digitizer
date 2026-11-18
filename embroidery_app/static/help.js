@@ -373,6 +373,29 @@ const HELP = {
     why: "Shorter jumps mean fewer thread cuts and less machine time; the stitches themselves do not change.",
     eg: "Leave it on. Turn it off only to compare with the plain nearest-shape-next order.",
   },
+  travel_under: {
+    t: "Hide moves under later fills",
+    what: "A move from one shape to the next in the same colour is sewn as small hidden stitches when its path lies at least 0.5 mm inside fills or satin of a colour sewn later (apart from the 1.5 mm at each end, where it leaves one shape and reaches the next) and is at most 25 mm long, instead of a jump and a thread cut.",
+    why: "Every thread cut costs time (about 10 s each) and two lock stitches; the later colour covers the hidden stitches completely.",
+    eg: "Off by default. Turn it on for designs with many separate pieces on a background colour sewn later; check with a test sew-out.",
+  },
+  turn: {
+    t: "Turn 90°",
+    what: "Turns the whole design a quarter turn clockwise. It keeps its size (the new width is the old height), and every shape keeps its own settings: directions and guide lines turn with it.",
+    why: "A design that fits the hoop only sideways is turned here, so the machine file, the preview and the checks all match. Press it again for 180° and 270°; Undo turns it back.",
+  },
+  garment: {
+    t: "Garment colour",
+    what: "The colour of the garment or fabric the design is sewn on. The stitch preview shows it as the background.",
+    why: "You see the design as it will look, and Checks warn about colours that are the same as the garment: sewn, they add stitches nobody sees.",
+    eg: "A white polo: set white. My account › Your defaults can remember a usual garment colour for new designs.",
+  },
+  show_threads: {
+    t: "Thread brand colours",
+    what: "Shows the stitches in the nearest colours of the chosen thread brand instead of the picture's colours.",
+    why: "Two colours that look alike on screen may map to quite different threads (or the same one): this shows what the real threads will look like.",
+    eg: "Needs a thread brand under Fabric, thread & machine.",
+  },
   sew_order: {
     t: "Where sewing starts",
     what: "Nearest shapes starts with the shapes nearest the design's top-left corner. From the centre starts with the shape nearest the centre and sews the last colour towards it, so the design also ends near the centre. Cap sews every colour from the bottom centre outwards.",
@@ -690,6 +713,29 @@ const HELP = {
     why: "One choice less for every design. A Cap front placement still starts on Cap fabric.",
     eg: "A shop that mostly sews polo shirts: Polo piqué.",
   },
+  account_needles: {
+    t: "Needles on your machine",
+    what: "How many needles (thread colours at once) your machine has. Without a choice, the usual number for your machine is used: 1 for home machines, 15 or 16 for commercial ones.",
+    why: "With more colours than needles, some needles must be rethreaded during the run: Checks warn and offer to merge colours that look alike. Single-needle machines change thread for every colour anyway.",
+  },
+  account_garment: {
+    t: "Usual garment colour",
+    what: "The garment colour every new design starts with (Fabric, thread & machine › Garment colour).",
+    why: "The preview shows the design on it, and colours the same as the garment are flagged.",
+    eg: "A shop that mostly sews on black caps: black.",
+  },
+  account_quote: {
+    t: "Price estimate",
+    what: "Your price per 1,000 stitches, an optional minimum and a currency symbol. Export and the worksheet then show an estimate for each design: the stitches times your price, never below the minimum.",
+    why: "Quoting a job from the stitch count without doing the sum by hand. Only you see it; it is not sent anywhere.",
+    eg: "1.20 per 1,000 stitches, minimum 8.",
+  },
+  account_auto_fix: {
+    t: "Apply the important fixes to new designs",
+    what: "After a new design's first stitches, the setting fixes of the important checks are applied once, as with Fix all: one undo step, with a message saying so.",
+    why: "If you always press Fix all, the app does it for you. Size, merge and colour fixes still wait for you.",
+    eg: "Off by default.",
+  },
   account_preset: {
     t: "Start new designs with",
     what: "A preset every new design starts with, after the smart analysis and your usual fabric: its settings are the design's starting values, so nothing is marked as changed. Its size settings are left out (the placement or the width you type decide the size).",
@@ -901,6 +947,21 @@ const HELP = {
     t: "Outline sewn before its fill",
     what: "A colour sewn only as outlines or lettering comes before a fill it borders.",
     why: "Sewn last, outlines and lettering sit on top and cover the fill's edge; sewn first, the fill pushes over them. The button moves each such colour to just after the last fill it borders (one undo step). Ignore it if the order is on purpose.",
+  },
+  check_garment: {
+    t: "Same colour as the garment",
+    what: "A thread colour is (almost) the same as the garment colour set under Fabric, thread & machine.",
+    why: "Sewn on the garment it does not show, but it adds stitches and time. The button switches that colour off (Undo sews it again). Keep it if it covers the fabric's texture on purpose.",
+  },
+  check_hoop_turn: {
+    t: "Fits only turned",
+    what: "The design fits the chosen hoop only turned 90°.",
+    why: "The machine file is not turned by itself: Turn 90° turns the design here (preview, file and checks match), or turn it on the machine.",
+  },
+  check_needles: {
+    t: "More colours than needles",
+    what: "The design has more thread colours than your machine has needles (My account › Needles on your machine).",
+    why: "Some needles must be rethreaded during the run. Merging colours that look alike saves that; or plan which colours share a needle.",
   },
   check_fine_spacing: {
     t: "Fine thread with standard spacing",

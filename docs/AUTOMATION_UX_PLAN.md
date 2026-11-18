@@ -1,6 +1,6 @@
 # Automation, grouping and help: findings and what was built
 
-Status: **all batches (A–E, F–J, then K–P) built** (2026-11-18). It's Phase 8 in [ROADMAP.md](ROADMAP.md) §1 and follows
+Status: **all batches (A–E, F–J, K–P, then Q–V) built** (2026-11-18). It's Phase 8 in [ROADMAP.md](ROADMAP.md) §1 and follows
 [EDITOR_UX_PLAN.md](EDITOR_UX_PLAN.md) (Phase 6) and [APP_UX_PLAN.md](APP_UX_PLAN.md) (Phase 7). The open decisions were
 taken as recommended; the machine speeds in B are starting values to confirm.
 
@@ -156,6 +156,31 @@ nothing checked the colour order after merges or for vector paint order; width-b
 - **P. Check my stitches** without AI runs like an update (no overlay) and lists only findings the Checks do not show,
   with their changes; with AI it is unchanged.
 
+## 2d. Round four (Q–V)
+
+- **U. Your check choices**: hidden checks get a line "N hidden for this design · Show · Don't show them again";
+  the last adds their codes to the preference `hidden_checks` (never a `high` check, and the hoop check is high).
+  My account shows how many are off and brings them back. `auto_fix` (off by default): after a new upload's first
+  stitches `Checks.autoFix()` applies the important setting fixes once, as one undo step.
+- **T. Needles**: `MACHINES[*].needles` (1 for home machines; 15 / 16 commercial) and the preference `needles`. Browser
+  check `needles` (more colours than needles, needles > 1) opens Merge similar colours.
+- **V. Price estimate**: preferences `price_per_1000`, `price_min`, `currency`; `prefs.quote()` -> the export route ->
+  `worksheet(..., quote)` (`export.embroidery.quote_text`), and the Export summary (`priceEstimate`, the same rule).
+- **Q. Garment colour**: `StitchParams.garment_hex` is figures-only (`service._FIGURES_ONLY`: not in the plan cache key,
+  never read by the planner). The form has `garment_on` + `garment_hex` (Fabric, thread & machine); the preview's
+  background follows it (`applyFabricLook`; Dark fabric is used without it). Check `garment` (CIEDE2000 < 5, never
+  every colour) offers `skip` = switch those colours off (`PUT layers`, one undo step). Preference `garment` starts new
+  designs with it. *Thread brand colours* draws the stitches with each colour's matched thread (`shownColors`).
+- **S. Turn 90°**: preparation option `rotate` (Raster / VectorOptions, `models.quarter_turns`): pictures are turned
+  before anything else, artwork shapes before they are fitted to the width. `service.extract` passes the turn since
+  the last preparation to `_carry_shape_settings`, which turns the old shapes (`_turn_map`), their own direction
+  (+turn, mod 180) and guide lines before matching. Guide lines now also follow a size change (they kept their old
+  coordinates before). Browser: hidden `#rotate` in Size (in the extract values, so undo, the session and Reset follow);
+  check `hoop_turn` when the design fits only turned.
+- **R. Hide moves under later fills**: `StitchParams.travel_under` (off). `planner._covers_after`: per colour, the fills
+  and satin of the colours after it, shrunk by 0.5 mm; a move longer than 3 mm and at most 25 mm whose path, apart
+  from 1.5 mm at each end, lies inside becomes travel stitches instead of a jump (and its trim).
+
 ## 3. Tests
 - New: `tests/test_checks.py`, `tests/test_style_groups.py`, `tests/test_help_coverage.py`, and preference tests in
   `tests/test_prefs.py`.
@@ -165,9 +190,12 @@ nothing checked the colour order after merges or for vector paint order; width-b
   colour order end to end, compensation by width). Two older tests now state the exact rule: the only change offered
   for skipped marks keeps them (`test_text_detail.py`, `test_checks.py`).
 - K–P: `tests/test_automation_more.py`. The golden plans prove every new option is byte-identical when off.
+- Q–V: `tests/test_automation_q.py` (preferences, price, garment check and cache key, turned pictures and artwork,
+  settings and guide lines across a turn and a size change, hidden moves).
 
 ## 4. Open
-- Confirm the machine speeds and hoops (`prefs.MACHINES[*].spm`, `hoops`).
+- Confirm the machine speeds, hoops and needles (`prefs.MACHINES[*].spm`, `hoops`, `needles`).
+- Sew-out: Hide moves under later fills.
 - Sew-outs: Where sewing starts (centre, cap - the Cap fabric chooses it), Automatic-by-size fill foundation, shorter
   stitches on tight curves.
 - Sew-out for *Compensation grows with satin width* (`PULL_REF_WIDTH_MM`, `PULL_SCALE`) before any preset or fabric

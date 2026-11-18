@@ -156,6 +156,7 @@ function restoreForm(v) {
   const fabric = $("stitchForm").elements.fabric;
   if (fabric) showFabricNote(fabric.value);
   updateStyleParams();
+  applyFabricLook();
 }
 function saveSession() {
   try {
@@ -262,6 +263,7 @@ async function init() {
     if (sized) Jobs.extract(step ? { step } : {});
     else if (step) { History.stitchChange(step.label); Jobs.stitch(); }
   };
+  $("btnTurn").onclick = turnDesign;
   // a width typed by hand is a custom size
   $("width_mm").addEventListener("change", () => { if ($("placement").value) $("placement").value = "custom"; });
   const nc = $("num_colors");
@@ -302,6 +304,18 @@ function showAdjustValues() {
   $("sharpenOut").textContent = SHARPEN_LEVELS[+$("sharpen").value];
   $("denoiseOut").textContent = DENOISE_LEVELS[+$("denoise").value];
   $("denoise").setAttribute("aria-valuetext", DENOISE_LEVELS[+$("denoise").value]);
+  const turned = +$("rotate").value || 0;
+  $("rotateOut").textContent = turned ? `Turned ${turned}°` : "";
+}
+/** Size: Turn 90° - the design turns clockwise and keeps its size (the new width is the old
+ *  height); its own settings turn with it (service.extract). One undo step. */
+function turnDesign() {
+  if (!state.project || !state.design) return;
+  $("rotate").value = (+$("rotate").value + 90) % 360;
+  $("width_mm").value = clampWidth(state.design.height_mm);
+  showAdjustValues();
+  markModified();
+  Jobs.extract({ delay: 0, step: { label: "turn 90°" } });
 }
 // "Text & fine details" presets -> the advanced detail fields
 const TEXT_MODES = {
@@ -590,6 +604,13 @@ function applyStartValues(placement) {
   const usual = Presets.applyStart(Prefs.get("preset"));
   (usual?.stitch || []).forEach((k) => keys.add(k));
   addFabric(place);
+  const garment = Prefs.get("garment");
+  if (garment && f.elements.garment_hex) {
+    f.elements.garment_on.checked = true;
+    f.elements.garment_hex.value = garment;
+    keys.add("garment_on").add("garment_hex");
+    applyFabricLook();
+  }
   const chart = Prefs.get("thread_chart"), cs = f.elements.thread_chart;
   if (chart && cs && [...cs.options].some((o) => o.value === chart)) { cs.value = chart; keys.add("thread_chart"); }
   const spm = (state.config.machines || []).find((m) => m.key === Prefs.get("machine"))?.spm;
@@ -793,6 +814,8 @@ async function upload(file, { placement = null, width = null, onProgress = null 
   }
   History.reset();
   await Jobs.extract({ delay: 0 }); // the stitches follow by themselves
+  // My account: "Apply the important fixes to new designs" - once, after the first stitches
+  if (Prefs.get("auto_fix") && state.preview && state.project?.id === meta.id) Checks.autoFix();
 }
 
 // A new or reopened project: forget the previous design, set up the editor for this file.
@@ -802,6 +825,9 @@ function openProject(meta) {
   Object.assign(state, { project: meta, design: null, preview: null, smart: null, smartWidth: 0, smartStitch: null, viewMoved: false, autoPane: true, baseline: null, startStitch: null });
   SmartRefresh.reset();
   $("placement").value = "";
+  $("rotate").value = "0"; // a new design starts as drawn (a reopened one gets its turn back from the session)
+  $("btnTurn").disabled = true;
+  showAdjustValues();
   Shapes.reset();
   Render.reset();
   History.reset();
@@ -843,7 +869,7 @@ async function loadSource() {
 
 // ------------------------------------------------------------------ design (shapes)
 function extractOptions() {
-  const o = { width_mm: +$("width_mm").value, num_colors: $("num_colors").value ? +$("num_colors").value : null };
+  const o = { width_mm: +$("width_mm").value, num_colors: $("num_colors").value ? +$("num_colors").value : null, rotate: +$("rotate").value || 0 };
   if (state.project.kind === "raster") {
     Object.assign(o, {
       background: $("background").value,
@@ -865,6 +891,7 @@ const extract = () => Jobs.extract({ delay: 0 });
 
 function renderDesign(res) {
   state.design = res.design;
+  $("btnTurn").disabled = false;
   $("svgBox").innerHTML = res.svg.replace(/<\?xml[^>]*>/, "");
   $("warnings2").innerHTML = res.design.warnings.map((w) => `<div>${esc(w)}</div>`).join("");
   renderChecks();
@@ -1305,6 +1332,7 @@ const CHECKS = [
   ["triple_run", "Bold outlines (sew lines 3 times)"],
   ["pull_by_width", "Compensation grows with satin width"],
   ["running_curves", "Shorter stitches on tight curves (outlines)"],
+  ["travel_under", "Hide moves under later fills (fewer thread cuts)"],
 ];
 // Settings that only matter for some stitch styles (see stitch/outlines.py, fills.py,
 // decorative.py, guided.py): shown under "Style settings" when the design uses one of
@@ -1325,7 +1353,7 @@ const ADVANCED_GROUPS = [
   ["adv_foundation", "Foundation", ["fill_underlay", "satin_underlay", "underlay_spacing_mm"]],
   ["adv_length", "Stitch length & texture", ["fill_stitch_length_mm", "running_stitch_length_mm", "running_curves", "fill_pattern"]],
   ["adv_satin", "Satin width & compensation", ["satin_max_width_mm", "push_compensation_mm", "pull_by_width"]],
-  ["adv_order", "Sewing order & thread cuts", ["sew_order", "optimize_order", "trim_threshold_mm", "tie_stitches", "min_object_area_mm2"]],
+  ["adv_order", "Sewing order & thread cuts", ["sew_order", "optimize_order", "travel_under", "trim_threshold_mm", "tie_stitches", "min_object_area_mm2"]],
   ["adv_effects", "Special effects", ["knockdown", "trapunto", "triple_run", "photo_stitch"]],
 ];
 // settings that change only the figures (time estimate): with the fabric, thread and machine
@@ -1367,6 +1395,9 @@ function buildStitchForm() {
     `<option value="40" ${tw === 40 ? "selected" : ""}>Standard (40 wt)</option>` +
     `<option value="60" ${tw === 60 ? "selected" : ""}>Fine, for small lettering (60 wt)</option></select></label>` +
     chartField +
+    `<label class="full"><span class="lbl">Garment colour ${Tip.icon("garment")}</span><span class="garment-row">` +
+    `<input type="checkbox" name="garment_on" form="stitchForm"> <span class="small">Set</span> ` +
+    `<input type="color" name="garment_hex" value="#ffffff" form="stitchForm" aria-label="Garment colour"></span></label>` +
     PARAMS.filter((p) => MATERIAL_PARAMS.includes(p[0])).map((p) => field(p, true)).join("");
   // Advanced: small groups by what they change (ADVANCED_GROUPS); a setting no group names
   // goes to "Other settings", so a new one is never left out
@@ -1408,6 +1439,7 @@ function buildStitchForm() {
   const changed = (ev) => {
     updateStyleParams();
     if (!ev.target.name) return;
+    if (ev.target.name.startsWith("garment_")) applyFabricLook();
     History.stitchChange();
     if (state.design) Jobs.stitch();
   };
@@ -1459,7 +1491,7 @@ function updateStyleParams() {
 // The baseline is what the design started with: the app's stitch defaults, and the picture
 // settings as set after the upload (including the smart analysis). A setting that differs
 // is marked; it can be reset on its own, per section or all at once.
-const EXTRACT_IDS = ["width_mm", "num_colors", "background", "text_mode", "brightness", "contrast", "sharpen", "denoise", "min_feature_mm", "min_area_mm2", "knockout"];
+const EXTRACT_IDS = ["width_mm", "num_colors", "background", "text_mode", "brightness", "contrast", "sharpen", "denoise", "min_feature_mm", "min_area_mm2", "knockout", "rotate"];
 const valueOf = (el) => (el.type === "checkbox" ? el.checked : el.value);
 function setValue(el, v) { if (el.type === "checkbox") el.checked = !!v; else el.value = v; }
 function extractValues() { const v = {}; EXTRACT_IDS.forEach((id) => (v[id] = valueOf($(id)))); return v; }
@@ -1478,7 +1510,20 @@ function setStitchValues(v) {
   Object.entries(v || {}).forEach(([k, val]) => { if (f.elements[k]) setValue(f.elements[k], val); });
   showFabricNote(f.elements.fabric?.value);
   updateStyleParams();
+  applyFabricLook();
   markModified();
+}
+/** The preview's fabric: the garment colour when set (Fabric, thread & machine), else light or
+ *  Dark fabric. A dark garment gets the light weave lines. */
+function applyFabricLook() {
+  const f = $("stitchForm").elements, wrap = $("canvasWrap");
+  const g = f.garment_on?.checked ? f.garment_hex?.value || "" : "";
+  const lum = (hex) => { const [r, gg, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255); return 0.2126 * r + 0.7152 * gg + 0.0722 * b; };
+  wrap.style.backgroundColor = g;
+  wrap.classList.toggle("dark", g ? lum(g) < 0.45 : $("showFabric").checked);
+  $("showFabric").disabled = !!g;
+  $("showFabric").closest("label").title = g ? "The garment colour is shown (Fabric, thread & machine)." : "";
+  if (state.preview) draw();
 }
 const changedKeys = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].filter((k) => String(a?.[k]) !== String(b?.[k]));
 
@@ -1627,6 +1672,7 @@ function stitchParams() {
   p.thread_weight = +f.elements.thread_weight.value;
   if (f.elements.fabric) p.fabric = f.elements.fabric.value;
   if (f.elements.thread_chart) p.thread_chart = f.elements.thread_chart.value; // only when the server has charts
+  p.garment_hex = f.elements.garment_on?.checked ? f.elements.garment_hex.value : ""; // preview and checks only
   UNDERLAY_FIELDS.forEach(([k]) => (p[k] = f.elements[k].value));
   p.running_repeats = p.triple_run ? 3 : 1;
   delete p.triple_run;
@@ -2070,6 +2116,7 @@ function renderStats() {
   renderKinds();
   Checks.render(s); // the server's checks + the hoop, each with its way to a fix
   $("sequenceTitle").classList.toggle("hidden", !state.preview.colors.length);
+  $("showThreads").disabled = !state.preview.colors.some((c) => c.thread); // only with a thread brand
   $("sequence").innerHTML = state.preview.colors.map((c, i) => `<div><i style="background:${c.hex}"></i>${i + 1}. ${esc(c.name)} <span class="muted">${c.hex}</span>` +
     (c.thread ? `<span class="seq-thread"><i style="background:${c.thread.hex}" aria-hidden="true"></i>${esc(c.thread.brand)} <b>${esc(c.thread.number)}</b> ${esc(c.thread.name)} <span class="muted">· ${threadCloseness(c.thread.delta_e)}</span></span>` : "") +
     `</div>`).join("");
@@ -2078,11 +2125,28 @@ function renderStats() {
 
 // Checks: a count in the heading; with warnings the group moves above Design info
 function renderChecks() {
-  const n = $("warnings2").children.length + [...$("warnings3").children].filter((c) => !c.classList.contains("check-all")).length;
+  const n = $("warnings2").children.length + [...$("warnings3").children].filter((c) => !c.matches(".check-all, .check-hidden")).length;
   $("checkCount").textContent = n ? `· ${n}` : "";
   $("checkCount").hidden = !n;
   $("rightPanel").querySelector(".ed-scroll").classList.toggle("checks-first", n > 0);
   $("checksOk").hidden = n > 0 || !state.preview;
+}
+
+/** The price estimate for this many stitches (My account › Your defaults: price per 1,000
+ *  stitches, minimum, currency), as text; "" when no price is set. The same rule as the
+ *  worksheet (export/embroidery.quote_text). */
+function priceEstimate(stitches) {
+  const rate = +Prefs.get("price_per_1000") || 0;
+  if (!rate) return "";
+  const min = +Prefs.get("price_min") || 0, cur = Prefs.get("currency") || "";
+  const money = (x) => `${cur} ${x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
+  return `${money(Math.max((stitches / 1000) * rate, min))} (${money(rate)} per 1,000 stitches${min ? `, minimum ${money(min)}` : ""})`;
+}
+
+/** The preview's thread colours: the thread brand's (Thread brand colours, when a brand is
+ *  chosen) or the design's own. */
+function shownColors(p) {
+  return $("showThreads")?.checked && p.colors.some((c) => c.thread) ? p.colors.map((c) => (c.thread ? { ...c, hex: c.thread.hex } : c)) : p.colors;
 }
 
 // The way to a check's problem, shared by the Checks group and the Export dialog.
@@ -2104,7 +2168,11 @@ function goToSize() {
 // itself: each button is one undo step, and "Fix all" applies every setting change of the
 // important checks as one step. × hides a check for this design (until another is opened).
 const Checks = (() => {
-  const LABELS = { show: "Show me", size: "Change the size", select: "Select them", fit: "Fit to the hoop" };
+  const LABELS = { show: "Show me", size: "Change the size", select: "Select them", fit: "Fit to the hoop", similar: "Merge similar colours…" };
+  // checks turned off for the account (My account): never the important ones
+  const offForGood = () => new Set(Prefs.get("hidden_checks") || []);
+  const canTurnOff = (c) => !!c.code && c.severity !== "high";
+  const needles = () => Prefs.get("needles") ?? (state.config.machines || []).find((m) => m.key === Prefs.get("machine"))?.needles ?? null;
   const ALL_SEVERITIES = ["high", "medium"]; // "Fix all": the important checks only
   const HOOP_ROOM_MM = 6; // a size fix leaves this much room in the hoop (as bestHoop)
   let list = [], hidden = new Set(), cursor = null, lastStats = null; // cursor: {code, i} of "Show me"
@@ -2145,6 +2213,19 @@ const Checks = (() => {
     // an older server sends plain warnings only: shown as before, without actions
     const out = (p.checks || (p.warnings || []).map((text) => ({ code: "", severity: "medium", text, actions: [] }))).map((c) => ({ ...c }));
     const hf = s && hoopFit(s.width_mm, s.height_mm);
+    if (hf && hf.turned) { // fits only turned: the machine file is not turned by itself
+      out.unshift({
+        code: "hoop_turn", severity: "medium", actions: [], turn: true,
+        text: `The design fits the ${hf.hoop.name} hoop only turned 90°. Turn it here, or turn it on the machine.`,
+      });
+    }
+    const n = needles();
+    if (s && n > 1 && s.colors > n) {
+      out.push({
+        code: "needles", severity: "medium", actions: ["similar"],
+        text: `${s.colors} colours on a ${n}-needle machine: ${s.colors - n} need rethreading during the run. Merge colours that look alike, or plan the needles.`,
+      });
+    }
     if (hf && !hf.fits && !hf.turned) {
       const better = bestHoop(s.width_mm, s.height_mm, false);
       out.unshift({
@@ -2165,6 +2246,8 @@ const Checks = (() => {
     if (rs) fixes.push(["resize", rs.label]);
     if (c.merge?.pairs?.length) fixes.push(["merge", c.merge.label]);
     if (c.order?.layers?.length) fixes.push(["order", c.order.label]);
+    if (c.skip?.layers?.length) fixes.push(["skip", c.skip.label]);
+    if (c.turn) fixes.push(["turn", "Turn 90°"]);
     acts.unshift(...fixes.map(([act, label]) => `<button type="button" class="small check-fix" data-check-act="${act}">${esc(label)}</button>`));
     let nav = "";
     if (cursor?.code === c.code) {
@@ -2181,15 +2264,20 @@ const Checks = (() => {
   /** Fills the Checks group; ``s`` = the figures shown (optimised or original). */
   function render(s = lastStats) {
     lastStats = s;
-    list = build(s).filter((c) => !hidden.has(keyOf(c)));
+    const off = offForGood(), all = build(s).filter((c) => !(canTurnOff(c) && off.has(c.code)));
+    list = all.filter((c) => !hidden.has(keyOf(c)));
+    const hiddenNow = all.filter((c) => hidden.has(keyOf(c)));
     if (cursor) {
       const c = list.find((x) => x.code === cursor.code), n = spotsOf(c).length;
       if (!c || !n) { cursor = null; state.riskFocus = null; } else cursor.i = Math.min(cursor.i, n - 1);
     }
-    const all = allFixes();
-    $("warnings3").innerHTML = (all.n >= 2
-      ? `<div class="check-all"><button type="button" class="small" data-check-all>Fix all (${all.n})</button> ${Tip.icon("check_fix_all")}</div>` : "") +
-      list.map(html).join("");
+    const fixes = allFixes();
+    const forGood = hiddenNow.filter(canTurnOff);
+    $("warnings3").innerHTML = (fixes.n >= 2
+      ? `<div class="check-all"><button type="button" class="small" data-check-all>Fix all (${fixes.n})</button> ${Tip.icon("check_fix_all")}</div>` : "") +
+      list.map(html).join("") +
+      (hiddenNow.length ? `<div class="check-hidden small">${hiddenNow.length} hidden for this design. <button type="button" class="link" data-check-hidden="show">Show</button>` +
+        (forGood.length ? ` · <button type="button" class="link" data-check-hidden="never">Don't show ${forGood.length === 1 ? "it" : "them"} again</button>` : "") + `</div>` : "");
     renderChecks();
   }
   function focusSpot() {
@@ -2225,6 +2313,28 @@ const Checks = (() => {
   function fixAll() {
     const { change, n } = allFixes();
     if (n) applyChange(change, `Fix all (${n} fixes)`);
+  }
+  /** A new design with "Apply the important fixes to new designs" (My account). */
+  function autoFix() {
+    const { change, n } = allFixes();
+    if (n) applyChange(change, `Automatic fixes (${n})`);
+    return n;
+  }
+  async function applySkip(c) {
+    c = await current(c, "skip");
+    const off = new Set(c?.skip?.layers || []);
+    if (!off.size || !state.design) return;
+    state.design.layers.forEach((l) => { if (off.has(l.index)) l.enabled = false; });
+    await saveLayers("don't sew the garment colour");
+    toast(`${c.skip.label} – updating the stitches. Use Undo to sew ${off.size === 1 ? "it" : "them"} again.`, true);
+  }
+  /** Hidden checks: shown again, or turned off for the account (never the important ones). */
+  function hiddenAct(act) {
+    if (act === "show") { hidden = new Set(); render(); return; }
+    const codes = build(lastStats).filter((c) => hidden.has(keyOf(c)) && canTurnOff(c)).map((c) => c.code);
+    const now = [...new Set([...(Prefs.get("hidden_checks") || []), ...codes])].slice(-50);
+    Prefs.set("hidden_checks", now).then(() => toast("Turned off for your account. My account › Your defaults shows them again.", true));
+    render();
   }
   /** The design prepared again at another width (one undo step, with its label). */
   function applyResize(c) {
@@ -2278,6 +2388,9 @@ const Checks = (() => {
     if (act === "resize") return applyResize(c);
     if (act === "merge") return applyMerge(c).catch((e) => toast(e.message));
     if (act === "order") return applyOrder(c).catch((e) => toast(e.message));
+    if (act === "skip") return applySkip(c).catch((e) => toast(e.message));
+    if (act === "turn") return turnDesign();
+    if (act === "similar") return Similar.open();
     if (act === "size") return goToSize();
     if (act === "select") {
       Shapes.select(c.ids || []);
@@ -2307,6 +2420,8 @@ const Checks = (() => {
   function init() {
     $("warnings3").addEventListener("click", (ev) => {
       if (ev.target.closest("[data-check-all]")) return fixAll();
+      const h = ev.target.closest("[data-check-hidden]");
+      if (h) return hiddenAct(h.dataset.checkHidden);
       const b = ev.target.closest("[data-check-act]");
       const c = b && list[+b.closest(".check")?.dataset.i];
       if (c) run(b.dataset.checkAct, c);
@@ -2314,7 +2429,7 @@ const Checks = (() => {
   }
   /** A new design: hidden checks and the spot cursor start again. */
   function reset() { hidden = new Set(); cursor = null; lastStats = null; list = []; state.riskFocus = null; }
-  return { init, render, reset, list: () => list };
+  return { init, render, reset, autoFix, list: () => list };
 })();
 
 // ------------------------------------------------------------------ the editor: panes, sheets, bottom bar
@@ -2896,6 +3011,8 @@ const Export = (() => {
       if (hf) facts.push(["Hoop", `${hf.hoop.name} · ${hf.fits ? "fits" : hf.turned ? "fits turned 90°" : "too large"}`]);
       facts.push(["Stitches", s.stitches.toLocaleString()], ["Colours · changes", `${s.colors} · ${s.color_changes}`],
         ["Thread cuts", String(s.trims)], ["Sewing time (est.)", `${s.est_minutes} min`]);
+      const price = priceEstimate(s.stitches);
+      if (price) facts.push(["Price estimate", price]);
       // the same checks as the Checks panel, each with a way to the problem where there is one
       Checks.list().forEach((c) => checks.push([c.title ? `${c.title}: ${c.text}` : c.text, checkAction(c)]));
       const nc = [...pick].find((k) => NO_COLOURS.has(k));
@@ -3163,14 +3280,15 @@ const Render = (() => {
     const refSpec = Shapes.reference();
     const split = Split.at(refSpec); // split view: the original on the left, the stitches (without the faded one) on the right
     const spec = split === null ? refSpec : null;
-    const k = [w, h, dpr, v.scale, v.x, v.y, mode, state.variant, version, spec ? `${spec.url}@${spec.opacity}:${ref.ok && ref.url === spec.url}` : ""].join("|");
+    const colors = shownColors(p);
+    const k = [w, h, dpr, v.scale, v.x, v.y, mode, state.variant, version, colors === p.colors ? "" : "threads", spec ? `${spec.url}@${spec.opacity}:${ref.ok && ref.url === spec.url}` : ""].join("|");
 
     if (interacting && k !== key && upto >= total) { // quick version, the full one follows
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drawRef(ctx, v, spec);
-      drawFast(ctx, v, dpr, ops, mode, p.colors);
+      drawFast(ctx, v, dpr, ops, mode, colors);
       if (split !== null) drawSplit(ctx, v, refSpec, (w / dpr) * split);
       Shapes.drawSelection3(ctx, v, dpr);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3190,7 +3308,7 @@ const Render = (() => {
     }
     if (upto > st.upto) {
       bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawStitches(bctx, v, ops, mode, p.colors, st, upto);
+      drawStitches(bctx, v, ops, mode, colors, st, upto);
     }
 
     // on screen: the stitches, then markers and the selection on top
@@ -3252,7 +3370,7 @@ const Render = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawStitches(ctx, v, ops, "real", p.colors, { i: 0, color: 0, px: null, py: null, n: 0, jumps: [], trims: [], upto: 0 }, ops.length / 4);
+    drawStitches(ctx, v, ops, "real", shownColors(p), { i: 0, color: 0, px: null, py: null, n: 0, jumps: [], trims: [], upto: 0 }, ops.length / 4);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -3526,7 +3644,12 @@ function bindCanvas() {
     if (!state.preview || !c.clientWidth || state.pane !== "stitches") return;
     if (state.viewMoved) draw(); else fit();
   }).observe($("canvasWrap"));
-  $("showFabric").onchange = () => { $("canvasWrap").classList.toggle("dark", $("showFabric").checked); draw(); };
+  $("showFabric").onchange = applyFabricLook;
+  try { $("showThreads").checked = localStorage.getItem("threadColours") === "1"; } catch (_) {}
+  $("showThreads").onchange = () => {
+    try { localStorage.setItem("threadColours", $("showThreads").checked ? "1" : "0"); } catch (_) {}
+    draw();
+  };
   try { $("showWeave").checked = localStorage.getItem("weave") === "1"; } catch (_) {}
   $("canvasWrap").classList.toggle("weave", $("showWeave").checked);
   $("showWeave").onchange = () => {

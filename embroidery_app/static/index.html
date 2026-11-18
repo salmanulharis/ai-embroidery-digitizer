@@ -208,6 +208,8 @@
           <div class="ed-body">
             <label><span class="lbl">Used for <i data-help="placement"></i></span><select id="placement"></select></label>
             <label><span class="lbl">Hoop size <i data-help="hoop"></i></span><select id="hoop"></select></label>
+            <div class="turn-row"><button type="button" class="ghost small" id="btnTurn" disabled>&#8635; Turn 90&deg;</button>
+              <span class="small muted" id="rotateOut" aria-live="polite"></span><i data-help="turn"></i><input type="hidden" id="rotate" value="0"></div>
             <label><span class="lbl">Design width on fabric (mm) <i data-help="width_mm"></i></span><input type="number" id="width_mm" min="10" max="500" step="1" value="100" inputmode="decimal"></label>
             <label><span class="lbl">Number of thread colours <i data-help="num_colors"></i></span>
               <select id="num_colors">
@@ -328,6 +330,7 @@
             <label class="check shapes-only"><input type="checkbox" id="showDirections"> Stitch directions <i data-help="show_directions"></i></label>
             <label class="check stitch-only"><input type="checkbox" id="showWeave"> Woven fabric texture <i data-help="weave"></i></label>
             <label class="check stitch-only ed-fabric"><input type="checkbox" id="showFabric"> Dark fabric <i data-help="dark_fabric"></i></label>
+            <label class="check stitch-only"><input type="checkbox" id="showThreads" disabled> Thread brand colours <i data-help="show_threads"></i></label>
           </div>
         </div>
         <div class="vb-grp ed-zoom">

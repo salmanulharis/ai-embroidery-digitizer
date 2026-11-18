@@ -61,6 +61,48 @@ const Account = (() => {
       (mine.length ? `<optgroup label="Your presets">${mine.map(o).join("")}</optgroup>` : "") + `</select></label>`;
   }
 
+  /** Your defaults, continued: needles, garment colour, price estimate and the checks. */
+  const NEEDLE_CHOICES = [1, 2, 4, 6, 7, 9, 10, 12, 15, 16, 18, 20];
+  function moreDefaults() {
+    const machine = (state.config.machines || []).find((m) => m.key === Prefs.get("machine"));
+    const usual = machine ? `Usual for ${esc(machine.label.split(" (")[0])} (${machine.needles})` : "Not set";
+    const n = Prefs.get("needles"), g = Prefs.get("garment"), off = Prefs.get("hidden_checks") || [];
+    const num = (v) => (v == null ? "" : esc(String(v)));
+    return `<label><span class="lbl">Needles on your machine <i data-help="account_needles"></i></span><select id="accNeedles">` +
+      `<option value="">${usual}</option>` + NEEDLE_CHOICES.map((x) => `<option value="${x}" ${x === n ? "selected" : ""}>${x === 1 ? "1 (single needle)" : x}</option>`).join("") + `</select></label>` +
+      `<label><span class="lbl">Usual garment colour <i data-help="account_garment"></i></span><span class="garment-row">` +
+      `<input type="checkbox" id="accGarmentOn" ${g ? "checked" : ""}> <span class="small">Set</span> <input type="color" id="accGarment" value="${esc(g || "#ffffff")}" aria-label="Usual garment colour"></span></label>` +
+      `<fieldset class="acc-price"><legend class="lbl">Price estimate <i data-help="account_quote"></i></legend>` +
+      `<label><span class="small">Per 1,000 stitches</span><input type="number" id="accPrice" min="0" max="100000" step="0.01" inputmode="decimal" value="${num(Prefs.get("price_per_1000"))}"></label>` +
+      `<label><span class="small">Minimum</span><input type="number" id="accPriceMin" min="0" max="100000" step="0.01" inputmode="decimal" value="${num(Prefs.get("price_min"))}"></label>` +
+      `<label><span class="small">Currency</span><input type="text" id="accCurrency" maxlength="4" value="${num(Prefs.get("currency"))}" placeholder="$"></label></fieldset>` +
+      `<label class="check"><input type="checkbox" id="accAutoFix" ${Prefs.get("auto_fix") ? "checked" : ""}> Apply the important fixes to new designs <i data-help="account_auto_fix"></i></label>` +
+      (off.length ? `<p class="small">${off.length} check${off.length === 1 ? "" : "s"} turned off for your account. <button type="button" class="link" id="accChecksBack">Show them again</button></p>` : "");
+  }
+  function bindMoreDefaults() {
+    const saved = (msg = "Saved.") => () => toast(msg, true);
+    $("accNeedles").onchange = () => Prefs.set("needles", $("accNeedles").value ? +$("accNeedles").value : null).then(saved());
+    const garment = () => Prefs.set("garment", $("accGarmentOn").checked ? $("accGarment").value.toLowerCase() : null).then(saved("Saved. New designs start with it."));
+    $("accGarmentOn").onchange = garment;
+    $("accGarment").onchange = () => { $("accGarmentOn").checked = true; garment(); };
+    const amount = (id, key) => {
+      $(id).onchange = () => {
+        const v = $(id).value.trim() === "" ? null : Math.max(0, Math.min(100000, +$(id).value));
+        if (v != null && !Number.isFinite(v)) return toast("Enter a number.", true);
+        Prefs.set(key, v).then(saved());
+      };
+    };
+    amount("accPrice", "price_per_1000");
+    amount("accPriceMin", "price_min");
+    $("accCurrency").onchange = () => {
+      const v = $("accCurrency").value.trim();
+      if (v && !/^[^\s<>&"'`]{1,4}$/.test(v)) return toast("Use a symbol or a short code, e.g. $ or AED.", true);
+      Prefs.set("currency", v || null).then(saved());
+    };
+    $("accAutoFix").onchange = () => Prefs.set("auto_fix", $("accAutoFix").checked || null).then(saved());
+    if ($("accChecksBack")) $("accChecksBack").onclick = () => Prefs.set("hidden_checks", null).then(() => { toast("Those checks show again.", true); Checks.render(); render(); });
+  }
+
   /** "ok" | "approaching" | "exhausted" | "unlimited" - always shown with words, not colour alone. */
   function level(u) {
     if (u.unlimited) return "unlimited";
@@ -126,12 +168,14 @@ const Account = (() => {
       <label><span class="lbl">Usual fabric <i data-help="account_fabric"></i></span><select id="accFabric">${opts((state.config.fabrics || []).map((f) => ({ key: f.id, label: f.label })), Prefs.get("fabric"), "No usual fabric (General)")}</select></label>
       ${(state.config.thread_charts || []).length ? `<label><span class="lbl">Thread brand <i data-help="thread_chart"></i></span><select id="accChart">${opts(state.config.thread_charts.map((c) => ({ key: c.id, label: c.name })), Prefs.get("thread_chart"), "None – colours only")}</select></label>` : ""}
       ${presetField()}
+      ${moreDefaults()}
       <p class="small muted">Used by Export, after you choose a file and for every new design. Saved for your account.</p>`;
     $("accMachine").onchange = () => Prefs.set("machine", $("accMachine").value || null).then(() => { renderHoops(); toast("Saved.", true); });
     $("accPlacement").onchange = () => Prefs.set("placement", $("accPlacement").value || null).then(() => toast("Saved.", true));
     $("accFabric").onchange = () => Prefs.set("fabric", $("accFabric").value || null).then(() => toast("Saved. New designs start with it.", true));
     if ($("accChart")) $("accChart").onchange = () => Prefs.set("thread_chart", $("accChart").value || null).then(() => toast("Saved. New designs start with it.", true));
     if ($("accPreset")) $("accPreset").onchange = () => Prefs.set("preset", $("accPreset").value || null).then(() => toast("Saved. New designs start with it.", true));
+    bindMoreDefaults();
     const ai = data.ai;
     const aiLine = (label, x) => x
       ? `<li><b>${esc(label)}:</b> ${esc(x.label)} · ${esc(x.model)} ${x.ready ? `<span class="status good">✓ ${x.own_key ? "your key" : "app access"}</span>` : `<span class="status bad">✗ not set up</span>`}</li>`

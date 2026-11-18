@@ -28,7 +28,7 @@ from shapely import affinity
 from ..colors import color_name, delta_e, lab_to_rgb, merge_palette, rgb_to_lab
 from ..config import settings
 from ..geometry import mask_to_polygons
-from ..models import ColorLayer, Design, DesignObject, bounded
+from ..models import ColorLayer, Design, DesignObject, bounded, quarter_turns
 
 BG = -1
 
@@ -73,6 +73,7 @@ class RasterOptions:
     brightness: int = 0  # -100..100
     contrast: int = 0  # -100..100
     sharpen: int = 0  # 0..3 - crisper letter edges in soft / blurry pictures
+    rotate: int = 0  # the design turned clockwise: 0, 90, 180 or 270 degrees (Size: Turn 90°)
 
     def __post_init__(self) -> None:
         """Clamp to RASTER_RANGES (valid values stay exactly as they are)."""
@@ -90,6 +91,7 @@ class RasterOptions:
             setattr(self, name, value)
         if self.background not in BACKGROUNDS:
             self.background = "auto"
+        self.rotate = quarter_turns(self.rotate)
 
 
 def load_raster(data: bytes) -> np.ndarray:
@@ -416,6 +418,8 @@ def _fold_minor_colors(labels: np.ndarray, centers: np.ndarray, max_share: float
 
 def raster_to_design(rgba: np.ndarray, opts: RasterOptions) -> tuple[Design, np.ndarray]:
     """Returns the design plus an RGBA preview of the flattened/extracted artwork."""
+    if opts.rotate:  # turned before anything else: the width is the turned design's width
+        rgba = np.ascontiguousarray(np.rot90(rgba, k=-(opts.rotate // 90)))
     rgba = _crop_to_foreground(rgba, opts)
     work, ppm = _resample(rgba, opts.width_mm)
     alpha = work[:, :, 3]
